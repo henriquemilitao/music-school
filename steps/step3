@@ -1,0 +1,44 @@
+Geração de aulas:
+□ Mês com 4 ocorrências do dia da semana
+□ Mês com 5 ocorrências do dia da semana
+□ Enrollment criado no dia 28, 29, 30 ou 31
+□ Primeira aula cai num feriado (por enquanto só documenta, não bloqueia)
+□ Enrollment criado faltando menos de 10 dias pro mês acabar
+
+Renovação:
+□ Cron roda e renova corretamente 10 dias antes
+□ Cron roda e NÃO renova se já foi renovado (idempotência)
+□ Cron roda e NÃO renova se isActive = false
+□ Admin renova manualmente antes do cron — cron não duplica
+□ Enrollment do último mês (isActive vira false após encerrar)
+
+Aulas:
+□ Cancelar aula com motivo
+□ Criar aula avulsa de reposição (isMakeup = true)
+□ Marcar aula como concluída
+□ Buscar próxima aula quando não tem nenhuma scheduled
+□ Buscar última aula quando não tem nenhuma completed
+
+Pagamentos:
+□ Gerar PIX pro mês atual
+□ Tentar gerar PIX duas vezes pro mesmo mês (idempotencyKey bloqueia)
+□ Confirmar pagamento via webhook
+□ Mês vencido vira OVERDUE automaticamente
+
+Permissões:
+□ Aluno tenta ver aulas de outro aluno → 403
+□ Aluno tenta criar Enrollment → 403
+□ Admin vê qualquer coisa → 200
+
+Enrollment
+□ Tentar criar enrollment com teacherId de outra escola → 404
+□ Criar dois enrollments pro mesmo aluno (deve ser permitido — ex: violão + teoria)
+□ Renovar enrollment inativo → 400
+
+Dashboard
+□ Aluno sem nenhuma aula agendada — nextLesson retorna null sem quebrar
+□ Aluno com pagamento OVERDUE — status aparece correto
+□ Pai acessa dashboard e vê os dois filhos separados
+
+Seed / dados
+□ Rodar npx prisma db seed duas vezes não duplica dados

@@ -1,0 +1,10 @@
+refazer o banco:
+
+rm -rf prisma/migrations/
+npx prisma migrate dev --name init
+npx prisma migrate reset
+npx prisma db seed
+
+
+pra criar arquivos typescript na nodemodules
+npx prisma generate

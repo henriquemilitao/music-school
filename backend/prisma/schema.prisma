@@ -1,0 +1,271 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+// ─────────────────────────────────────────────
+// ENUMS
+// ─────────────────────────────────────────────
+
+enum Role {
+  ADMIN
+  STUDENT
+  TEACHER
+}
+
+enum Instrument {
+  BATERIA
+  PIANO
+  VIOLAO
+  GUITARRA
+}
+
+enum LessonStatus {
+  SCHEDULED // aula agendada
+  COMPLETED // aula concluída
+  CANCELLED // aula cancelada
+}
+
+enum PaymentStatus {
+  PENDING // aguardando pagamento
+  PAID // pago
+  OVERDUE // vencido
+}
+
+enum PaymentMethod {
+  MANUAL_PIX // fallback/emergência — admin confirma na mão
+  GATEWAY // fluxo principal (automático via webhook)
+}
+
+// ─────────────────────────────────────────────
+// MODELS
+// ─────────────────────────────────────────────
+
+model School {
+  id        String   @id @default(uuid())
+  name      String
+  slug      String   @unique
+  cnpj      String?
+  address   String?
+  phone     String?
+  email     String?
+  settings  Json? // ex: { "renewalDaysBeforeEnd": 10 }
+  createdAt DateTime @default(now())
+
+  // fallback manual — não usado no fluxo com gateway
+  pixKey     String?
+  pixKeyType String?
+
+  users          User[]
+  lessons        Lesson[]
+  payments       Payment[]
+  enrollments    Enrollment[]
+  paymentBundles PaymentBundle[]
+
+  @@map("schools")
+}
+
+model User {
+  id           String   @id @default(uuid())
+  schoolId     String
+  school       School   @relation(fields: [schoolId], references: [id])
+  name         String
+  email        String   @unique
+  passwordHash String
+  phone        String?
+  role         Role     @default(STUDENT)
+  isActive     Boolean  @default(true)
+  createdAt    DateTime @default(now())
+
+  students       Student[]
+  teacher        Teacher?
+  guardians      Guardian[]
+  paymentBundles PaymentBundle[]
+
+  @@map("users")
+}
+
+model Student {
+  id         String      @id @default(uuid())
+  userId     String
+  user       User        @relation(fields: [userId], references: [id], onDelete: Cascade)
+  name       String // nome do aluno (pode ser diferente do User, ex: pai cadastrando filho)
+  birthDate  DateTime? // pra calcular idade
+  instrument Instrument?
+
+  notes     String?
+  createdAt DateTime @default(now())
+
+  guardians   Guardian[]
+  lessons     Lesson[]
+  payments    Payment[]
+  enrollments Enrollment[]
+
+  @@map("students")
+}
+
+model Teacher {
+  id        String   @id @default(uuid())
+  userId    String   @unique
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  bio       String?
+  createdAt DateTime @default(now())
+
+  lessons     Lesson[]
+  enrollments Enrollment[]
+
+  @@map("teachers")
+}
+
+model Guardian {
+  id           String   @id @default(uuid())
+  studentId    String
+  student      Student  @relation(fields: [studentId], references: [id], onDelete: Cascade)
+  userId       String
+  user         User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  relationship String?
+  createdAt    DateTime @default(now())
+
+  @@unique([studentId, userId])
+  @@map("guardians")
+}
+
+enum LessonFrequency {
+  WEEKLY
+  BIWEEKLY
+}
+
+// Matrícula — define o padrão de recorrência das aulas de um aluno
+model Enrollment {
+  id        String   @id @default(uuid())
+  schoolId  String
+  school    School   @relation(fields: [schoolId], references: [id])
+  studentId String
+  student   Student  @relation(fields: [studentId], references: [id])
+  teacherId String?
+  teacher   Teacher? @relation(fields: [teacherId], references: [id])
+
+  weekDay         Int // 0=domingo, 1=segunda... 6=sábado
+  startTime       String // horário no formato "15:00"
+  durationMinutes Int             @default(60)
+  frequency       LessonFrequency @default(WEEKLY)
+  monthlyAmount   Decimal         @db.Decimal(10, 2) // valor da mensalidade
+
+  startDate DateTime // data da primeira aula
+  isActive  Boolean  @default(true) // false = encerrado, cron não renova mais
+
+  // controle de renovação — data de início do último período de 30
+  // dias já gerado. O cron soma 30 dias nisso pra saber a próxima
+  // data-âncora do ciclo seguinte.
+  lastPeriodStart DateTime?
+
+  // rótulo legível do último período gerado, ex: "2026-07-15" —
+  // usado só como parte de idempotencyKey/referenceMonth, não pra
+  // cálculo de datas (isso é lastPeriodStart)
+  lastGeneratedMonth String?
+
+  createdAt DateTime @default(now())
+
+  lessons  Lesson[]
+  payments Payment[]
+
+  @@map("enrollments")
+}
+
+model Lesson {
+  id           String      @id @default(uuid())
+  schoolId     String
+  school       School      @relation(fields: [schoolId], references: [id])
+  studentId    String
+  student      Student     @relation(fields: [studentId], references: [id])
+  teacherId    String?
+  teacher      Teacher?    @relation(fields: [teacherId], references: [id])
+  enrollmentId String? // null = aula avulsa criada manualmente
+  enrollment   Enrollment? @relation(fields: [enrollmentId], references: [id])
+
+  scheduledAt     DateTime // data e hora da aula
+  durationMinutes Int          @default(60)
+  status          LessonStatus @default(SCHEDULED)
+  notes           String? // observações pós-aula
+
+  isMakeup     Boolean @default(false) // true = aula de reposição
+  cancelReason String? // motivo do cancelamento
+
+  createdAt DateTime @default(now())
+
+  @@map("lessons")
+}
+
+model Payment {
+  id           String      @id @default(uuid())
+  schoolId     String
+  school       School      @relation(fields: [schoolId], references: [id])
+  studentId    String
+  student      Student     @relation(fields: [studentId], references: [id])
+  enrollmentId String? // null = pagamento avulso
+  enrollment   Enrollment? @relation(fields: [enrollmentId], references: [id])
+
+  amount         Decimal       @db.Decimal(10, 2)
+  dueDate        DateTime // vencimento = 1º dia de aula do período
+  paidAt         DateTime? // preenchido quando confirmar pagamento
+  status         PaymentStatus @default(PENDING)
+  referenceMonth String // "2026-07"
+
+  paymentMethod PaymentMethod @default(GATEWAY)
+  provider      String? // "infinitepay" | "abacatepay" | "manual"
+  checkoutUrl   String? // link de pagamento gerado pelo gateway
+  externalId    String? // id da transação no gateway
+  pixCopyPaste  String?
+  pixQrCode     String?
+  pixExpiresAt  DateTime? // NOVO — quando o PIX atual expira
+
+  webhookReceivedAt DateTime? // auditoria: quando a confirmação automática chegou
+
+  // fluxo manual/fallback
+  proofUrl    String? // comprovante anexado pelo admin
+  confirmedBy String? // id do admin que confirmou manualmente
+
+  idempotencyKey String @unique // studentId+referenceMonth — evita duplicar cobrança
+
+  createdAt       DateTime       @default(now())
+  paymentBundle   PaymentBundle? @relation(fields: [paymentBundleId], references: [id])
+  paymentBundleId String?
+
+  @@map("payments")
+}
+
+enum BundleStatus {
+  PENDING
+  PAID
+  CANCELLED
+}
+
+model PaymentBundle {
+  id       String @id @default(uuid())
+  schoolId String
+  school   School @relation(fields: [schoolId], references: [id])
+  userId   String // o responsável que está pagando (Payment.student.userId em comum)
+  user     User   @relation(fields: [userId], references: [id])
+
+  amount Decimal      @db.Decimal(10, 2) // soma das faturas cobertas
+  status BundleStatus @default(PENDING)
+  paidAt DateTime?
+
+  provider     String? // "abacatepay"
+  externalId   String? // id da cobrança no gateway
+  pixCopyPaste String?
+  pixQrCode    String?
+  pixExpiresAt DateTime? // NOVO
+
+  idempotencyKey String @unique // hash das faturas cobertas — evita duplicar
+
+  createdAt DateTime @default(now())
+
+  payments Payment[] // faturas cobertas por esse bundle
+
+  @@map("payment_bundles")
+}

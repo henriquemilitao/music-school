@@ -1,0 +1,55 @@
+DÍVIDA TÉCNICA
+══════════════
+
+Performance / Escala
+□ renewDueSoon carrega todas as matrículas ativas em memória —
+  paginar com cursor do Prisma quando houver múltiplas escolas
+□ Adicionar índices no banco: Lesson(studentId, status, scheduledAt),
+  Payment(studentId, status), Enrollment(isActive, lastGeneratedMonth)
+□ Mover geração de aulas/pagamentos pra fila (BullMQ + Redis)
+  quando o volume justificar processamento assíncrono
+
+Autenticação / Segurança
+□ Refresh token — hoje o JWT expira e o usuário precisa logar de novo
+□ Rate limiting no POST /auth/login pra evitar brute force
+□ Restringir CORS pra domínio de produção (hoje está origin: '*')
+□ Revogar tokens (blacklist em Redis) quando usuário trocar senha
+
+Pagamentos
+□ Webhook de confirmação de pagamento (Asaas/Gerencianet)
+□ Job pra marcar pagamentos vencidos como OVERDUE automaticamente
+□ Estorno de pagamento
+
+Matrículas
+□ Suporte a múltiplos dias na semana (ex: terça e quinta)
+□ Feriados — documentado, mas não bloqueia criação de aula
+□ Reajuste de mensalidade sem encerrar a matrícula
+
+Multi-tenancy
+□ Middleware de tenant isolation (garantir schoolId em todas as queries)
+□ Plano/limite por escola (número máximo de alunos, professores)
+
+Qualidade
+□ Testes e2e das rotas críticas (auth, enrollment, payment)
+□ Testes unitários de buildLessonsForMonth e getNextMonth
+□ Swagger com exemplos de response em todos os endpoints
+
+
+
+
+TESTE IA 
+
+Passo a passo do débito técnico (guarda isso)Teste A — Idempotência do webhook de pagamento
+
+Você já tem no log um RAW BODY completo de um webhook processado com sucesso (ex: o do 71873b49)
+Preciso montar um curl que reenvia exatamente esse mesmo payload direto pro seu /payments/webhook/abacatepay, com a assinatura HMAC calculada corretamente e o webhookSecret certo na query
+Depois de resetar o banco, você recria uma matrícula, gera checkout, simula pagamento (fluxo normal) — anota o RAW BODY novo do log
+Roda esse curl de reenvio duas vezes seguidas pro mesmo payload
+Espera: primeira vez processa normal (status: PAID), segunda vez retorna already_processed e paidAt não muda
+Quando você chegar nesse ponto, me chama que eu monto o curl exato com a assinatura calculada (preciso do payload real pra gerar o HMAC certo).Teste B — Checkout em payment já confirmado manualmente
+
+Cria matrícula nova (firstPaymentPaid: false)
+Confirma manualmente: PATCH /payments/{id}/confirm
+Confere que virou PAID
+Tenta gerar checkout nesse mesmo payment: POST /payments/{id}/checkout
+Espera: erro 400 com mensagem "Esse pagamento já foi confirmado". Se vier sucesso, é bug confirmado no guard.

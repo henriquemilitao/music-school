@@ -1,0 +1,37 @@
+npx expo start --web --clear
+
+
+ngrok config add-authtoken SEU_TOKEN_AQUI
+ngrok http 3000
+
+ipconfig
+
+ver o ip, e colocar em api.ts
+
+
+talvez precisa colocar isso tbm no wsl
+export EXPO_PACKAGER_HOSTNAME=192.168.1.90
+
+e talvez configurar algumas portas com isso
+New-NetFirewallRule -DisplayName "NestJS Backend" -Direction Inbound -LocalPort 3000 -Protocol TCP -Action Allow
+
+ou isso
+New-NetFirewallRule -DisplayName "NestJS Backend Wi-Fi" -Direction Inbound -Protocol TCP -LocalPort 3000 -Action Allow
+New-NetFirewallRule -DisplayName "Expo Metro Wi-Fi" -Direction Inbound -Protocol TCP -LocalPort 8081 -Action Allow
+
+
+
+dai rodar isso no powershell
+notepad "$env:USERPROFILE\.wslconfig"
+
+colar isso
+[wsl2]
+networkingMode=mirrored
+
+wsl --shutdown
+
+depois pra funcionar o vs code tenho que apagar isso do arquivo.
+
+rodar o mobile
+cd ~/projetos/music-school/mobile    
+npx expo start --clear
