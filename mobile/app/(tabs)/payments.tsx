@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useState } from 'react';
 import {
   View,
   Text,
@@ -6,8 +6,8 @@ import {
   ActivityIndicator,
   TouchableOpacity,
 } from 'react-native';
-import { useQuery } from '@tanstack/react-query';
-import { useRouter } from 'expo-router';
+import { useQuery, useQueryClient } from '@tanstack/react-query';
+import { useFocusEffect, useRouter } from 'expo-router';
 import {
   Calendar,
   Receipt,
@@ -19,52 +19,15 @@ import {
 import { api } from '../../lib/api';
 import { getPaymentUrgency } from '../../lib/paymentUrgency';
 import type { Payment } from '../../lib/types/payment';
-import { useStudent } from '../../context/StudentContext';
-
-function formatMonthLabel(referenceMonth: string) {
-  const date = new Date(referenceMonth + 'T00:00:00');
-  const label = date.toLocaleDateString('pt-BR', {
-    month: 'long',
-    year: 'numeric',
-  });
-  return label.charAt(0).toUpperCase() + label.slice(1);
-}
-
-// referenceMonth vem como "2026-08" (sem dia) — precisa completar
-// antes de criar o Date, senão dá Invalid Date.
-function formatMonthLabelFromKey(monthKey: string) {
-  return formatMonthLabel(monthKey + '-01');
-}
-
-function formatDate(iso: string) {
-  return new Date(iso).toLocaleDateString('pt-BR');
-}
-
-function formatCurrency(value: number) {
-  return value.toLocaleString('pt-BR', {
-    minimumFractionDigits: 2,
-    maximumFractionDigits: 2,
-  });
-}
-
-function statusConfig(status: Payment['status']) {
-  if (status === 'PAID')
-    return { label: 'Paga', bg: 'bg-green-50', text: 'text-green-700' };
-  if (status === 'OVERDUE')
-    return { label: 'Atrasada', bg: 'bg-red-50', text: 'text-red-700' };
-  return { label: 'Pendente', bg: 'bg-yellow-50', text: 'text-yellow-700' };
-}
-
-function StatusBadge({ status }: { status: Payment['status'] }) {
-  const config = statusConfig(status);
-  return (
-    <View className={`rounded-full px-2.5 py-1 ${config.bg}`}>
-      <Text className={`text-[11px] font-bold ${config.text}`}>
-        {config.label}
-      </Text>
-    </View>
-  );
-}
+import { paymentKeys } from '../../lib/queryKeys';
+import {
+  formatCurrency,
+  formatDate,
+  formatMonthLabel,
+  formatMonthLabelFromKey,
+} from '../../lib/paymentFormat';
+import { StatusPill } from '../../components/ui/StatusPill';
+import { paymentStatusConfig } from '../../lib/status';
 
 // Card de fatura ABERTA. Tocar no card (fora do link "Ver detalhes")
 // alterna a seleção pro bundle. "Ver detalhes" abre a tela de
@@ -76,8 +39,8 @@ function OpenPaymentCard({
   showStudentName,
   onToggle,
   onViewDetails,
-  isSingleOpen, // <-- NOVO
-  onPay, // <-- NOVO
+  isSingleOpen,
+  onPay,
 }: {
   payment: Payment;
   selected: boolean;
@@ -85,15 +48,22 @@ function OpenPaymentCard({
   showStudentName: boolean;
   onToggle: () => void;
   onViewDetails: () => void;
-  isSingleOpen?: boolean; // <-- NOVO
-  onPay?: () => void; // <-- NOVO
+  isSingleOpen?: boolean;
+  onPay?: () => void;
 }) {
   const urgency = getPaymentUrgency(payment.dueDate, payment.status);
 
+  // quando o card tem botão de pagamento dedicado (onPay), ele não
+  // tem função de seleção — nesse caso o card inteiro deve ser um
+  // container "mudo" (View), não um TouchableOpacity, senão o RN
+  // ainda mostra o feedback visual de toque (opacity piscando) mesmo
+  // sem nenhuma ação acontecer, o que confunde o usuário
+  const isSelectable = !onPay && eligible;
+  const CardContainer = isSelectable ? TouchableOpacity : View;
+
   return (
-    <TouchableOpacity
-      activeOpacity={0.7}
-      onPress={eligible ? onToggle : undefined}
+    <CardContainer
+      {...(isSelectable ? { activeOpacity: 0.7, onPress: onToggle } : {})}
       className="bg-white rounded-2xl overflow-hidden mb-3"
       style={{
         shadowColor: '#000',
@@ -105,8 +75,7 @@ function OpenPaymentCard({
       }}
     >
       <View className="p-5 flex-row">
-        {/* Checkbox só aparece quando há múltiplas faturas abertas */}
-        {!isSingleOpen && (
+        {!onPay && (
           <View className="mr-4 pt-1">
             <View
               className={`w-6 h-6 rounded-full items-center justify-center ${
@@ -124,17 +93,20 @@ function OpenPaymentCard({
         )}
 
         <View className="flex-1">
-          <View className="flex-row items-center justify-between mb-2">
-            <Text className="text-[11px] font-bold uppercase tracking-widest text-gray-400">
+          <View className="flex-row items-center justify-between mb-2 gap-2">
+            <Text
+              className="text-[11px] font-bold uppercase tracking-widest text-gray-400 flex-1"
+              numberOfLines={1}
+            >
               {showStudentName ? payment.student.name : 'Fatura do mês'}
             </Text>
-            <StatusBadge status={payment.status} />
+            <StatusPill {...paymentStatusConfig(payment.status)} />
           </View>
           <Text
             className="text-2xl"
             style={{ fontFamily: 'PlayfairDisplay_700Bold' }}
           >
-            R$ {payment.amount}
+            R$ {formatCurrency(payment.amount)}
           </Text>
           <Text className="text-gray-500 mt-1">
             {formatMonthLabel(payment.referenceMonth)}
@@ -154,12 +126,21 @@ function OpenPaymentCard({
 
           {urgency && (
             <View
-              className="self-start rounded-full px-2.5 py-1 mt-2"
-              style={{ backgroundColor: urgency.colorBg }}
+              style={{
+                backgroundColor: urgency.colorBg,
+                borderRadius: 999,
+                paddingHorizontal: 10,
+                paddingVertical: 4,
+                marginTop: 8,
+                alignSelf: 'flex-start',
+              }}
             >
               <Text
-                className="text-[11px] font-bold"
-                style={{ color: urgency.colorText }}
+                style={{
+                  color: urgency.colorText,
+                  fontSize: 11,
+                  fontWeight: 'bold',
+                }}
               >
                 {urgency.label}
               </Text>
@@ -173,8 +154,12 @@ function OpenPaymentCard({
                 onViewDetails();
               }}
               hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+              style={{ flexShrink: 0 }}
             >
-              <Text className="text-xs font-bold text-[#B08D57] underline">
+              <Text
+                className="text-xs font-bold text-[#B08D57] underline"
+                numberOfLines={1}
+              >
                 Ver detalhes
               </Text>
             </TouchableOpacity>
@@ -192,7 +177,7 @@ function OpenPaymentCard({
           </View>
         </View>
       </View>
-    </TouchableOpacity>
+    </CardContainer>
   );
 }
 
@@ -265,9 +250,11 @@ function HistoryRow({
         </Text>
       </View>
       <View className="items-end mr-2">
-        <Text className="text-sm font-bold">R$ {payment.amount}</Text>
+        <Text className="text-sm font-bold">
+          R$ {formatCurrency(payment.amount)}
+        </Text>
         <View className="mt-1">
-          <StatusBadge status={payment.status} />
+          <StatusPill {...paymentStatusConfig(payment.status)} />
         </View>
       </View>
       <ChevronRight size={16} color="#D4CFC4" />
@@ -334,21 +321,32 @@ function HistoryMonthGroup({
               }
               onPress={() => onViewDetails(payment.id)}
             >
-              <View className="flex-1">
-                <Text className="text-sm font-medium">
+              <View style={{ flex: 1, marginRight: 8 }}>
+                <Text className="text-sm font-medium" numberOfLines={1}>
                   {payment.student.name}
                 </Text>
-                <Text className="text-xs text-gray-500 mt-0.5">
+                <Text
+                  className="text-xs text-gray-500 mt-0.5"
+                  numberOfLines={1}
+                >
                   Venc. {formatDate(payment.dueDate)}
                   {payment.paidAt
                     ? ` · Paga em ${formatDate(payment.paidAt)}`
                     : ''}
                 </Text>
               </View>
-              <View className="items-end mr-2">
-                <Text className="text-sm font-bold">R$ {payment.amount}</Text>
+              <View
+                style={{
+                  alignItems: 'flex-end',
+                  marginRight: 8,
+                  flexShrink: 0,
+                }}
+              >
+                <Text className="text-sm font-bold" style={{ flexShrink: 0 }}>
+                  R$ {formatCurrency(payment.amount)}
+                </Text>
                 <View className="mt-1">
-                  <StatusBadge status={payment.status} />
+                  <StatusPill {...paymentStatusConfig(payment.status)} />
                 </View>
               </View>
               <ChevronRight size={16} color="#D4CFC4" />
@@ -365,13 +363,21 @@ export default function Payments() {
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
   const [historyFilter, setHistoryFilter] = useState<string>('all'); // <-- NOVO
 
+  const queryClient = useQueryClient();
+
   const { data, isLoading, error } = useQuery({
-    queryKey: ['payments'],
+    queryKey: paymentKeys.my(),
     queryFn: async () => {
       const response = await api.get<Payment[]>('/payments/my');
       return response.data;
     },
   });
+
+  useFocusEffect(
+    useCallback(() => {
+      queryClient.invalidateQueries({ queryKey: paymentKeys.my() });
+    }, [queryClient]),
+  );
 
   const openPayments = useMemo(() => {
     if (!data) return [];
@@ -381,6 +387,19 @@ export default function Payments() {
         (a, b) => new Date(a.dueDate).getTime() - new Date(b.dueDate).getTime(),
       );
   }, [data]);
+
+  // se uma fatura selecionada sumir de openPayments (ex: acabou de ser
+  // paga, e o invalidateQueries trouxe o status novo), ela precisa sair
+  // da seleção também — senão o rodapé fica mostrando uma seleção
+  // "fantasma" que não existe mais na lista
+  useEffect(() => {
+    setSelectedIds((prev) => {
+      const openIds = new Set(openPayments.map((p) => p.id));
+      const next = new Set([...prev].filter((id) => openIds.has(id)));
+      // só cria um novo Set se algo realmente mudou, evita re-render à toa
+      return next.size === prev.size ? prev : next;
+    });
+  }, [openPayments]);
 
   // Agrupa as faturas abertas por aluno — usado só na renderização
   const openPaymentsByStudent = useMemo(() => {
@@ -567,15 +586,16 @@ export default function Payments() {
                   borderColor: '#FEE2E2',
                 }}
               >
-                <View>
+                <View style={{ flex: 1, marginRight: 8 }}>
                   <Text className="text-[11px] font-bold uppercase tracking-widest text-red-600 mb-1">
                     {openPayments.length} faturas em aberto
                   </Text>
                   <Text
                     className="text-xl"
                     style={{ fontFamily: 'PlayfairDisplay_700Bold' }}
+                    numberOfLines={1}
                   >
-                    Total: R${' '}
+                    Total: R$
                     {formatCurrency(
                       openPayments.reduce((s, p) => s + Number(p.amount), 0),
                     )}
@@ -584,8 +604,12 @@ export default function Payments() {
                 <TouchableOpacity
                   onPress={allSelected ? clearSelection : selectAll}
                   className="bg-[#F5F1EA] rounded-full px-3 py-2"
+                  style={{ flexShrink: 0 }}
                 >
-                  <Text className="text-xs font-bold text-[#B08D57]">
+                  <Text
+                    className="text-xs font-bold text-[#B08D57]"
+                    numberOfLines={1}
+                  >
                     {allSelected ? 'Limpar' : 'Selecionar todas'}
                   </Text>
                 </TouchableOpacity>
@@ -603,7 +627,10 @@ export default function Payments() {
                           {name.charAt(0).toUpperCase()}
                         </Text>
                       </View>
-                      <Text className="text-xs font-bold uppercase tracking-widest text-gray-500">
+                      <Text
+                        className="text-xs font-bold uppercase tracking-widest text-gray-500 flex-1"
+                        numberOfLines={1}
+                      >
                         {name}
                       </Text>
                     </View>
@@ -731,7 +758,7 @@ export default function Payments() {
         >
           <View className="flex-row items-center justify-between mb-3">
             <Text className="text-sm text-gray-500">
-              {selectedIds.size}{' '}
+              {selectedIds.size}
               {selectedIds.size === 1
                 ? 'fatura selecionada'
                 : 'faturas selecionadas'}

@@ -1,8 +1,11 @@
 import { Tabs } from 'expo-router';
 import { Users, Wallet, CalendarClock } from 'lucide-react-native';
 import { AdminTopBar } from '../../components/AdminTopBar';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 export default function AdminTabsLayout() {
+  const insets = useSafeAreaInsets();
+
   return (
     <Tabs
       screenOptions={{
@@ -13,8 +16,9 @@ export default function AdminTabsLayout() {
         tabBarStyle: {
           backgroundColor: '#F5F1EA',
           borderTopColor: 'rgba(0,0,0,0.06)',
-          height: 64,
+          height: 64 + insets.bottom,
           paddingTop: 6,
+          paddingBottom: insets.bottom,
         },
         tabBarLabelStyle: { fontSize: 11, fontWeight: '500' },
       }}

@@ -5,8 +5,8 @@ import {
   ScrollView,
   ActivityIndicator,
 } from 'react-native';
-import { useQuery } from '@tanstack/react-query';
-import { useRouter } from 'expo-router';
+import { useQuery, useQueryClient } from '@tanstack/react-query';
+import { useFocusEffect, useRouter } from 'expo-router';
 import {
   CalendarClock,
   History,
@@ -18,6 +18,11 @@ import { formatInstrument } from '../../lib/instrument';
 import { getPaymentUrgency } from '../../lib/paymentUrgency';
 import { useCountdown } from '../../lib/useCountdown';
 import { useStudent } from '../../context/StudentContext';
+import { dashboardKeys } from '../../lib/queryKeys';
+import { lessonStatusConfig } from '../../lib/status';
+import { StatusPill } from '../../components/ui/StatusPill';
+import { useCallback } from 'react';
+import { formatCurrency } from '../../lib/paymentFormat';
 
 type PaymentSummary = {
   id: string;
@@ -38,8 +43,6 @@ type DashboardItem = {
     scheduledAt: string;
     teacher: { user: { name: string } } | null;
   } | null;
-  // Todas as faturas em aberto (PENDING/OVERDUE) do aluno, da mais
-  // antiga (mais urgente) pra mais nova. Vazio = nada pendente.
   openPayments: PaymentSummary[];
 };
 
@@ -67,7 +70,6 @@ function formatTime(iso: string) {
   });
 }
 
-// "2026-08" -> "Agosto"
 function formatReferenceMonth(referenceMonth: string) {
   const [year, month] = referenceMonth.split('-').map(Number);
   const date = new Date(year, month - 1, 1);
@@ -124,7 +126,6 @@ function DashboardCard({
   );
 }
 
-// Countdown ao vivo (dias:horas:min:seg), exclusivo da próxima aula.
 function NextLessonCountdown({ scheduledAt }: { scheduledAt: string }) {
   const countdown = useCountdown(scheduledAt);
 
@@ -152,17 +153,59 @@ function NextLessonCountdown({ scheduledAt }: { scheduledAt: string }) {
   );
 }
 
+// Nota discreta (mesmo estilo do "+N faturas em aberto, toque para
+// ver" que já existia para o próprio aluno) avisando que OUTRO aluno
+// vinculado à conta tem fatura pendente. Aparece independente de o
+// aluno atual ter ou não fatura própria em aberto — sem isso, um
+// responsável com múltiplos filhos podia ver "tudo em dia" aqui
+// enquanto outro filho acumulava atrasos sem nenhum sinal visual.
+function OtherStudentsPendingNote({
+  otherStudents,
+  onPress,
+}: {
+  otherStudents: DashboardItem[];
+  onPress: () => void;
+}) {
+  if (otherStudents.length === 0) return null;
+
+  const label =
+    otherStudents.length === 1
+      ? `${otherStudents[0].student.name} também tem fatura em aberto`
+      : `${otherStudents.length} outros alunos têm faturas em aberto`;
+
+  return (
+    <TouchableOpacity
+      onPress={(e) => {
+        e.stopPropagation?.();
+        onPress();
+      }}
+      hitSlop={{ top: 4, bottom: 4, left: 4, right: 4 }}
+    >
+      <Text className="text-[11px] text-gray-400 mt-1.5">
+        {label}, toque para ver
+      </Text>
+    </TouchableOpacity>
+  );
+}
+
 export default function Index() {
   const router = useRouter();
+  const queryClient = useQueryClient();
+  const { selectedStudentId } = useStudent();
 
-  const { selectedStudentId } = useStudent(); // <-- substitui o useState
   const { data, isLoading, error } = useQuery({
-    queryKey: ['dashboard'],
+    queryKey: dashboardKeys.all,
     queryFn: async () => {
       const response = await api.get<DashboardItem[]>('/lessons/my/dashboard');
       return response.data;
     },
   });
+
+  useFocusEffect(
+    useCallback(() => {
+      queryClient.invalidateQueries({ queryKey: dashboardKeys.all });
+    }, [queryClient]),
+  );
 
   if (isLoading) {
     return (
@@ -186,7 +229,6 @@ export default function Index() {
     data.find((d) => d.student.id === selectedStudentId) ?? data[0];
   const { student, nextLesson, lastLesson, openPayments } = current;
 
-  // A mais urgente já vem em primeiro (o backend ordena por dueDate asc)
   const mostUrgentPayment = openPayments[0] ?? null;
   const extraOpenCount = openPayments.length - 1;
 
@@ -194,18 +236,21 @@ export default function Index() {
     ? getPaymentUrgency(mostUrgentPayment.dueDate, mostUrgentPayment.status)
     : null;
 
+  // Outros alunos (vinculados à mesma conta) que têm fatura em
+  // aberto — mostrado independente do aluno atual estar em dia ou
+  // não, já que é uma informação sobre OUTRA pessoa, não sobre ele.
+  const otherStudentsWithOpenPayments = data.filter(
+    (d) => d.student.id !== student.id && d.openPayments.length > 0,
+  );
+
+  // "Última aula" só existe quando já ocorreu, então o status visual
+  // aqui é sempre o de aula concluída — usa a mesma fonte central em
+  // vez do badge verde hardcoded que existia antes.
+  const lastLessonConfig = lessonStatusConfig('COMPLETED', false);
+
   return (
     <View className="flex-1 bg-[#F5F1EA]">
-      {/* <DashboardHeader
-        students={data.map((d) => d.student)}
-        selectedId={student.id}
-        onSelect={setSelectedId}
-      /> */}
-
       <ScrollView className="flex-1 px-4 pt-2">
-        <Text className="text-xs tracking-[3px] text-[#B08D57] font-bold mb-1">
-          AQUI TEM MÚSICA
-        </Text>
         <Text
           className="text-3xl text-[#1A1A1A] mb-1"
           style={{ fontFamily: 'PlayfairDisplay_700Bold' }}
@@ -263,10 +308,8 @@ export default function Index() {
                 {lastLesson.teacher ? `${lastLesson.teacher.user.name} · ` : ''}
                 {formatInstrument(student.instrument)}
               </Text>
-              <View className="self-start bg-green-50 rounded-full px-2.5 py-1 mt-1.5">
-                <Text className="text-green-600 text-[11px] font-bold">
-                  ✓ Realizada
-                </Text>
+              <View style={{ marginTop: 6, alignSelf: 'flex-start' }}>
+                <StatusPill {...lastLessonConfig} />
               </View>
             </>
           ) : (
@@ -289,22 +332,18 @@ export default function Index() {
                 className="text-[15px] font-semibold"
                 style={{ fontFamily: FONT_HEADING }}
               >
-                R$ {mostUrgentPayment.amount}
+                R$ {formatCurrency(mostUrgentPayment.amount)}
               </Text>
               <Text className="text-[13px] text-gray-500 mt-0.5">
                 Vence {formatShortDate(mostUrgentPayment.dueDate)}
               </Text>
               {paymentUrgency && (
-                <View
-                  className="self-start rounded-full px-2.5 py-1 mt-1.5"
-                  style={{ backgroundColor: paymentUrgency.colorBg }}
-                >
-                  <Text
-                    className="text-[11px] font-bold"
-                    style={{ color: paymentUrgency.colorText }}
-                  >
-                    {paymentUrgency.label}
-                  </Text>
+                <View style={{ marginTop: 6, alignSelf: 'flex-start' }}>
+                  <StatusPill
+                    label={paymentUrgency.label}
+                    colorText={paymentUrgency.colorText}
+                    colorBg={paymentUrgency.colorBg}
+                  />
                 </View>
               )}
               {extraOpenCount > 0 && (
@@ -316,11 +355,21 @@ export default function Index() {
                   , toque para ver
                 </Text>
               )}
+              <OtherStudentsPendingNote
+                otherStudents={otherStudentsWithOpenPayments}
+                onPress={() => router.push('/payments')}
+              />
             </>
           ) : (
-            <Text className="text-[13px] text-green-600">
-              Sem fatura disponível
-            </Text>
+            <>
+              <Text className="text-[13px] text-green-600">
+                Sem fatura disponível
+              </Text>
+              <OtherStudentsPendingNote
+                otherStudents={otherStudentsWithOpenPayments}
+                onPress={() => router.push('/payments')}
+              />
+            </>
           )}
         </DashboardCard>
 

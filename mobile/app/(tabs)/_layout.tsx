@@ -1,5 +1,6 @@
 import { View } from 'react-native';
 import { Tabs } from 'expo-router';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Home, CalendarDays, Wallet } from 'lucide-react-native';
 import { TopBar } from '../../components/TopBar';
 import { StudentProvider } from '../../context/StudentContext';
@@ -8,6 +9,7 @@ import { StudentSwitcher } from '../../components/StudentSwitcher';
 // TabsLayoutInner fica DENTRO do StudentProvider,
 // então StudentSwitcher consegue acessar o contexto
 function TabsLayoutInner() {
+  const insets = useSafeAreaInsets();
   return (
     <Tabs
       screenOptions={{
@@ -23,8 +25,9 @@ function TabsLayoutInner() {
         tabBarStyle: {
           backgroundColor: '#F5F1EA',
           borderTopColor: 'rgba(0,0,0,0.06)',
-          height: 64,
+          height: 64 + insets.bottom,
           paddingTop: 6,
+          paddingBottom: insets.bottom,
         },
         tabBarLabelStyle: { fontSize: 11, fontWeight: '500' },
       }}

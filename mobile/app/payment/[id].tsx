@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import {
   View,
   Text,
@@ -7,7 +7,7 @@ import {
   ActivityIndicator,
   TouchableOpacity,
 } from 'react-native';
-import { useQuery } from '@tanstack/react-query';
+import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { useLocalSearchParams, useRouter, Stack } from 'expo-router';
 import * as Clipboard from 'expo-clipboard';
 import {
@@ -23,45 +23,22 @@ import {
 import { api } from '../../lib/api';
 import type { Payment } from '../../lib/types/payment';
 import { useCountdown } from '../../lib/useCountdown';
+import { useAppStateRefetch } from '../../lib/useAppStateRefetch';
+import { dashboardKeys, paymentKeys } from '../../lib/queryKeys';
+import {
+  formatMonthLabel,
+  formatFullDate,
+  formatPixCountdown,
+  formatCurrency,
+} from '../../lib/paymentFormat';
+import { paymentStatusConfig } from '../../lib/status';
+import { StatusPill } from '../../components/ui/StatusPill';
 
-function formatMonthLabel(referenceMonth: string) {
-  const date = new Date(referenceMonth + 'T00:00:00');
-  const label = date.toLocaleDateString('pt-BR', {
-    month: 'long',
-    year: 'numeric',
-  });
-  return label.charAt(0).toUpperCase() + label.slice(1);
-}
-
-function formatFullDate(iso: string) {
-  const date = new Date(iso);
-  const label = date.toLocaleDateString('pt-BR', {
-    weekday: 'long',
-    day: 'numeric',
-    month: 'long',
-    year: 'numeric',
-  });
-  return label.charAt(0).toUpperCase() + label.slice(1);
-}
-
-function statusConfig(status: Payment['status']) {
-  if (status === 'PAID')
-    return { label: 'Paga', bg: 'bg-green-50', text: 'text-green-700' };
-  if (status === 'OVERDUE')
-    return { label: 'Atrasada', bg: 'bg-red-50', text: 'text-red-700' };
-  return { label: 'Pendente', bg: 'bg-yellow-50', text: 'text-yellow-700' };
-}
-
-// mm:ss — countdown de PIX nunca passa de minutos, não precisa mostrar dias/horas
-function formatPixCountdown(minutes: number, seconds: number) {
-  const totalMinutes = minutes;
-  return `${String(totalMinutes).padStart(2, '0')}:${String(seconds).padStart(2, '0')}`;
-}
-
-export default function PaymentDetail() {
+export default function PaymentCheckout() {
   const { id } = useLocalSearchParams<{ id: string }>();
   const router = useRouter();
   const [copied, setCopied] = useState(false);
+  const queryClient = useQueryClient();
 
   const {
     data: payment,
@@ -70,19 +47,27 @@ export default function PaymentDetail() {
     refetch,
     isFetching,
   } = useQuery({
-    queryKey: ['payment', id],
+    queryKey: paymentKeys.detail(id!),
     queryFn: async () => {
       const response = await api.get<Payment>(`/payments/my/${id}`);
       return response.data;
     },
     enabled: !!id,
-    refetchOnMount: 'always', // NOVO
+    refetchOnMount: 'always',
+    refetchInterval: (query) =>
+      query.state.data?.status === 'PAID' ? false : 5000,
   });
 
+  useAppStateRefetch(paymentKeys.detail(id!));
+
+  useEffect(() => {
+    if (payment?.status === 'PAID') {
+      queryClient.invalidateQueries({ queryKey: paymentKeys.all });
+      queryClient.invalidateQueries({ queryKey: dashboardKeys.all });
+    }
+  }, [payment?.status, queryClient]);
+
   const countdown = useCountdown(payment?.pixExpiresAt ?? null);
-  // const countdown = useCountdown(
-  //   payment?.pixExpiresAt ? getDisplayExpiresAt(payment?.pixExpiresAt) : null,
-  // );
 
   async function handleCopy() {
     if (!payment?.pixCopyPaste) return;
@@ -111,19 +96,13 @@ export default function PaymentDetail() {
 
   const isPaid = payment.status === 'PAID';
   const isBlocked = !isPaid && payment.isEligibleForPayment === false;
-  const config = statusConfig(payment.status);
-
-  // se o countdown zerou, o PIX mostrado na tela já morreu — a
-  // próxima vez que o usuário reabrir essa tela (ou puxar pra
-  // atualizar), o backend gera um novo automaticamente. Aqui só
-  // avisamos visualmente que esse específico expirou.
+  const config = paymentStatusConfig(payment.status);
   const pixExpired = countdown?.isPast ?? false;
 
   return (
     <ScrollView className="flex-1 bg-[#F5F1EA]">
       <Stack.Screen options={{ headerShown: false }} />
 
-      {/* Header claro, padrão botão-voltar */}
       <View
         className="flex-row items-center px-4 pt-14 pb-3 bg-[#F5F1EA]"
         style={{ borderBottomWidth: 1, borderBottomColor: 'rgba(0,0,0,0.04)' }}
@@ -135,7 +114,9 @@ export default function PaymentDetail() {
         >
           <ArrowLeft size={18} color="#1A1A1A" />
         </TouchableOpacity>
-        <Text className="text-base font-semibold">Pagar com PIX</Text>
+        <Text className="text-base font-semibold">
+          {isPaid ? 'Fatura paga' : 'Pagar com PIX'}
+        </Text>
       </View>
 
       <View className="px-5 pt-5 pb-8">
@@ -147,18 +128,13 @@ export default function PaymentDetail() {
             className="text-4xl"
             style={{ fontFamily: 'PlayfairDisplay_700Bold' }}
           >
-            R$ {payment.amount}
+            R$ {formatCurrency(payment.amount)}
           </Text>
-          <View className={`rounded-full px-2.5 py-1 ${config.bg}`}>
-            <Text className={`text-[11px] font-bold ${config.text}`}>
-              {config.label}
-            </Text>
-          </View>
+          <StatusPill {...config} size="md" />
         </View>
       </View>
 
       <View className="px-5 gap-4 pb-10">
-        {/* Detalhes */}
         <View
           className="bg-white rounded-2xl p-5 gap-3"
           style={{
@@ -195,7 +171,6 @@ export default function PaymentDetail() {
           )}
         </View>
 
-        {/* PIX — só mostra se não estiver paga E for elegível */}
         {!isPaid && !isBlocked && (
           <View
             className="bg-white rounded-2xl p-5"
@@ -294,7 +269,6 @@ export default function PaymentDetail() {
           </View>
         )}
 
-        {/* Bloqueada — existe fatura mais antiga do mesmo aluno em aberto */}
         {isBlocked && (
           <TouchableOpacity
             className="bg-white rounded-2xl p-5"

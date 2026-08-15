@@ -1,3 +1,4 @@
+import { useEffect } from 'react';
 import {
   View,
   Text,
@@ -5,7 +6,7 @@ import {
   ActivityIndicator,
   TouchableOpacity,
 } from 'react-native';
-import { useQuery } from '@tanstack/react-query';
+import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { useLocalSearchParams, useRouter, Stack } from 'expo-router';
 import {
   ArrowLeft,
@@ -17,53 +18,45 @@ import {
 import { api } from '../../lib/api';
 import type { Payment } from '../../lib/types/payment';
 import { getPaymentUrgency } from '../../lib/paymentUrgency';
-
-function formatMonthLabel(referenceMonth: string) {
-  const date = new Date(referenceMonth + 'T00:00:00');
-  const label = date.toLocaleDateString('pt-BR', {
-    month: 'long',
-    year: 'numeric',
-  });
-  return label.charAt(0).toUpperCase() + label.slice(1);
-}
-
-function formatFullDate(iso: string) {
-  const date = new Date(iso);
-  const label = date.toLocaleDateString('pt-BR', {
-    weekday: 'long',
-    day: 'numeric',
-    month: 'long',
-    year: 'numeric',
-  });
-  return label.charAt(0).toUpperCase() + label.slice(1);
-}
-
-function statusConfig(status: Payment['status']) {
-  if (status === 'PAID')
-    return { label: 'Paga', bg: 'bg-green-50', text: 'text-green-700' };
-  if (status === 'OVERDUE')
-    return { label: 'Atrasada', bg: 'bg-red-50', text: 'text-red-700' };
-  return { label: 'Pendente', bg: 'bg-yellow-50', text: 'text-yellow-700' };
-}
+import { useAppStateRefetch } from '../../lib/useAppStateRefetch';
+import { paymentKeys, dashboardKeys } from '../../lib/queryKeys';
+import {
+  formatMonthLabel,
+  formatFullDate,
+  formatCurrency,
+} from '../../lib/paymentFormat';
+import { paymentStatusConfig } from '../../lib/status';
+import { StatusPill } from '../../components/ui/StatusPill';
 
 export default function PaymentDetail() {
   const { id } = useLocalSearchParams<{ id: string }>();
   const router = useRouter();
+  const queryClient = useQueryClient();
 
   const {
     data: payment,
     isLoading,
     error,
   } = useQuery({
-    queryKey: ['payment-detail', id],
+    queryKey: paymentKeys.detail(id!),
     queryFn: async () => {
       const response = await api.get<Payment>(`/payments/my/${id}`);
       return response.data;
     },
     enabled: !!id,
+    refetchOnMount: 'always',
+    refetchInterval: (query) =>
+      query.state.data?.status === 'PAID' ? false : 5000,
   });
 
-  console.log({ payment });
+  useAppStateRefetch(paymentKeys.detail(id!));
+
+  useEffect(() => {
+    if (payment?.status === 'PAID') {
+      queryClient.invalidateQueries({ queryKey: paymentKeys.all });
+      queryClient.invalidateQueries({ queryKey: dashboardKeys.all });
+    }
+  }, [payment?.status, queryClient]);
 
   if (isLoading) {
     return (
@@ -73,7 +66,7 @@ export default function PaymentDetail() {
     );
   }
 
-  if (error || !payment) {
+  if (error || !payment || !payment.student) {
     return (
       <View className="flex-1 items-center justify-center bg-[#F5F1EA] px-6">
         <Text className="text-red-500 text-center">
@@ -84,7 +77,7 @@ export default function PaymentDetail() {
   }
 
   const isPaid = payment.status === 'PAID';
-  const config = statusConfig(payment.status);
+  const config = paymentStatusConfig(payment.status);
 
   return (
     <ScrollView className="flex-1 bg-[#F5F1EA]">
@@ -113,18 +106,13 @@ export default function PaymentDetail() {
             className="text-4xl"
             style={{ fontFamily: 'PlayfairDisplay_700Bold' }}
           >
-            R$ {payment.amount}
+            R$ {formatCurrency(payment.amount)}
           </Text>
-          <View className={`rounded-full px-2.5 py-1 ${config.bg}`}>
-            <Text className={`text-[11px] font-bold ${config.text}`}>
-              {config.label}
-            </Text>
-          </View>
+          <StatusPill {...config} size="md" />
         </View>
       </View>
 
       <View className="px-5 gap-4 pt-3 pb-10">
-        {/* Detalhes básicos */}
         <View
           className="bg-white rounded-2xl p-5 gap-3"
           style={{
@@ -154,16 +142,12 @@ export default function PaymentDetail() {
               );
               if (!urgency) return null;
               return (
-                <View
-                  className="self-start rounded-full px-3 py-1.5"
-                  style={{ backgroundColor: urgency.colorBg }}
-                >
-                  <Text
-                    className="text-xs font-bold"
-                    style={{ color: urgency.colorText }}
-                  >
-                    {urgency.label}
-                  </Text>
+                <View style={{ alignSelf: 'flex-start' }}>
+                  <StatusPill
+                    label={urgency.label}
+                    colorText={urgency.colorText}
+                    colorBg={urgency.colorBg}
+                  />
                 </View>
               );
             })()}
@@ -183,7 +167,6 @@ export default function PaymentDetail() {
           )}
         </View>
 
-        {/* Ação — só aparece se NÃO estiver paga */}
         {!isPaid && payment.isEligibleForPayment && (
           <TouchableOpacity
             className="bg-[#B08D57] rounded-2xl py-4 flex-row items-center justify-center gap-2"

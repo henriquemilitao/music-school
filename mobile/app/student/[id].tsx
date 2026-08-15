@@ -20,6 +20,7 @@ import {
 } from 'lucide-react-native';
 import { api } from '../../lib/api';
 import { formatInstrument } from '../../lib/instrument';
+import { formatCurrency } from '../../lib/paymentFormat';
 
 // ─── Tipos ────────────────────────────────────────────────────────────
 
@@ -104,10 +105,6 @@ function formatMonthLabel(monthKey: string) {
   return capitalize(
     date.toLocaleDateString('pt-BR', { month: 'long', year: 'numeric' }),
   );
-}
-
-function formatMoney(value: string) {
-  return `R$ ${Number(value).toFixed(2).replace('.', ',')}`;
 }
 
 function lessonStatusConfig(status: Lesson['status']) {
@@ -527,7 +524,7 @@ export default function AdminStudentDetail() {
                   <InfoBloco label="Horário" valor={enrollment.startTime} />
                   <InfoBloco
                     label="Valor mensal"
-                    valor={formatMoney(enrollment.monthlyAmount)}
+                    valor={formatCurrency(enrollment.monthlyAmount)}
                   />
                 </View>
               ) : (
@@ -597,7 +594,7 @@ export default function AdminStudentDetail() {
                           </View>
                           <View>
                             <Text className="text-sm font-medium">
-                              {formatMoney(payment.amount)}
+                              {formatCurrency(payment.amount)}
                             </Text>
                             <Text className="text-[13px] text-gray-500 mt-0.5">
                               Venc. {formatDate(payment.dueDate)}

@@ -12,6 +12,8 @@ import { api } from '../../lib/api';
 import { router } from 'expo-router';
 import { formatInstrument } from '../../lib/instrument';
 import { useStudent } from '../../context/StudentContext';
+import { lessonStatusConfig } from '../../lib/status';
+import { StatusPill } from '../../components/ui/StatusPill';
 
 type Lesson = {
   id: string;
@@ -61,27 +63,6 @@ function formatMonthLabel(monthKey: string) {
   const date = new Date(year, month - 1, 1);
   return capitalize(
     date.toLocaleDateString('pt-BR', { month: 'long', year: 'numeric' }),
-  );
-}
-
-function lessonStatusConfig(lesson: Lesson) {
-  if (lesson.isMakeup)
-    return { label: 'Reposição', bg: 'bg-purple-50', text: 'text-purple-700' };
-  if (lesson.status === 'COMPLETED')
-    return { label: 'Realizada', bg: 'bg-green-50', text: 'text-green-700' };
-  if (lesson.status === 'CANCELLED')
-    return { label: 'Falta', bg: 'bg-red-50', text: 'text-red-700' };
-  return { label: 'Agendada', bg: 'bg-yellow-50', text: 'text-yellow-700' };
-}
-
-function StatusBadge({ lesson }: { lesson: Lesson }) {
-  const config = lessonStatusConfig(lesson);
-  return (
-    <View className={`rounded-full px-2.5 py-1 ${config.bg}`}>
-      <Text className={`text-[11px] font-bold ${config.text}`}>
-        {config.label}
-      </Text>
-    </View>
   );
 }
 
@@ -149,7 +130,6 @@ function HistoryRow({ lesson }: { lesson: Lesson }) {
       }}
       onPress={() => router.push(`/lesson/${lesson.id}`)}
     >
-      {' '}
       <View className="flex-1">
         <Text className="text-sm font-medium">
           {formatShortDate(lesson.scheduledAt)}
@@ -159,7 +139,9 @@ function HistoryRow({ lesson }: { lesson: Lesson }) {
           {lesson.teacher ? ` · ${lesson.teacher.user.name}` : ''}
         </Text>
       </View>
-      <StatusBadge lesson={lesson} />
+      <View style={{ flexShrink: 0 }}>
+        <StatusPill {...lessonStatusConfig(lesson.status, lesson.isMakeup)} />
+      </View>
     </TouchableOpacity>
   );
 }
@@ -244,17 +226,17 @@ function EmptyState({ text }: { text: string }) {
 
 export default function Lessons() {
   const [tab, setTab] = useState<'proximas' | 'historico'>('proximas');
-  const { selectedStudentId, selectedStudent } = useStudent(); // <-- NOVO
+  const { selectedStudentId, selectedStudent } = useStudent();
   const { data, isLoading, error } = useQuery({
-    queryKey: ['lessons', selectedStudentId], // <-- depende do aluno selecionado
+    queryKey: ['lessons', selectedStudentId],
     queryFn: async () => {
       if (!selectedStudentId) return [];
       const response = await api.get<Lesson[]>('/lessons/my', {
-        params: { studentId: selectedStudentId }, // <-- filtra no backend
+        params: { studentId: selectedStudentId },
       });
       return response.data;
     },
-    enabled: !!selectedStudentId, // <-- só busca quando tem aluno
+    enabled: !!selectedStudentId,
   });
 
   if (isLoading) {
@@ -305,7 +287,7 @@ export default function Lessons() {
       >
         Aulas
       </Text>
-      {selectedStudent && ( // <-- usa o contexto
+      {selectedStudent && (
         <Text className="text-gray-500 text-sm mb-4">
           {selectedStudent.name} ·{' '}
           {formatInstrument(selectedStudent.instrument)}

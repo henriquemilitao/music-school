@@ -10,6 +10,8 @@ import { useLocalSearchParams, useRouter, Stack } from 'expo-router';
 import { ArrowLeft, Clock, User, Music, StickyNote } from 'lucide-react-native';
 import { api } from '../../lib/api';
 import { formatInstrument } from '../../lib/instrument';
+import { lessonStatusConfig } from '../../lib/status';
+import { StatusPill } from '../../components/ui/StatusPill';
 
 type Lesson = {
   id: string;
@@ -50,16 +52,6 @@ function addMinutes(iso: string, minutes: number) {
   const date = new Date(iso);
   date.setMinutes(date.getMinutes() + minutes);
   return date.toISOString();
-}
-
-function statusConfig(lesson: Lesson) {
-  if (lesson.isMakeup)
-    return { label: 'Reposição', bg: 'bg-purple-50', text: 'text-purple-700' };
-  if (lesson.status === 'COMPLETED')
-    return { label: 'Realizada', bg: 'bg-green-50', text: 'text-green-700' };
-  if (lesson.status === 'CANCELLED')
-    return { label: 'Falta', bg: 'bg-red-50', text: 'text-red-700' };
-  return { label: 'Agendada', bg: 'bg-yellow-50', text: 'text-yellow-700' };
 }
 
 function InfoRow({
@@ -119,7 +111,7 @@ export default function LessonDetail() {
     );
   }
 
-  const config = statusConfig(lesson);
+  const config = lessonStatusConfig(lesson.status, lesson.isMakeup);
 
   return (
     <ScrollView className="flex-1 bg-[#F5F1EA]">
@@ -146,12 +138,8 @@ export default function LessonDetail() {
         >
           {formatFullDate(lesson.scheduledAt)}
         </Text>
-        <View
-          className={`self-start rounded-full px-2.5 py-1 mt-2 ${config.bg}`}
-        >
-          <Text className={`text-[11px] font-bold ${config.text}`}>
-            {config.label}
-          </Text>
+        <View style={{ marginTop: 8, alignSelf: 'flex-start' }}>
+          <StatusPill {...config} />
         </View>
       </View>
 
