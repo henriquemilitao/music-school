@@ -1,24 +1,54 @@
 import { ScrollView, View, Text, TouchableOpacity } from 'react-native';
+import Animated, {
+  useAnimatedStyle,
+  withTiming,
+  useSharedValue,
+  useDerivedValue,
+  Easing,
+} from 'react-native-reanimated';
+import { useEffect } from 'react';
 import { useStudent } from '../context/StudentContext';
 import { formatInstrument } from '../lib/instrument';
 import { usePathname } from 'expo-router';
 
+const SWITCHER_HEIGHT = 56; // altura aproximada do conteúdo (ajuste conforme seu design)
+const ROUTES_WITH_SWITCHER = ['/', '/lessons'];
+
 export function StudentSwitcher() {
   const { students, selectedStudentId, setSelectedStudentId } = useStudent();
-  const pathname = usePathname(); // <-- NOVO
+  const pathname = usePathname();
 
-  // Invisível quando há apenas 1 aluno OU na tab de pagamentos
-  if (students.length <= 1 || pathname === '/payments') return null;
+  const visible =
+    students.length > 1 && ROUTES_WITH_SWITCHER.includes(pathname);
+  const progress = useSharedValue(visible ? 1 : 0);
+
+  useEffect(() => {
+    progress.value = withTiming(visible ? 1 : 0, {
+      duration: 400,
+    });
+  }, [visible]);
+
+  const animatedStyle = useAnimatedStyle(() => ({
+    height: progress.value * SWITCHER_HEIGHT,
+    opacity: progress.value,
+    overflow: 'hidden',
+  }));
+
+  // Se não há mais de 1 aluno, nunca faz sentido mostrar (economiza render)
+  if (students.length <= 1) return null;
 
   return (
-    <View
+    <Animated.View
       className="bg-[#F5F1EA]"
-      style={{ borderBottomWidth: 1, borderBottomColor: 'rgba(0,0,0,0.05)' }}
+      style={[
+        { borderBottomWidth: 1, borderBottomColor: 'rgba(0,0,0,0.05)' },
+        animatedStyle,
+      ]}
     >
       <ScrollView
         horizontal
         showsHorizontalScrollIndicator={false}
-        className="px-5 pt-1 pb-3"
+        className="px-5 pt-3 pb-3"
         contentContainerStyle={{ gap: 8, alignItems: 'center' }}
       >
         {students.map((student) => {
@@ -45,7 +75,6 @@ export function StudentSwitcher() {
                 elevation: active ? 0 : 1,
               }}
             >
-              {/* Avatar com inicial */}
               <View
                 style={{
                   width: 20,
@@ -69,7 +98,6 @@ export function StudentSwitcher() {
                 </Text>
               </View>
 
-              {/* Nome */}
               <Text
                 style={{
                   fontSize: 14,
@@ -80,7 +108,6 @@ export function StudentSwitcher() {
                 {student.name}
               </Text>
 
-              {/* Instrumento */}
               {instrument ? (
                 <Text
                   style={{
@@ -95,6 +122,6 @@ export function StudentSwitcher() {
           );
         })}
       </ScrollView>
-    </View>
+    </Animated.View>
   );
 }

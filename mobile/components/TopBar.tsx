@@ -38,33 +38,34 @@ export function TopBar() {
 
   return (
     <View
-      className="flex-row items-center justify-between px-5 pt-14 pb-3 bg-[#F5F1EA]"
+      className="px-5 pt-14 pb-3 bg-[#F5F1EA]"
       style={{ borderBottomWidth: 1, borderBottomColor: 'rgba(0,0,0,0.04)' }}
     >
-      <View className="flex-row items-center gap-1.5">
-        <Music size={18} color="#1A1A1A" />
-        <Text
-          className="text-lg"
-          style={{ fontFamily: 'PlayfairDisplay_600SemiBold' }}
+      <View className="flex-row items-center justify-between">
+        <View>
+          <View className="flex-row items-center gap-1.5">
+            <Music size={18} color="#1A1A1A" />
+            <Text
+              className="text-lg"
+              style={{ fontFamily: 'PlayfairDisplay_600SemiBold' }}
+            >
+              Pianíssima
+            </Text>
+          </View>
+
+          <Text className="text-[10px] tracking-[2px] text-[#B08D57]/70 font-semibold mt-1">
+            AQUI TEM MÚSICA
+          </Text>
+        </View>
+
+        <TouchableOpacity
+          className="w-9 h-9 rounded-full bg-white items-center justify-center"
+          style={{ borderWidth: 1, borderColor: 'rgba(0,0,0,0.05)' }}
+          onPress={() => setMenuOpen(true)}
         >
-          Pianíssima
-        </Text>
-        {/* <Image
-          source={logo}
-          style={{ width: 80, height: 80, marginTop: 10 }}
-          // style={{ height: 40, width: undefined, aspectRatio: 1 }}
-
-          resizeMode="contain"
-        /> */}
+          <Menu size={18} color="#1A1A1A" />
+        </TouchableOpacity>
       </View>
-
-      <TouchableOpacity
-        className="w-9 h-9 rounded-full bg-white items-center justify-center"
-        style={{ borderWidth: 1, borderColor: 'rgba(0,0,0,0.05)' }}
-        onPress={() => setMenuOpen(true)}
-      >
-        <Menu size={18} color="#1A1A1A" />
-      </TouchableOpacity>
 
       <Modal visible={menuOpen} transparent animationType="fade">
         <View className="flex-1">
@@ -79,13 +80,19 @@ export function TopBar() {
           >
             <View className="px-5 pt-14 pb-6 border-b border-gray-100">
               <View className="flex-row items-center justify-between mb-6">
-                <View className="flex-row items-center gap-1.5">
-                  <Music size={16} color="#B08D57" />
-                  <Text
-                    className="text-base"
-                    style={{ fontFamily: 'PlayfairDisplay_600SemiBold' }}
-                  >
-                    Pianíssima
+                <View>
+                  <View className="flex-row items-center gap-1.5">
+                    <Music size={16} color="#B08D57" />
+                    <Text
+                      className="text-base"
+                      style={{ fontFamily: 'PlayfairDisplay_600SemiBold' }}
+                    >
+                      Pianíssima
+                    </Text>
+                  </View>
+
+                  <Text className="text-[10px] tracking-[2px] text-[#B08D57]/70 font-semibold mt-1">
+                    AQUI TEM MÚSICA
                   </Text>
                 </View>
                 <TouchableOpacity onPress={() => setMenuOpen(false)}>

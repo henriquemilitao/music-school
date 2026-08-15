@@ -92,8 +92,8 @@ function UpcomingLesson({ lesson }: { lesson: Lesson }) {
           {month}
         </Text>
         <Text
-          className="text-xl leading-none"
-          style={{ fontFamily: 'PlayfairDisplay_700Bold' }}
+          className="text-xl leading-tight" // subiu de text-xl pra text-2xl
+          style={{ fontFamily: 'PlayfairDisplay_700Bold', color: '#1a1a1a' }} // cor explícita, escura
         >
           {day}
         </Text>
@@ -226,6 +226,8 @@ function EmptyState({ text }: { text: string }) {
 
 export default function Lessons() {
   const [tab, setTab] = useState<'proximas' | 'historico'>('proximas');
+  console.log('Lessons render', Date.now()); // <-- temporário
+
   const { selectedStudentId, selectedStudent } = useStudent();
   const { data, isLoading, error } = useQuery({
     queryKey: ['lessons', selectedStudentId],

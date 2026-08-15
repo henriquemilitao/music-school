@@ -250,7 +250,7 @@ export default function Index() {
 
   return (
     <View className="flex-1 bg-[#F5F1EA]">
-      <ScrollView className="flex-1 px-4 pt-2">
+      <ScrollView className="flex-1 px-4 pt-4">
         <Text
           className="text-3xl text-[#1A1A1A] mb-1"
           style={{ fontFamily: 'PlayfairDisplay_700Bold' }}
@@ -363,7 +363,7 @@ export default function Index() {
           ) : (
             <>
               <Text className="text-[13px] text-green-600">
-                Sem fatura disponível
+                Pagamentos em dia
               </Text>
               <OtherStudentsPendingNote
                 otherStudents={otherStudentsWithOpenPayments}

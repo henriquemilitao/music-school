@@ -34,6 +34,17 @@ import {
 import { paymentStatusConfig } from '../../lib/status';
 import { StatusPill } from '../../components/ui/StatusPill';
 
+// "válido até 14:47" — horário absoluto de expiração, exibido junto
+// com o countdown decrescente. O countdown sozinho cria urgência mas
+// exige conta mental caso o usuário saia e volte pro app; o horário
+// absoluto resolve isso sem competir visualmente com o countdown.
+function formatExpiresAtTime(iso: string) {
+  return new Date(iso).toLocaleTimeString('pt-BR', {
+    hour: '2-digit',
+    minute: '2-digit',
+  });
+}
+
 export default function PaymentCheckout() {
   const { id } = useLocalSearchParams<{ id: string }>();
   const router = useRouter();
@@ -181,7 +192,7 @@ export default function PaymentCheckout() {
               elevation: 2,
             }}
           >
-            <View className="flex-row items-center justify-between mb-4">
+            <View className="flex-row items-center justify-between mb-1">
               <View className="flex-row items-center gap-2">
                 <QrCode size={20} color="#B08D57" />
                 <Text className="text-sm font-bold">Pague via PIX</Text>
@@ -196,6 +207,12 @@ export default function PaymentCheckout() {
                 </View>
               )}
             </View>
+
+            {payment.pixExpiresAt && !pixExpired && (
+              <Text className="text-[11px] text-gray-400 text-right mb-3">
+                Válido até {formatExpiresAtTime(payment.pixExpiresAt)}
+              </Text>
+            )}
 
             {pixExpired ? (
               <View className="items-center py-6">
