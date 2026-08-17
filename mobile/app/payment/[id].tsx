@@ -220,6 +220,16 @@ export default function PaymentDetail() {
                   </Text>
                 </View>
               )}
+
+              {payment.pixExpiresAt && !pixExpired && (
+                <Text className="text-[11px] text-gray-400 text-center mb-3">
+                  Válido até{' '}
+                  {new Date(payment.pixExpiresAt).toLocaleTimeString('pt-BR', {
+                    hour: '2-digit',
+                    minute: '2-digit',
+                  })}
+                </Text>
+              )}
             </View>
 
             {pixExpired ? (

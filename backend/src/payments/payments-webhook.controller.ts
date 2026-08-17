@@ -17,18 +17,10 @@ import { PAYMENT_PROVIDER } from './payments.constants';
 import type { PaymentProvider } from './providers/payment-provider.interface';
 
 // Controller separado e SEM JwtAuthGuard de propósito — quem chama
-// essa rota é o gateway (AbacatePay), não um usuário logado.
-//
-// Duas camadas de segurança, nessa ordem:
-// 1. Secret na query string (?webhookSecret=...) — comparação simples
-// 2. Assinatura HMAC no header X-Webhook-Signature — garante que o
-//    corpo não foi alterado em trânsito
+// essa rota é o gateway (Mercado Pago), não um usuário logado.
 //
 // IMPORTANTE: pra validar a assinatura corretamente, o NestJS precisa
-// ter acesso ao rawBody (string exata que a AbacatePay assinou), não
-// o body já parseado como JSON. Isso exige `rawBody: true` no
-// main.ts — sem isso, req.rawBody vem undefined e a validação de
-// assinatura sempre falha.
+// ter acesso ao rawBody — configurado com `rawBody: true` no main.ts.
 @ApiTags('payments')
 @Controller('payments/webhook')
 export class PaymentsWebhookController {
@@ -40,12 +32,14 @@ export class PaymentsWebhookController {
   ) {}
 
   @Post(':provider')
-  @ApiExcludeEndpoint() // não expor no Swagger — não é uma rota que humanos chamam
+  @ApiExcludeEndpoint()
   async handleWebhook(
     @Param('provider') providerName: string,
     @Req() req: FastifyRequest & { rawBody?: Buffer | string },
     @Query('webhookSecret') webhookSecret: string | undefined,
-    @Headers('x-webhook-signature') signature: string,
+    @Query('data.id') dataIdFromQuery: string | undefined, // MP também manda o id como query param
+    @Headers('x-signature') signature: string,
+    @Headers('x-request-id') requestId: string,
   ) {
     if (providerName !== this.provider.name) {
       this.logger.warn(
@@ -54,7 +48,6 @@ export class PaymentsWebhookController {
       return { status: 'ignored', reason: 'unknown_provider' };
     }
 
-    // camada 1: secret na query string
     if (!this.provider.validateWebhookSecret(webhookSecret)) {
       this.logger.warn(
         'Webhook rejeitado — secret da query string não confere',
@@ -62,25 +55,34 @@ export class PaymentsWebhookController {
       throw new UnauthorizedException('Secret inválido');
     }
 
-    // camada 2: assinatura HMAC do corpo
     const rawBody = req.rawBody
       ? req.rawBody.toString()
       : JSON.stringify(req.body);
 
+    // o data.id também pode vir só no corpo, dependendo do tipo de
+    // notificação — usamos o da query como primeira fonte (é o que a
+    // doc do MP usa pra montar a assinatura) com fallback pro corpo
+    const bodyDataId = (req.body as { data?: { id?: string } })?.data?.id;
+    const dataId = dataIdFromQuery ?? bodyDataId;
+
     const isValidSignature = this.provider.validateWebhookSignature(
       rawBody,
       signature,
+      requestId,
+      dataId,
     );
     if (!isValidSignature) {
       this.logger.warn(
-        'Webhook rejeitado — assinatura HMAC inválida (possível tentativa fraudulenta)',
+        'Webhook rejeitado — assinatura inválida (possível tentativa fraudulenta)',
       );
       throw new BadRequestException('Assinatura inválida');
     }
 
     this.logger.log(`RAW BODY: ${JSON.stringify(req.body)}`);
 
-    const event = this.provider.parseWebhookEvent(req.body);
+    // AWAIT — parseWebhookEvent agora é async (busca o pagamento
+    // completo na API do Mercado Pago antes de confiar no status)
+    const event = await this.provider.parseWebhookEvent(req.body);
 
     this.logger.log(
       `Webhook processado: externalId=${event.externalId} status=${event.status}`,

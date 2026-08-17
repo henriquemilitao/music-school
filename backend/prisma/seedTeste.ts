@@ -1,7 +1,7 @@
 import { PrismaClient, Role, Instrument } from '@prisma/client';
 import * as bcrypt from 'bcrypt';
-import { AbacatePayProvider } from '../src/payments/providers/abacatepay.provider';
 import { ConfigService } from '@nestjs/config';
+import { MercadoPagoProvider } from '../src/payments/providers/mercadopago.provider';
 
 const prisma = new PrismaClient();
 
@@ -13,7 +13,7 @@ const fakeConfigService = {
   },
 } as ConfigService;
 
-const abacatePayProvider = new AbacatePayProvider(fakeConfigService);
+const mercadoPagoProvider = new MercadoPagoProvider(fakeConfigService);
 
 const now = new Date();
 
@@ -54,7 +54,7 @@ async function createPayment(p: {
       paidAt: p.paidAt ?? null,
       status: p.status,
       paymentMethod: 'GATEWAY',
-      provider: p.status === 'PAID' ? 'abacatepay' : undefined,
+      provider: p.status === 'PAID' ? 'mercadopago' : undefined,
       referenceMonth: label,
       idempotencyKey: key,
     },
@@ -400,7 +400,7 @@ async function main() {
             paidAt,
             status: 'PAID',
             paymentMethod: 'GATEWAY',
-            provider: 'abacatepay',
+            provider: 'mercadopago',
             referenceMonth: label,
             idempotencyKey: `${joaoStudent.id}-${label}`,
           },
@@ -420,7 +420,7 @@ async function main() {
           },
         });
         console.log('⏳ Gerando PIX real (João - julho)...');
-        const charge = await abacatePayProvider.createCharge({
+        const charge = await mercadoPagoProvider.createCharge({
           amount: 250,
           externalReference: `payment:${payment.id}`,
           description: `Mensalidade ${label} - João Aluno`,
@@ -428,7 +428,7 @@ async function main() {
         await prisma.payment.update({
           where: { id: payment.id },
           data: {
-            provider: 'abacatepay',
+            provider: 'mercadopago',
             externalId: charge.externalId,
             pixCopyPaste: charge.pixCopyPaste,
             pixQrCode: charge.pixQrCode,
@@ -459,7 +459,7 @@ async function main() {
       },
     });
     console.log('⏳ Gerando PIX real (João - agosto)...');
-    const augustCharge = await abacatePayProvider.createCharge({
+    const augustCharge = await mercadoPagoProvider.createCharge({
       amount: 250,
       externalReference: augustPayment.id,
       description: `Mensalidade ${augustLabel} - João Aluno`,
@@ -467,7 +467,7 @@ async function main() {
     await prisma.payment.update({
       where: { id: augustPayment.id },
       data: {
-        provider: 'abacatepay',
+        provider: 'mercadopago',
         externalId: augustCharge.externalId,
         pixCopyPaste: augustCharge.pixCopyPaste,
         pixQrCode: augustCharge.pixQrCode,

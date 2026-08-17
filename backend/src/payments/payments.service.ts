@@ -17,7 +17,7 @@ export class PaymentsService {
     @Inject(PAYMENT_PROVIDER) private provider: PaymentProvider,
   ) {}
 
-  private readonly PIX_EXPIRATION_SECONDS = 15 * 60; // 5 minutos
+  private readonly PIX_EXPIRATION_SECONDS = 15 * 60; // 15 minutos
 
   // ─── Aluno ──────────────────────────────────────────────────
 
@@ -294,6 +294,7 @@ export class PaymentsService {
       // isso que processWebhookEvent usa pra achar a fatura certa
       externalReference: `payment:${payment.id}`,
       description: `Mensalidade ${payment.referenceMonth} - ${payment.student.user.name}`,
+      idempotencySalt: String(Date.now()),
     });
 
     return this.prisma.payment.update({
@@ -620,12 +621,17 @@ export class PaymentsService {
       return payment;
     }
 
-    // dentro de ensurePaymentCharge:
+    // idempotencySalt = Date.now() garante que essa renovação gera
+    // uma chave de idempotência DIFERENTE da tentativa anterior (que
+    // expirou), então o Mercado Pago cria um PIX novo de verdade em
+    // vez de devolver o antigo já morto. Ver nota completa em
+    // mercadopago.provider.ts / payment-provider.interface.ts.
     const charge = await this.provider.createCharge({
       amount: Number(payment.amount),
       externalReference: `payment:${payment.id}`,
       description: `Mensalidade ${payment.referenceMonth} - ${payment.student.user.name}`,
       expiresInSeconds: this.PIX_EXPIRATION_SECONDS,
+      idempotencySalt: String(Date.now()),
     });
 
     return this.prisma.payment.update({
@@ -637,6 +643,9 @@ export class PaymentsService {
         pixCopyPaste: charge.pixCopyPaste,
         pixQrCode: charge.pixQrCode,
         pixExpiresAt: charge.expiresAt ?? null,
+      },
+      include: {
+        student: { select: { name: true } },
       },
     });
   }
@@ -663,6 +672,7 @@ export class PaymentsService {
       externalReference: `bundle:${bundle.id}`,
       description: `Pagamento agregado (${bundle.payments.length} faturas) - ${studentNames}`,
       expiresInSeconds: this.PIX_EXPIRATION_SECONDS,
+      idempotencySalt: String(Date.now()),
     });
 
     return this.prisma.paymentBundle.update({
