@@ -15,6 +15,8 @@ import {
   Inter_500Medium,
   Inter_600SemiBold,
 } from '@expo-google-fonts/inter';
+import { useEffect } from 'react';
+import { registerForPushNotificationsAsync } from '../lib/notifications';
 
 const queryClient = new QueryClient();
 
@@ -54,6 +56,16 @@ export default function RootLayout() {
     Inter_500Medium,
     Inter_600SemiBold,
   });
+
+  // dentro do seu componente de layout raiz, adicione:
+  useEffect(() => {
+    registerForPushNotificationsAsync().then((token) => {
+      if (token) {
+        console.log('Expo Push Token:', token);
+        // depois vamos mandar esse token pro backend aqui
+      }
+    });
+  }, []);
 
   if (!fontsLoaded) {
     return (
