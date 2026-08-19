@@ -28,6 +28,7 @@ import {
 } from '../../lib/paymentFormat';
 import { StatusPill } from '../../components/ui/StatusPill';
 import { paymentStatusConfig } from '../../lib/status';
+import * as Notifications from 'expo-notifications';
 
 // Novo componente — pode ficar no topo do próprio payments.tsx,
 // ou em components/PaymentsStatusSection.tsx se preferir separar
@@ -537,6 +538,7 @@ export default function Payments() {
   useFocusEffect(
     useCallback(() => {
       queryClient.invalidateQueries({ queryKey: paymentKeys.my() });
+      Notifications.setBadgeCountAsync(0); // limpa o número vermelho no ícone
     }, [queryClient]),
   );
 
@@ -730,6 +732,10 @@ export default function Payments() {
     }
   }
 
+  async function resetNotificationsDebug() {
+    await Notifications.dismissAllNotificationsAsync();
+    await Notifications.setBadgeCountAsync(0);
+  }
   return (
     <View className="flex-1 bg-[#F5F1EA]">
       <ScrollView className="flex-1">
@@ -745,6 +751,19 @@ export default function Payments() {
           clearSelection={clearSelection}
           router={router}
         />
+
+        {__DEV__ && (
+          <View className="px-5 mt-2">
+            <TouchableOpacity
+              onPress={resetNotificationsDebug}
+              className="bg-red-50 border border-red-200 rounded-xl py-3 items-center"
+            >
+              <Text className="text-red-600 text-xs font-bold">
+                🧪 Resetar notificações (debug)
+              </Text>
+            </TouchableOpacity>
+          </View>
+        )}
 
         <View className="px-5 mt-2 mb-10">
           <Text className="text-xs font-bold uppercase tracking-widest text-gray-400 mb-3">

@@ -226,7 +226,6 @@ function EmptyState({ text }: { text: string }) {
 
 export default function Lessons() {
   const [tab, setTab] = useState<'proximas' | 'historico'>('proximas');
-  console.log('Lessons render', Date.now()); // <-- temporário
 
   const { selectedStudentId, selectedStudent } = useStudent();
   const { data, isLoading, error } = useQuery({

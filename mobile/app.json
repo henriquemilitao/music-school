@@ -1,6 +1,6 @@
 {
   "expo": {
-    "name": "Pianissima",
+    "name": "Pianíssima",
     "slug": "mobile",
     "version": "1.0.0",
     "orientation": "portrait",
@@ -26,7 +26,7 @@
       "googleServicesFile": "./google-services.json"
     },
     "web": {
-      "favicon": "./assets/favicon.png"
+      "favicon": "./assets/icon.png"
     },
     "plugins": [
       "expo-router",
@@ -35,8 +35,8 @@
       [
         "expo-notifications",
         {
-          "icon": "./assets/icon.png",
-          "color": "#ffffff"
+          "icon": "./assets/notification-icon.png",
+          "color": "#B08D57"
         }
       ]
     ],

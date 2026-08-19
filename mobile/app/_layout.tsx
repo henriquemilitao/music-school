@@ -17,8 +17,30 @@ import {
 } from '@expo-google-fonts/inter';
 import { useEffect } from 'react';
 import { registerForPushNotificationsAsync } from '../lib/notifications';
+import { api } from '../lib/api';
 
 const queryClient = new QueryClient();
+
+function PushTokenRegistrar() {
+  const { user, token } = useAuth();
+
+  useEffect(() => {
+    // só tenta registrar quando já está logado de fato (token setado
+    // no header do axios pelo AuthContext)
+    if (!user || !token) return;
+
+    registerForPushNotificationsAsync().then(async (pushToken) => {
+      if (!pushToken) return;
+      try {
+        await api.patch('/users/me/push-token', { pushToken });
+      } catch (error) {
+        console.log('Erro ao registrar push token no backend:', error);
+      }
+    });
+  }, [user, token]);
+
+  return null;
+}
 
 function AuthGate({ children }: { children: React.ReactNode }) {
   const { user, isLoading } = useAuth();
@@ -57,16 +79,6 @@ export default function RootLayout() {
     Inter_600SemiBold,
   });
 
-  // dentro do seu componente de layout raiz, adicione:
-  useEffect(() => {
-    registerForPushNotificationsAsync().then((token) => {
-      if (token) {
-        console.log('Expo Push Token:', token);
-        // depois vamos mandar esse token pro backend aqui
-      }
-    });
-  }, []);
-
   if (!fontsLoaded) {
     return (
       <View className="flex-1 items-center justify-center bg-[#F5F1EA]">
@@ -78,6 +90,7 @@ export default function RootLayout() {
   return (
     <QueryClientProvider client={queryClient}>
       <AuthProvider>
+        <PushTokenRegistrar />
         <AuthGate>
           <Stack screenOptions={{ headerShown: false }} />
         </AuthGate>

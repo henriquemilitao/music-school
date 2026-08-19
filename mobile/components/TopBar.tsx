@@ -11,6 +11,7 @@ import {
   LogOut,
 } from 'lucide-react-native';
 import { useAuth } from '../context/AuthContext';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 function getInitials(name: string) {
   const parts = name.trim().split(' ');
@@ -30,6 +31,7 @@ export function TopBar() {
   const router = useRouter();
   const pathname = usePathname();
   const [menuOpen, setMenuOpen] = useState(false);
+  const insets = useSafeAreaInsets(); // NOVO
 
   function go(path: string) {
     setMenuOpen(false);
@@ -143,7 +145,10 @@ export function TopBar() {
               })}
             </View>
 
-            <View className="p-3 border-t border-gray-100">
+            <View
+              className="p-3 border-t border-gray-100"
+              style={{ paddingBottom: Math.max(12, insets.bottom + 12) }}
+            >
               <TouchableOpacity
                 className="flex-row items-center gap-3 px-3 py-3 rounded-xl"
                 onPress={() => {
