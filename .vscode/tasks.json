@@ -1,0 +1,76 @@
+{
+  "version": "2.0.0",
+  "tasks": [
+    {
+      "label": "1. Docker (Postgres)",
+      "type": "shell",
+      "command": "docker compose up",
+      "options": {
+        "cwd": "${workspaceFolder}"
+      },
+      "presentation": {
+        "reveal": "always",
+        "panel": "dedicated",
+        "group": "dev-stack"
+      },
+      "problemMatcher": [],
+      "isBackground": true
+    },
+    {
+      "label": "2. Backend (NestJS)",
+      "type": "shell",
+      "command": "npm run start:dev",
+      "options": {
+        "cwd": "${workspaceFolder}/backend"
+      },
+      "presentation": {
+        "reveal": "always",
+        "panel": "dedicated",
+        "group": "dev-stack"
+      },
+      "problemMatcher": [],
+      "isBackground": true
+    },
+    {
+      "label": "3. Ngrok",
+      "type": "shell",
+      "command": "ngrok http 3000",
+      "options": {
+        "cwd": "${workspaceFolder}"
+      },
+      "presentation": {
+        "reveal": "always",
+        "panel": "dedicated",
+        "group": "dev-stack"
+      },
+      "problemMatcher": [],
+      "isBackground": true
+    },
+    {
+      "label": "4. Prisma Studio",
+      "type": "shell",
+      "command": "npx prisma studio",
+      "options": {
+        "cwd": "${workspaceFolder}/backend"
+      },
+      "presentation": {
+        "reveal": "always",
+        "panel": "dedicated",
+        "group": "dev-stack"
+      },
+      "problemMatcher": [],
+      "isBackground": true
+    },
+    {
+      "label": "🚀 Iniciar tudo (Docker + Backend + Ngrok + Prisma Studio)",
+      "dependsOn": [
+        "1. Docker (Postgres)",
+        "2. Backend (NestJS)",
+        "3. Ngrok",
+        "4. Prisma Studio"
+      ],
+      "dependsOrder": "parallel",
+      "problemMatcher": []
+    }
+  ]
+}

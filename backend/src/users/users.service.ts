@@ -86,6 +86,26 @@ export class UsersService {
     return { ...user, students: studentsWithAge };
   }
 
+  async updatePushToken(userId: string, pushToken: string) {
+    // Um pushToken pertence a UM device físico. Se outro usuário
+    // (conta de teste anterior, ou device emprestado) já estiver
+    // com esse mesmo token registrado, ele precisa perder o token —
+    // senão os dois recebem push um do outro.
+    await this.prisma.user.updateMany({
+      where: {
+        pushToken,
+        id: { not: userId },
+      },
+      data: { pushToken: null },
+    });
+
+    await this.prisma.user.update({
+      where: { id: userId },
+      data: { pushToken },
+    });
+    return { status: 'ok' };
+  }
+
   async findAllBySchool(schoolId: string) {
     return this.prisma.user.findMany({
       where: { schoolId, isActive: true },

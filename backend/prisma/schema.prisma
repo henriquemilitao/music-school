@@ -81,6 +81,11 @@ model User {
   isActive     Boolean  @default(true)
   createdAt    DateTime @default(now())
 
+  // NOVO — token do Expo Push (ExponentPushToken[...]) pra mandar
+  // notificação. Null se o usuário nunca deu permissão ou nunca
+  // abriu o app num device físico.
+  pushToken String?
+
   students       Student[]
   teacher        Teacher?
   guardians      Guardian[]

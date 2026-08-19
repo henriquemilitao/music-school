@@ -8,3 +8,12 @@ npx prisma db seed
 
 pra criar arquivos typescript na nodemodules
 npx prisma generate
+
+
+se quiser rodar comandos sql
+
+npx prisma db execute --file ./reset-tokens.sql
+coloca o script no arquivo tipo
+UPDATE users SET "pushToken" = NULL;
+
+ou rodar um script com npx ts-node --transpile-only prisma/scripts/reset-push-tokens.ts

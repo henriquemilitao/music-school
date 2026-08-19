@@ -47,6 +47,7 @@ CREATE TABLE "users" (
     "role" "Role" NOT NULL DEFAULT 'STUDENT',
     "isActive" BOOLEAN NOT NULL DEFAULT true,
     "createdAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    "pushToken" TEXT,
 
     CONSTRAINT "users_pkey" PRIMARY KEY ("id")
 );

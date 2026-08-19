@@ -35,3 +35,8 @@ depois pra funcionar o vs code tenho que apagar isso do arquivo.
 rodar o mobile
 cd ~/projetos/music-school/mobile    
 npx expo start --clear
+
+
+rodar tudo de uma vez, 
+Ctrl+Shift+P → digita Run Task → Enter
+Escolhe "🚀 Iniciar tudo"
