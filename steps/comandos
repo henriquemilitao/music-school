@@ -35,3 +35,12 @@ depois pra funcionar o vs code tenho que apagar isso do arquivo.
 rodar o mobile
 cd ~/projetos/music-school/mobile    
 npx expo start --clear
+
+
+rodar o build do app, entrar na pasta mobile e rodar:
+eas build --profile development --platform android
+
+pro build isso deu problema, pra prod vai dar tbm, depois ver isso:
+eas env:create --scope project --name GOOGLE_SERVICES_JSON --type file --value ./google-services.json --visibility secret --environment development
+
+da pra buildar local primeiro comnpx expo prebuild --platform android --clean

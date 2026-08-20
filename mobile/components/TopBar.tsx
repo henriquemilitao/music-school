@@ -1,5 +1,5 @@
-import { useState } from 'react';
-import { View, Text, TouchableOpacity, Modal } from 'react-native';
+import { useEffect, useState } from 'react';
+import { View, Text, TouchableOpacity, Modal, BackHandler } from 'react-native';
 import { useRouter, usePathname } from 'expo-router';
 import {
   Music,
@@ -31,7 +31,7 @@ export function TopBar() {
   const router = useRouter();
   const pathname = usePathname();
   const [menuOpen, setMenuOpen] = useState(false);
-  const insets = useSafeAreaInsets(); // NOVO
+  const insets = useSafeAreaInsets();
 
   function go(path: string) {
     setMenuOpen(false);
@@ -69,7 +69,12 @@ export function TopBar() {
         </TouchableOpacity>
       </View>
 
-      <Modal visible={menuOpen} transparent animationType="fade">
+      <Modal
+        visible={menuOpen}
+        transparent
+        animationType="fade"
+        onRequestClose={() => setMenuOpen(false)}
+      >
         <View className="flex-1">
           <TouchableOpacity
             className="absolute inset-0 bg-black/40"

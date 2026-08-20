@@ -1,5 +1,12 @@
-import { useState } from 'react';
-import { View, Text, TouchableOpacity, Modal, Image } from 'react-native';
+import { useEffect, useState } from 'react';
+import {
+  View,
+  Text,
+  TouchableOpacity,
+  Modal,
+  Image,
+  BackHandler,
+} from 'react-native';
 import { useRouter, usePathname } from 'expo-router';
 import {
   Menu,
@@ -32,6 +39,20 @@ export function AdminTopBar() {
   const router = useRouter();
   const pathname = usePathname();
   const [menuOpen, setMenuOpen] = useState(false);
+
+  useEffect(() => {
+    if (!menuOpen) return;
+
+    const subscription = BackHandler.addEventListener(
+      'hardwareBackPress',
+      () => {
+        setMenuOpen(false);
+        return true; // "true" diz pro Android que já tratamos o back, não deixa ele sair da tela
+      },
+    );
+
+    return () => subscription.remove();
+  }, [menuOpen]);
 
   function go(path: string) {
     setMenuOpen(false);
