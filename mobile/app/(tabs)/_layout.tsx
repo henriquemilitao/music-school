@@ -1,3 +1,4 @@
+import { useEffect, useRef } from 'react';
 import { View } from 'react-native';
 import { withLayoutContext } from 'expo-router';
 import {
@@ -5,17 +6,15 @@ import {
   MaterialTopTabNavigationOptions,
 } from '@react-navigation/material-top-tabs';
 import { ParamListBase, TabNavigationState } from '@react-navigation/native';
+import { useNavigationState } from '@react-navigation/native';
+import { useQueryClient } from '@tanstack/react-query';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Home, CalendarDays, Wallet } from 'lucide-react-native';
 import { TopBar } from '../../components/TopBar';
 import { StudentProvider } from '../../context/StudentContext';
 import { StudentSwitcher } from '../../components/StudentSwitcher';
+import { dashboardKeys } from '../../lib/queryKeys';
 
-// withLayoutContext "converte" um navigator do React Navigation
-// (que normalmente não conhece o sistema de arquivos do Expo Router)
-// num componente que o expo-router entende como rota — é assim que
-// a doc oficial recomenda pra usar navigators fora dos padrões
-// (Tabs, Stack) dentro do app/.
 const { Navigator } = createMaterialTopTabNavigator();
 
 export const MaterialTopTabs = withLayoutContext<
@@ -25,7 +24,6 @@ export const MaterialTopTabs = withLayoutContext<
   any
 >(Navigator);
 
-// ícones que vamos plotar manualmente na barra customizada
 const TAB_ICONS: Record<
   string,
   React.ComponentType<{ color?: string; size?: number }>
@@ -41,21 +39,54 @@ const TAB_LABELS: Record<string, string> = {
   payments: 'Pagamentos',
 };
 
+// Mapeia cada aba pra quais queryKeys ela precisa invalidar quando
+// se torna a aba ativa. Existe porque o material-top-tabs mantém
+// as telas montadas o tempo todo (é um carrossel, não uma pilha de
+// navegação de verdade) — então useFocusEffect não dispara de forma
+// confiável em cada tela individual. Centralizamos aqui, escutando
+// a troca de aba direto no navigator.
+const TAB_QUERY_KEYS: Record<string, unknown[][]> = {
+  index: [[...dashboardKeys.all]],
+  lessons: [['lessons']],
+  payments: [['payments']],
+};
+
+function TabFocusInvalidator() {
+  const queryClient = useQueryClient();
+  const routeName = useNavigationState((state) => {
+    if (!state) return undefined;
+    return state.routes[state.index]?.name;
+  });
+  const lastRouteRef = useRef<string | undefined>(undefined);
+
+  useEffect(() => {
+    if (!routeName || routeName === lastRouteRef.current) return;
+    lastRouteRef.current = routeName;
+
+    const keysToInvalidate = TAB_QUERY_KEYS[routeName];
+    if (!keysToInvalidate) return;
+
+    keysToInvalidate.forEach((queryKey) => {
+      queryClient.invalidateQueries({ queryKey });
+    });
+  }, [routeName, queryClient]);
+
+  return null;
+}
+
 function TabsLayoutInner() {
   const insets = useSafeAreaInsets();
 
   return (
     <View style={{ flex: 1 }}>
+      <TabFocusInvalidator />
+
       <View>
         <TopBar />
         <StudentSwitcher />
       </View>
 
       <MaterialTopTabs
-        // tabBarPosition: 'bottom' é a chave que faz a barra do
-        // material-top-tabs (que por padrão renderiza no topo)
-        // aparecer embaixo — mas o gesto de swipe continua ativo,
-        // só a posição visual muda
         tabBarPosition="bottom"
         screenOptions={{
           swipeEnabled: true,
@@ -63,7 +94,7 @@ function TabsLayoutInner() {
           tabBarShowIcon: true,
           tabBarActiveTintColor: '#1A1A1A',
           tabBarInactiveTintColor: '#B0AA9C',
-          tabBarIndicatorStyle: { height: 0 }, // remove a barrinha indicadora padrão (underline)
+          tabBarIndicatorStyle: { height: 0 },
           tabBarStyle: {
             backgroundColor: '#F5F1EA',
             borderTopWidth: 1,
@@ -71,7 +102,7 @@ function TabsLayoutInner() {
             height: 64 + insets.bottom,
             paddingBottom: insets.bottom,
             paddingTop: 6,
-            elevation: 0, // remove sombra padrão do Android
+            elevation: 0,
             shadowOpacity: 0,
           },
           tabBarLabelStyle: {
@@ -79,11 +110,7 @@ function TabsLayoutInner() {
             fontWeight: '500',
             textTransform: 'none',
           },
-          tabBarIcon: ({ color, focused }) => {
-            // route.name não vem direto aqui nessa versão da lib,
-            // então pegamos via closure abaixo no Screen individual
-            return null;
-          },
+          tabBarIcon: () => null,
         }}
       >
         <MaterialTopTabs.Screen

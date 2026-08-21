@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useCallback, useState } from 'react';
 import {
   View,
   Text,
@@ -6,18 +6,22 @@ import {
   ActivityIndicator,
   TouchableOpacity,
 } from 'react-native';
-import { useQuery } from '@tanstack/react-query';
+import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { ChevronDown } from 'lucide-react-native';
 import { api } from '../../lib/api';
-import { router } from 'expo-router';
+import { router, useFocusEffect } from 'expo-router';
 import { formatInstrument } from '../../lib/instrument';
 import { useStudent } from '../../context/StudentContext';
-import { lessonStatusConfig } from '../../lib/status';
+import { lessonStatusConfig, getEffectiveLessonStatus } from '../../lib/status';
 import { StatusPill } from '../../components/ui/StatusPill';
+import { useLessonStatus } from '../../lib/useLessonStatus';
+
+const RECENTLY_FINISHED_GRACE_MINUTES = 30; // precisa bater com backend e useLessonStatus
 
 type Lesson = {
   id: string;
   scheduledAt: string;
+  durationMinutes: number; // NOVO — precisa vir do backend (já vem, só faltava tipar)
   status: 'SCHEDULED' | 'COMPLETED' | 'CANCELLED';
   isMakeup: boolean;
   teacher: { user: { name: string } } | null;
@@ -66,12 +70,35 @@ function formatMonthLabel(monthKey: string) {
   );
 }
 
+// aula ainda "conta" como próxima/atual se o fim + grace period ainda
+// não passou — mesma regra usada no backend (getDashboard) e no
+// useLessonStatus, senão as 3 telas divergem entre si
+function isStillRelevant(lesson: Lesson, now: Date) {
+  const end =
+    new Date(lesson.scheduledAt).getTime() + lesson.durationMinutes * 60_000;
+  const graceEnd = end + RECENTLY_FINISHED_GRACE_MINUTES * 60_000;
+  return graceEnd > now.getTime();
+}
+
 function UpcomingLesson({ lesson }: { lesson: Lesson }) {
   const date = new Date(lesson.scheduledAt);
   const month = date
     .toLocaleDateString('pt-BR', { month: 'short' })
     .replace('.', '');
   const day = date.getDate();
+
+  // status ao vivo — só relevante enquanto ainda está SCHEDULED no banco
+  const liveStatus = useLessonStatus(
+    lesson.status === 'SCHEDULED' ? lesson.scheduledAt : null,
+    lesson.status === 'SCHEDULED' ? lesson.durationMinutes : null,
+  );
+  const effectiveStatus = getEffectiveLessonStatus(
+    lesson.status,
+    liveStatus?.phase,
+  );
+  const showLivePill =
+    effectiveStatus === 'IN_PROGRESS' ||
+    effectiveStatus === 'RECENTLY_FINISHED';
 
   return (
     <TouchableOpacity
@@ -92,8 +119,8 @@ function UpcomingLesson({ lesson }: { lesson: Lesson }) {
           {month}
         </Text>
         <Text
-          className="text-xl leading-tight" // subiu de text-xl pra text-2xl
-          style={{ fontFamily: 'PlayfairDisplay_700Bold', color: '#1a1a1a' }} // cor explícita, escura
+          className="text-xl leading-tight"
+          style={{ fontFamily: 'PlayfairDisplay_700Bold', color: '#1a1a1a' }}
         >
           {day}
         </Text>
@@ -106,6 +133,13 @@ function UpcomingLesson({ lesson }: { lesson: Lesson }) {
           {formatTime(lesson.scheduledAt)}
           {lesson.teacher ? ` · ${lesson.teacher.user.name}` : ''}
         </Text>
+        {showLivePill && (
+          <View style={{ marginTop: 4, alignSelf: 'flex-start' }}>
+            <StatusPill
+              {...lessonStatusConfig(effectiveStatus, lesson.isMakeup)}
+            />
+          </View>
+        )}
       </View>
       {formatInstrument(lesson.student.instrument) && (
         <View className="rounded-full px-2.5 py-1 bg-[#F3EADD]">
@@ -226,6 +260,7 @@ function EmptyState({ text }: { text: string }) {
 
 export default function Lessons() {
   const [tab, setTab] = useState<'proximas' | 'historico'>('proximas');
+  const queryClient = useQueryClient();
 
   const { selectedStudentId, selectedStudent } = useStudent();
   const { data, isLoading, error } = useQuery({
@@ -239,6 +274,16 @@ export default function Lessons() {
     },
     enabled: !!selectedStudentId,
   });
+
+  useFocusEffect(
+    useCallback(() => {
+      console.log('Lessons focou, invalidando', selectedStudentId);
+
+      queryClient.invalidateQueries({
+        queryKey: ['lessons', selectedStudentId],
+      });
+    }, [queryClient, selectedStudentId]),
+  );
 
   if (isLoading) {
     return (
@@ -260,14 +305,14 @@ export default function Lessons() {
 
   const now = new Date();
   const proximas = data
-    .filter((l) => l.status === 'SCHEDULED' && new Date(l.scheduledAt) >= now)
+    .filter((l) => l.status === 'SCHEDULED' && isStillRelevant(l, now))
     .sort(
       (a, b) =>
         new Date(a.scheduledAt).getTime() - new Date(b.scheduledAt).getTime(),
     );
 
   const historico = data
-    .filter((l) => l.status !== 'SCHEDULED' || new Date(l.scheduledAt) < now)
+    .filter((l) => l.status !== 'SCHEDULED' || !isStillRelevant(l, now))
     .sort(
       (a, b) =>
         new Date(b.scheduledAt).getTime() - new Date(a.scheduledAt).getTime(),

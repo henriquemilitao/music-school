@@ -16,7 +16,7 @@ import {
 import { api } from '../../lib/api';
 import { formatInstrument } from '../../lib/instrument';
 import { getPaymentUrgency } from '../../lib/paymentUrgency';
-import { useCountdown } from '../../lib/useCountdown';
+import { useLessonStatus } from '../../lib/useLessonStatus';
 import { useStudent } from '../../context/StudentContext';
 import { dashboardKeys } from '../../lib/queryKeys';
 import { lessonStatusConfig } from '../../lib/status';
@@ -37,6 +37,7 @@ type DashboardItem = {
   student: { id: string; name: string; age: number; instrument: string };
   nextLesson: {
     scheduledAt: string;
+    durationMinutes: number; // NOVO
     teacher: { user: { name: string } } | null;
   } | null;
   lastLesson: {
@@ -126,18 +127,68 @@ function DashboardCard({
   );
 }
 
-function NextLessonCountdown({ scheduledAt }: { scheduledAt: string }) {
-  const countdown = useCountdown(scheduledAt);
+function NextLessonStatus({
+  scheduledAt,
+  durationMinutes,
+  onFinish,
+}: {
+  scheduledAt: string | null | undefined;
+  durationMinutes: number | null | undefined;
+  onFinish: () => void;
+}) {
+  const status = useLessonStatus(scheduledAt, durationMinutes, onFinish);
 
-  if (!countdown || countdown.isPast) return null;
+  if (!status || status.phase === 'finished') return null;
 
+  if (status.phase === 'recently_finished') {
+    return (
+      <View className="mt-2">
+        <Text
+          className="text-[13px] font-bold text-gray-400"
+          style={{ fontFamily: FONT_HEADING }}
+        >
+          ✓ Aula concluída
+        </Text>
+        <Text className="text-[11px] text-gray-400 mt-0.5">Atualizando...</Text>
+      </View>
+    );
+  }
+
+  if (status.phase === 'in_progress') {
+    const minutes = Math.floor((status.secondsRemaining ?? 0) / 60);
+    const seconds = (status.secondsRemaining ?? 0) % 60;
+    const progressPercent = Math.round((status.progress ?? 0) * 100);
+
+    return (
+      <View className="mt-2">
+        <Text
+          className="text-[13px] font-bold text-[#B08D57]"
+          style={{ fontFamily: FONT_HEADING }}
+        >
+          🎵 Aula em andamento
+        </Text>
+        <View className="mt-1.5 h-1.5 rounded-full bg-[#F3EADD] overflow-hidden">
+          <View
+            className="h-full rounded-full bg-[#B08D57]"
+            style={{ width: `${progressPercent}%` }}
+          />
+        </View>
+        <Text className="text-[11px] text-gray-400 mt-1">
+          Termina em {pad(minutes)}:{pad(seconds)}
+        </Text>
+      </View>
+    );
+  }
+
+  // phase === 'upcoming'
+  const c = status.countdown!;
   return (
     <View className="flex-row items-center gap-1.5 mt-1.5">
       {[
-        { value: countdown.days, unit: 'd' },
-        { value: countdown.hours, unit: 'h' },
-        { value: countdown.minutes, unit: 'm' },
-        { value: countdown.seconds, unit: 's' },
+        { value: c.days, unit: 'd' },
+        { value: c.hours, unit: 'h' },
+        { value: c.minutes, unit: 'm' },
+        { value: c.seconds, unit: 's' },
       ].map((part, i) => (
         <View key={i} className="flex-row items-baseline gap-0.5">
           <Text
@@ -203,9 +254,16 @@ export default function Index() {
 
   useFocusEffect(
     useCallback(() => {
+      console.log('Dashboard focou, invalidando', selectedStudentId);
+
       queryClient.invalidateQueries({ queryKey: dashboardKeys.all });
     }, [queryClient]),
   );
+
+  // ⬇️ MOVIDO PRA CÁ, antes de qualquer return condicional
+  const handleLessonFinish = useCallback(() => {
+    queryClient.invalidateQueries({ queryKey: dashboardKeys.all });
+  }, [queryClient]);
 
   if (isLoading) {
     return (
@@ -280,13 +338,17 @@ export default function Index() {
                 {formatTime(nextLesson.scheduledAt)}
                 {nextLesson.teacher ? ` · ${nextLesson.teacher.user.name}` : ''}
               </Text>
-              <NextLessonCountdown scheduledAt={nextLesson.scheduledAt} />
             </>
           ) : (
             <Text className="text-[13px] text-gray-400">
               Nenhuma aula agendada
             </Text>
           )}
+          <NextLessonStatus
+            scheduledAt={nextLesson?.scheduledAt}
+            durationMinutes={nextLesson?.durationMinutes}
+            onFinish={handleLessonFinish}
+          />
         </DashboardCard>
 
         <DashboardCard

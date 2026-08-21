@@ -5,13 +5,20 @@ import {
   ActivityIndicator,
   TouchableOpacity,
 } from 'react-native';
-import { useQuery } from '@tanstack/react-query';
-import { useLocalSearchParams, useRouter, Stack } from 'expo-router';
+import { useQuery, useQueryClient } from '@tanstack/react-query';
+import {
+  useLocalSearchParams,
+  useRouter,
+  Stack,
+  useFocusEffect,
+} from 'expo-router';
 import { ArrowLeft, Clock, User, Music, StickyNote } from 'lucide-react-native';
+import { useCallback } from 'react';
 import { api } from '../../lib/api';
 import { formatInstrument } from '../../lib/instrument';
-import { lessonStatusConfig } from '../../lib/status';
+import { lessonStatusConfig, getEffectiveLessonStatus } from '../../lib/status';
 import { StatusPill } from '../../components/ui/StatusPill';
+import { useLessonStatus } from '../../lib/useLessonStatus';
 
 type Lesson = {
   id: string;
@@ -79,6 +86,7 @@ function InfoRow({
 export default function LessonDetail() {
   const { id } = useLocalSearchParams<{ id: string }>();
   const router = useRouter();
+  const queryClient = useQueryClient();
 
   const {
     data: lesson,
@@ -92,6 +100,25 @@ export default function LessonDetail() {
     },
     enabled: !!id,
   });
+
+  // ao sair dessa tela, invalida a lista de aulas — assim, se essa
+  // aula mudou de status enquanto o usuário estava vendo o detalhe
+  // (ex: cron rodou nesse meio tempo), a lista já volta atualizada
+  useFocusEffect(
+    useCallback(() => {
+      return () => {
+        queryClient.invalidateQueries({ queryKey: ['lessons'] });
+        queryClient.invalidateQueries({ queryKey: ['dashboard'] });
+      };
+    }, [queryClient]),
+  );
+
+  // status ao vivo, só é relevante enquanto a aula ainda está SCHEDULED
+  // no banco (se já virou COMPLETED, o status do banco já manda)
+  const liveStatus = useLessonStatus(
+    lesson?.status === 'SCHEDULED' ? lesson.scheduledAt : null,
+    lesson?.status === 'SCHEDULED' ? lesson.durationMinutes : null,
+  );
 
   if (isLoading) {
     return (
@@ -111,7 +138,11 @@ export default function LessonDetail() {
     );
   }
 
-  const config = lessonStatusConfig(lesson.status, lesson.isMakeup);
+  const effectiveStatus = getEffectiveLessonStatus(
+    lesson.status,
+    liveStatus?.phase,
+  );
+  const config = lessonStatusConfig(effectiveStatus, lesson.isMakeup);
 
   return (
     <ScrollView className="flex-1 bg-[#F5F1EA]">
