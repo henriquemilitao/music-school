@@ -232,17 +232,32 @@ export class LessonsService {
 
     const dashboard = await Promise.all(
       students.map(async (student) => {
-        const nextLesson = await this.prisma.lesson.findFirst({
+        const RECENTLY_FINISHED_GRACE_MINUTES = 30; // quanto tempo depois do fim ainda mostra como "acabou de terminar"
+
+        const lookbackFrom = new Date(now.getTime() - 3 * 60 * 60 * 1000); // 3h de folga generosa pra cobrir qualquer duração + grace period
+
+        const candidates = await this.prisma.lesson.findMany({
           where: {
             studentId: student.id,
             status: LessonStatus.SCHEDULED,
-            scheduledAt: { gte: now },
+            scheduledAt: { gte: lookbackFrom },
           },
           orderBy: { scheduledAt: 'asc' },
           include: {
             teacher: { include: { user: { select: { name: true } } } },
           },
         });
+
+        const nextLesson =
+          candidates.find((l) => {
+            const end = new Date(
+              l.scheduledAt.getTime() + l.durationMinutes * 60_000,
+            );
+            const graceEnd = new Date(
+              end.getTime() + RECENTLY_FINISHED_GRACE_MINUTES * 60_000,
+            );
+            return graceEnd > now; // ainda não passou do período de graça
+          }) ?? null;
 
         const lastLesson = await this.prisma.lesson.findFirst({
           where: {
@@ -293,5 +308,35 @@ export class LessonsService {
     );
 
     return dashboard;
+  }
+
+  async markCompletedLessons() {
+    const now = new Date();
+
+    const candidates = await this.prisma.lesson.findMany({
+      where: {
+        status: LessonStatus.SCHEDULED,
+        scheduledAt: { lte: now },
+      },
+      select: { id: true, scheduledAt: true, durationMinutes: true },
+    });
+
+    const toComplete = candidates.filter((lesson) => {
+      const endsAt = new Date(
+        lesson.scheduledAt.getTime() + lesson.durationMinutes * 60_000,
+      );
+      return endsAt <= now;
+    });
+
+    if (toComplete.length === 0) {
+      return { updatedCount: 0 };
+    }
+
+    await this.prisma.lesson.updateMany({
+      where: { id: { in: toComplete.map((l) => l.id) } },
+      data: { status: LessonStatus.COMPLETED },
+    });
+
+    return { updatedCount: toComplete.length };
   }
 }
