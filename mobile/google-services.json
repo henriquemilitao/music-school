@@ -1,0 +1,29 @@
+{
+  "project_info": {
+    "project_number": "722205660558",
+    "project_id": "pianissima-music-school",
+    "storage_bucket": "pianissima-music-school.firebasestorage.app"
+  },
+  "client": [
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:722205660558:android:46644266886c2c696680df",
+        "android_client_info": {
+          "package_name": "com.henrique_militao.mobile"
+        }
+      },
+      "oauth_client": [],
+      "api_key": [
+        {
+          "current_key": "AIzaSyCiQx2g2Eg68sukYIVNgZ8CsNJfCsd_5D8"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": []
+        }
+      }
+    }
+  ],
+  "configuration_version": "1"
+}

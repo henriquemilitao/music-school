@@ -41,5 +41,4 @@ yarn-error.*
 /android
 
 # Firebase
-google-services.json
 *firebase-adminsdk*.json
