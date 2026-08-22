@@ -40,3 +40,22 @@ npx expo start --clear
 rodar tudo de uma vez, 
 Ctrl+Shift+P → digita Run Task → Enter
 Escolhe "🚀 Iniciar tudo"
+
+
+testar notificações
+
+
+henriquemilitao@DESKTOP-THGO3KT:~/projetos/music-school/backend/src$ curl -H "Content-Type: application/json" -X POST https://exp.host/--/api/v2/push/send -d '{
+  "to": "ExponentPushToken[lwLTqTGjQpwlv7e9sfiH63]", 
+  "title": "Teste Receipt",
+  "body": "Verificando entrega real"
+}'
+
+pegar o id e colocar abaix
+henriquemilitao@DESKTOP-THGO3KT:~/projetos/music-schocurl -H "Content-Type: application/json" -X POST https://exp.host/--/api/v2/push/getReceipts -d '{etReceipts -d '{
+  "ids": ["id_aqui"]
+}'
+
+
+ExponentPushToken[XJhw59NqmXSeUPuPP_fFLf]
+ExponentPushToken[CvbAVrPddlHO-kqih1Y-6n]
