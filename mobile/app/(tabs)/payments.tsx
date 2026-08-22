@@ -752,7 +752,7 @@ export default function Payments() {
           router={router}
         />
 
-        {__DEV__ && (
+        {/* {__DEV__ && (
           <View className="px-5 mt-2">
             <TouchableOpacity
               onPress={resetNotificationsDebug}
@@ -763,7 +763,7 @@ export default function Payments() {
               </Text>
             </TouchableOpacity>
           </View>
-        )}
+        )} */}
 
         <View className="px-5 mt-2 mb-10">
           <Text className="text-xs font-bold uppercase tracking-widest text-gray-400 mb-3">

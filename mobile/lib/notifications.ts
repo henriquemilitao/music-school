@@ -4,21 +4,19 @@ import * as Device from 'expo-device';
 import Constants from 'expo-constants';
 import { Platform } from 'react-native';
 
-// Define como a notificação se comporta quando o app está ABERTO (foreground).
-// Sem isso, notificações chegando com o app aberto não mostram nada na tela.
 Notifications.setNotificationHandler({
   handleNotification: async () => ({
     shouldShowAlert: true,
     shouldPlaySound: true,
     shouldSetBadge: true,
+    shouldShowBanner: true,
+    shouldShowList: true,
   }),
 });
 
 export async function registerForPushNotificationsAsync(): Promise<
   string | null
 > {
-  // Canal de notificação é obrigatório no Android 8+.
-  // Sem um canal configurado, a notificação pode nem aparecer.
   if (Platform.OS === 'android') {
     await Notifications.setNotificationChannelAsync('default', {
       name: 'default',
@@ -28,7 +26,6 @@ export async function registerForPushNotificationsAsync(): Promise<
     });
   }
 
-  // Push só funciona em device físico — emulador não recebe push de verdade.
   if (!Device.isDevice) {
     console.log(
       'Push notifications só funcionam em device físico, não em emulador.',
@@ -36,7 +33,6 @@ export async function registerForPushNotificationsAsync(): Promise<
     return null;
   }
 
-  // Verifica se já tem permissão; se não tem, pede.
   const { status: existingStatus } = await Notifications.getPermissionsAsync();
   let finalStatus = existingStatus;
 
@@ -50,21 +46,40 @@ export async function registerForPushNotificationsAsync(): Promise<
     return null;
   }
 
-  // projectId vem do app.json/eas.json — gerado quando você rodou "eas build:configure".
   const projectId = Constants.expoConfig?.extra?.eas?.projectId;
 
   if (!projectId) {
-    console.log('projectId não encontrado — confira o app.json');
+    console.log('projectId não encontrado — confira o app.config.js');
     return null;
   }
 
   try {
+    // IMPORTANTE: força buscar/revalidar o token toda vez, não
+    // confia só no cache do SDK — é isso que garante que, depois de
+    // um rebuild/reinstall, a gente pegue o token realmente vÃ¡lido
+    // no FCM, não um cache morto.
     const tokenResponse = await Notifications.getExpoPushTokenAsync({
       projectId,
     });
-    return tokenResponse.data; // formato: "ExponentPushToken[xxxxxxxxxxxx]"
+    return tokenResponse.data;
   } catch (error) {
     console.log('Erro ao gerar push token:', error);
     return null;
   }
+}
+
+// NOVO — registra um listener que dispara toda vez que o SDK nativo
+// detecta que o token FCM mudou por baixo dos panos (rebuild, app
+// reinstalado, credenciais do Firebase trocadas, etc). Sem isso, o
+// app só busca o token uma vez no login e nunca mais reconfirma —
+// exatamente o bug que causou o DeviceNotRegistered.
+export function subscribeToPushTokenChanges(
+  onTokenChange: (token: string) => void,
+) {
+  const subscription = Notifications.addPushTokenListener((event) => {
+    console.log('Push token mudou, revalidando:', event.data);
+    onTokenChange(event.data);
+  });
+
+  return () => subscription.remove();
 }

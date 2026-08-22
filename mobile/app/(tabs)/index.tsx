@@ -4,6 +4,7 @@ import {
   TouchableOpacity,
   ScrollView,
   ActivityIndicator,
+  Alert,
 } from 'react-native';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { useFocusEffect, useRouter } from 'expo-router';
@@ -23,6 +24,19 @@ import { lessonStatusConfig } from '../../lib/status';
 import { StatusPill } from '../../components/ui/StatusPill';
 import { useCallback } from 'react';
 import { formatCurrency } from '../../lib/paymentFormat';
+import * as Notifications from 'expo-notifications';
+import { registerForPushNotificationsAsync } from '../../lib/notifications';
+
+// Configura para exibir o alerta mesmo com o app aberto na tela
+Notifications.setNotificationHandler({
+  handleNotification: async () => ({
+    shouldShowAlert: true,
+    shouldPlaySound: true,
+    shouldSetBadge: false,
+    shouldShowBanner: true,
+    shouldShowList: true,
+  }),
+});
 
 type PaymentSummary = {
   id: string;
@@ -306,6 +320,26 @@ export default function Index() {
   // vez do badge verde hardcoded que existia antes.
   const lastLessonConfig = lessonStatusConfig('COMPLETED', false);
 
+  async function handleTestNotification() {
+    await Notifications.scheduleNotificationAsync({
+      content: {
+        title: 'Notificação da Pianíssima 🎶',
+        body: 'Teste de notificação local no Dev Client funcionando!',
+      },
+      trigger: null, // Dispara instantaneamente
+    });
+  }
+
+  async function handleGetPushToken() {
+    const token = await registerForPushNotificationsAsync();
+
+    if (token) {
+      console.log('PUSH TOKEN GERADO:', token);
+      Alert.alert('Token Gerado com Sucesso!', token);
+    } else {
+      Alert.alert('Erro', 'Não foi possível gerar o token. Verifique os logs.');
+    }
+  }
   return (
     <View className="flex-1 bg-[#F5F1EA]">
       <ScrollView className="flex-1 px-4 pt-4">
@@ -434,6 +468,22 @@ export default function Index() {
             </>
           )}
         </DashboardCard>
+
+        <TouchableOpacity
+          className="bg-[#B08D57] p-3.5 rounded-2xl items-center mb-4"
+          onPress={handleTestNotification}
+        >
+          <Text className="text-white font-bold">
+            Disparar Notificação Teste
+          </Text>
+        </TouchableOpacity>
+
+        <TouchableOpacity
+          className="bg-black p-3.5 rounded-2xl items-center mb-4"
+          onPress={handleGetPushToken}
+        >
+          <Text className="text-white font-bold">Obter Expo Push Token</Text>
+        </TouchableOpacity>
 
         <Text className="text-center text-gray-400 text-xs mt-4 mb-8">
           Pianíssima · Aqui tem música
