@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import {
   View,
   Text,
@@ -7,7 +7,7 @@ import {
   ActivityIndicator,
   TouchableOpacity,
 } from 'react-native';
-import { useQuery } from '@tanstack/react-query';
+import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { useLocalSearchParams, useRouter, Stack } from 'expo-router';
 import * as Clipboard from 'expo-clipboard';
 import {
@@ -22,6 +22,17 @@ import {
 } from 'lucide-react-native';
 import { api } from '../../lib/api';
 import { useCountdown } from '../../lib/useCountdown';
+import { useAppStateRefetch } from '../../lib/useAppStateRefetch';
+import { dashboardKeys, paymentKeys } from '../../lib/queryKeys';
+import {
+  formatMonthLabel,
+  formatFullDate,
+  formatDate,
+  formatPixCountdown,
+  formatCurrency,
+} from '../../lib/paymentFormat';
+import { paymentStatusConfig } from '../../lib/status';
+import { StatusPill } from '../../components/ui/StatusPill';
 
 type BundlePayment = {
   id: string;
@@ -43,57 +54,22 @@ type Bundle = {
   payments: BundlePayment[];
 };
 
-function formatMonthLabel(referenceMonth: string) {
-  const date = new Date(referenceMonth + 'T00:00:00');
-  const label = date.toLocaleDateString('pt-BR', {
-    month: 'long',
-    year: 'numeric',
+// "válido até 14:47" — horário absoluto de expiração, exibido junto
+// com o countdown decrescente. O countdown sozinho cria urgência mas
+// exige conta mental caso o usuário saia e volte pro app; o horário
+// absoluto resolve isso sem competir visualmente com o countdown.
+function formatExpiresAtTime(iso: string) {
+  return new Date(iso).toLocaleTimeString('pt-BR', {
+    hour: '2-digit',
+    minute: '2-digit',
   });
-  return label.charAt(0).toUpperCase() + label.slice(1);
-}
-
-function formatFullDate(iso: string) {
-  const date = new Date(iso);
-  const label = date.toLocaleDateString('pt-BR', {
-    weekday: 'long',
-    day: 'numeric',
-    month: 'long',
-    year: 'numeric',
-  });
-  return label.charAt(0).toUpperCase() + label.slice(1);
-}
-
-function formatDate(iso: string) {
-  return new Date(iso).toLocaleDateString('pt-BR');
-}
-
-function formatPixCountdown(minutes: number, seconds: number) {
-  return `${String(minutes).padStart(2, '0')}:${String(seconds).padStart(2, '0')}`;
-}
-
-function statusConfig(status: BundlePayment['status']) {
-  if (status === 'PAID')
-    return { label: 'Paga', bg: 'bg-green-50', text: 'text-green-700' };
-  if (status === 'OVERDUE')
-    return { label: 'Atrasada', bg: 'bg-red-50', text: 'text-red-700' };
-  return { label: 'Pendente', bg: 'bg-yellow-50', text: 'text-yellow-700' };
-}
-
-function StatusBadge({ status }: { status: BundlePayment['status'] }) {
-  const config = statusConfig(status);
-  return (
-    <View className={`rounded-full px-2 py-0.5 ${config.bg}`}>
-      <Text className={`text-[10px] font-bold ${config.text}`}>
-        {config.label}
-      </Text>
-    </View>
-  );
 }
 
 export default function PaymentBundleDetail() {
   const { id } = useLocalSearchParams<{ id: string }>();
   const router = useRouter();
   const [copied, setCopied] = useState(false);
+  const queryClient = useQueryClient();
 
   const {
     data: bundle,
@@ -102,21 +78,27 @@ export default function PaymentBundleDetail() {
     refetch,
     isFetching,
   } = useQuery({
-    queryKey: ['payment-bundle', id],
+    queryKey: paymentKeys.bundle(id!),
     queryFn: async () => {
       const response = await api.get<Bundle>(`/payments/bundle/${id}`);
       return response.data;
     },
     enabled: !!id,
-    refetchOnMount: 'always', // NOVO — sempre busca de novo ao entrar na tela
+    refetchOnMount: 'always',
     refetchInterval: (query) =>
       query.state.data?.status === 'PAID' ? false : 5000,
   });
 
+  useAppStateRefetch(paymentKeys.bundle(id!));
+
+  useEffect(() => {
+    if (bundle?.status === 'PAID') {
+      queryClient.invalidateQueries({ queryKey: paymentKeys.all });
+      queryClient.invalidateQueries({ queryKey: dashboardKeys.all });
+    }
+  }, [bundle?.status, queryClient]);
+
   const countdown = useCountdown(bundle?.pixExpiresAt ?? null);
-  // const countdown = useCountdown(
-  //   bundle?.pixExpiresAt ? getDisplayExpiresAt(bundle?.pixExpiresAt) : null,
-  // );
   const pixExpired = countdown?.isPast ?? false;
 
   async function handleCopy() {
@@ -145,6 +127,9 @@ export default function PaymentBundleDetail() {
   }
 
   const isPaid = bundle.status === 'PAID';
+  // status do bundle em si (agregado) — reaproveita a mesma paleta de
+  // pagamento, tratando 'PENDING' do bundle como o "Aguardando"
+  const bundleConfig = paymentStatusConfig(isPaid ? 'PAID' : 'PENDING');
 
   return (
     <ScrollView className="flex-1 bg-[#F5F1EA]">
@@ -161,7 +146,9 @@ export default function PaymentBundleDetail() {
         >
           <ArrowLeft size={18} color="#1A1A1A" />
         </TouchableOpacity>
-        <Text className="text-base font-semibold">Pagamento agregado</Text>
+        <Text className="text-base font-semibold">
+          {isPaid ? 'Pagamento confirmado' : 'Pagamento agregado'}
+        </Text>
       </View>
 
       <View className="px-5 pt-5 pb-2">
@@ -173,26 +160,18 @@ export default function PaymentBundleDetail() {
             className="text-4xl"
             style={{ fontFamily: 'PlayfairDisplay_700Bold' }}
           >
-            R$ {bundle.amount}
+            R$ {formatCurrency(bundle.amount)}
           </Text>
-          <View
-            className={`rounded-full px-2.5 py-1 ${
-              isPaid ? 'bg-green-50' : 'bg-yellow-50'
-            }`}
-          >
-            <Text
-              className={`text-[11px] font-bold ${
-                isPaid ? 'text-green-700' : 'text-yellow-700'
-              }`}
-            >
-              {isPaid ? 'Pago' : 'Aguardando pagamento'}
-            </Text>
-          </View>
+          <StatusPill
+            label={isPaid ? 'Pago' : 'Aguardando pagamento'}
+            colorText={bundleConfig.colorText}
+            colorBg={bundleConfig.colorBg}
+            size="md"
+          />
         </View>
       </View>
 
       <View className="px-5 gap-4 pt-3 pb-10">
-        {/* Faturas cobertas */}
         <View
           className="bg-white rounded-2xl overflow-hidden"
           style={{
@@ -223,14 +202,19 @@ export default function PaymentBundleDetail() {
                   <Text className="text-sm font-semibold">
                     {payment.student.name}
                   </Text>
-                  <StatusBadge status={payment.status} />
+                  <StatusPill
+                    {...paymentStatusConfig(payment.status)}
+                    size="sm"
+                  />
                 </View>
                 <Text className="text-xs text-gray-500">
                   {formatMonthLabel(payment.referenceMonth)} · Venc.{' '}
                   {formatDate(payment.dueDate)}
                 </Text>
               </View>
-              <Text className="text-sm font-bold">R$ {payment.amount}</Text>
+              <Text className="text-sm font-bold">
+                R$ {formatCurrency(payment.amount)}
+              </Text>
             </View>
           ))}
         </View>
@@ -257,7 +241,6 @@ export default function PaymentBundleDetail() {
           </View>
         )}
 
-        {/* PIX — só se ainda não pago */}
         {!isPaid && (
           <View
             className="bg-white rounded-2xl p-5"
@@ -268,7 +251,7 @@ export default function PaymentBundleDetail() {
               elevation: 2,
             }}
           >
-            <View className="flex-row items-center justify-between mb-4">
+            <View className="flex-row items-center justify-between mb-1">
               <View className="flex-row items-center gap-2">
                 <QrCode size={20} color="#B08D57" />
                 <Text className="text-sm font-bold">Pague via PIX</Text>
@@ -283,6 +266,12 @@ export default function PaymentBundleDetail() {
                 </View>
               )}
             </View>
+
+            {bundle.pixExpiresAt && !pixExpired && (
+              <Text className="text-[11px] text-gray-400 text-right mb-3">
+                Válido até {formatExpiresAtTime(bundle.pixExpiresAt)}
+              </Text>
+            )}
 
             {pixExpired ? (
               <View className="items-center py-6">

@@ -5,11 +5,20 @@ import {
   ActivityIndicator,
   TouchableOpacity,
 } from 'react-native';
-import { useQuery } from '@tanstack/react-query';
-import { useLocalSearchParams, useRouter, Stack } from 'expo-router';
+import { useQuery, useQueryClient } from '@tanstack/react-query';
+import {
+  useLocalSearchParams,
+  useRouter,
+  Stack,
+  useFocusEffect,
+} from 'expo-router';
 import { ArrowLeft, Clock, User, Music, StickyNote } from 'lucide-react-native';
+import { useCallback } from 'react';
 import { api } from '../../lib/api';
 import { formatInstrument } from '../../lib/instrument';
+import { lessonStatusConfig, getEffectiveLessonStatus } from '../../lib/status';
+import { StatusPill } from '../../components/ui/StatusPill';
+import { useLessonStatus } from '../../lib/useLessonStatus';
 
 type Lesson = {
   id: string;
@@ -52,16 +61,6 @@ function addMinutes(iso: string, minutes: number) {
   return date.toISOString();
 }
 
-function statusConfig(lesson: Lesson) {
-  if (lesson.isMakeup)
-    return { label: 'Reposição', bg: 'bg-purple-50', text: 'text-purple-700' };
-  if (lesson.status === 'COMPLETED')
-    return { label: 'Realizada', bg: 'bg-green-50', text: 'text-green-700' };
-  if (lesson.status === 'CANCELLED')
-    return { label: 'Falta', bg: 'bg-red-50', text: 'text-red-700' };
-  return { label: 'Agendada', bg: 'bg-yellow-50', text: 'text-yellow-700' };
-}
-
 function InfoRow({
   icon: Icon,
   label,
@@ -87,6 +86,7 @@ function InfoRow({
 export default function LessonDetail() {
   const { id } = useLocalSearchParams<{ id: string }>();
   const router = useRouter();
+  const queryClient = useQueryClient();
 
   const {
     data: lesson,
@@ -100,6 +100,25 @@ export default function LessonDetail() {
     },
     enabled: !!id,
   });
+
+  // ao sair dessa tela, invalida a lista de aulas — assim, se essa
+  // aula mudou de status enquanto o usuário estava vendo o detalhe
+  // (ex: cron rodou nesse meio tempo), a lista já volta atualizada
+  useFocusEffect(
+    useCallback(() => {
+      return () => {
+        queryClient.invalidateQueries({ queryKey: ['lessons'] });
+        queryClient.invalidateQueries({ queryKey: ['dashboard'] });
+      };
+    }, [queryClient]),
+  );
+
+  // status ao vivo, só é relevante enquanto a aula ainda está SCHEDULED
+  // no banco (se já virou COMPLETED, o status do banco já manda)
+  const liveStatus = useLessonStatus(
+    lesson?.status === 'SCHEDULED' ? lesson.scheduledAt : null,
+    lesson?.status === 'SCHEDULED' ? lesson.durationMinutes : null,
+  );
 
   if (isLoading) {
     return (
@@ -119,7 +138,11 @@ export default function LessonDetail() {
     );
   }
 
-  const config = statusConfig(lesson);
+  const effectiveStatus = getEffectiveLessonStatus(
+    lesson.status,
+    liveStatus?.phase,
+  );
+  const config = lessonStatusConfig(effectiveStatus, lesson.isMakeup);
 
   return (
     <ScrollView className="flex-1 bg-[#F5F1EA]">
@@ -146,12 +169,8 @@ export default function LessonDetail() {
         >
           {formatFullDate(lesson.scheduledAt)}
         </Text>
-        <View
-          className={`self-start rounded-full px-2.5 py-1 mt-2 ${config.bg}`}
-        >
-          <Text className={`text-[11px] font-bold ${config.text}`}>
-            {config.label}
-          </Text>
+        <View style={{ marginTop: 8, alignSelf: 'flex-start' }}>
+          <StatusPill {...config} />
         </View>
       </View>
 

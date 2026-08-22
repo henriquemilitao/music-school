@@ -52,10 +52,15 @@ henriquemilitao@DESKTOP-THGO3KT:~/projetos/music-school/backend/src$ curl -H "Co
 }'
 
 pegar o id e colocar abaix
-henriquemilitao@DESKTOP-THGO3KT:~/projetos/music-schocurl -H "Content-Type: application/json" -X POST https://exp.host/--/api/v2/push/getReceipts -d '{etReceipts -d '{
-  "ids": ["id_aqui"]
-}'
+henriquemilitao@DESKTOP-THGO3KT:~/projetos/music-scho curl -H "Content-Type: application/json" -X POST https://exp.host/--/api/v2/push/getReceipts -d '{ "ids": ["01a02a28-77c2-70ae-8018-d8232e6c6922"]}'
 
 
-ExponentPushToken[XJhw59NqmXSeUPuPP_fFLf]
-ExponentPushToken[CvbAVrPddlHO-kqih1Y-6n]
+=======
+rodar o build do app, entrar na pasta mobile e rodar:
+eas build --profile development --platform android
+
+pro build isso deu problema, pra prod vai dar tbm, depois ver isso:
+eas env:create --scope project --name GOOGLE_SERVICES_JSON --type file --value ./google-services.json --visibility secret --environment development
+
+da pra buildar local primeiro comnpx expo prebuild --platform android --clean
+>>>>>>> mobile

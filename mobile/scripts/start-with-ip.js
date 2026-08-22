@@ -16,9 +16,9 @@ function startExpo() {
   const extraArgs = process.argv.slice(2);
   const isWindows = process.platform === 'win32';
 
-  console.log('🚀 Iniciando Expo (modo Expo Go)...\n');
+  console.log('🚀 Iniciando Expo (Dev Client)...\n');
 
-  const child = spawn('npx', ['expo', 'start', ...extraArgs], {
+  const child = spawn('npx', ['expo', 'start', '--dev-client', ...extraArgs], {
     stdio: 'inherit',
     shell: isWindows,
   });

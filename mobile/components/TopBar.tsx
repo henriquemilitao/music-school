@@ -1,5 +1,5 @@
-import { useState } from 'react';
-import { View, Text, TouchableOpacity, Modal } from 'react-native';
+import { useEffect, useState } from 'react';
+import { View, Text, TouchableOpacity, Modal, BackHandler } from 'react-native';
 import { useRouter, usePathname } from 'expo-router';
 import {
   Music,
@@ -11,6 +11,7 @@ import {
   LogOut,
 } from 'lucide-react-native';
 import { useAuth } from '../context/AuthContext';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 function getInitials(name: string) {
   const parts = name.trim().split(' ');
@@ -30,6 +31,7 @@ export function TopBar() {
   const router = useRouter();
   const pathname = usePathname();
   const [menuOpen, setMenuOpen] = useState(false);
+  const insets = useSafeAreaInsets();
 
   function go(path: string) {
     setMenuOpen(false);
@@ -38,35 +40,41 @@ export function TopBar() {
 
   return (
     <View
-      className="flex-row items-center justify-between px-5 pt-14 pb-3 bg-[#F5F1EA]"
+      className="px-5 pt-14 pb-3 bg-[#F5F1EA]"
       style={{ borderBottomWidth: 1, borderBottomColor: 'rgba(0,0,0,0.04)' }}
     >
-      <View className="flex-row items-center gap-1.5">
-        <Music size={18} color="#1A1A1A" />
-        <Text
-          className="text-lg"
-          style={{ fontFamily: 'PlayfairDisplay_600SemiBold' }}
-        >
-          Pianíssima
-        </Text>
-        {/* <Image
-          source={logo}
-          style={{ width: 80, height: 80, marginTop: 10 }}
-          // style={{ height: 40, width: undefined, aspectRatio: 1 }}
+      <View className="flex-row items-center justify-between">
+        <View>
+          <View className="flex-row items-center gap-1.5">
+            <Music size={18} color="#1A1A1A" />
+            <Text
+              className="text-lg"
+              style={{ fontFamily: 'PlayfairDisplay_600SemiBold' }}
+            >
+              Pianíssima
+            </Text>
+          </View>
 
-          resizeMode="contain"
-        /> */}
+          <Text className="text-[10px] tracking-[2px] text-[#B08D57]/70 font-semibold mt-1">
+            AQUI TEM MÚSICA
+          </Text>
+        </View>
+
+        <TouchableOpacity
+          className="w-9 h-9 rounded-full bg-white items-center justify-center"
+          style={{ borderWidth: 1, borderColor: 'rgba(0,0,0,0.05)' }}
+          onPress={() => setMenuOpen(true)}
+        >
+          <Menu size={18} color="#1A1A1A" />
+        </TouchableOpacity>
       </View>
 
-      <TouchableOpacity
-        className="w-9 h-9 rounded-full bg-white items-center justify-center"
-        style={{ borderWidth: 1, borderColor: 'rgba(0,0,0,0.05)' }}
-        onPress={() => setMenuOpen(true)}
+      <Modal
+        visible={menuOpen}
+        transparent
+        animationType="fade"
+        onRequestClose={() => setMenuOpen(false)}
       >
-        <Menu size={18} color="#1A1A1A" />
-      </TouchableOpacity>
-
-      <Modal visible={menuOpen} transparent animationType="fade">
         <View className="flex-1">
           <TouchableOpacity
             className="absolute inset-0 bg-black/40"
@@ -79,13 +87,19 @@ export function TopBar() {
           >
             <View className="px-5 pt-14 pb-6 border-b border-gray-100">
               <View className="flex-row items-center justify-between mb-6">
-                <View className="flex-row items-center gap-1.5">
-                  <Music size={16} color="#B08D57" />
-                  <Text
-                    className="text-base"
-                    style={{ fontFamily: 'PlayfairDisplay_600SemiBold' }}
-                  >
-                    Pianíssima
+                <View>
+                  <View className="flex-row items-center gap-1.5">
+                    <Music size={16} color="#B08D57" />
+                    <Text
+                      className="text-base"
+                      style={{ fontFamily: 'PlayfairDisplay_600SemiBold' }}
+                    >
+                      Pianíssima
+                    </Text>
+                  </View>
+
+                  <Text className="text-[10px] tracking-[2px] text-[#B08D57]/70 font-semibold mt-1">
+                    AQUI TEM MÚSICA
                   </Text>
                 </View>
                 <TouchableOpacity onPress={() => setMenuOpen(false)}>
@@ -136,7 +150,10 @@ export function TopBar() {
               })}
             </View>
 
-            <View className="p-3 border-t border-gray-100">
+            <View
+              className="p-3 border-t border-gray-100"
+              style={{ paddingBottom: Math.max(12, insets.bottom + 12) }}
+            >
               <TouchableOpacity
                 className="flex-row items-center gap-3 px-3 py-3 rounded-xl"
                 onPress={() => {

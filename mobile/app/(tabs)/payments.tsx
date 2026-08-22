@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useState } from 'react';
 import {
   View,
   Text,
@@ -6,8 +6,8 @@ import {
   ActivityIndicator,
   TouchableOpacity,
 } from 'react-native';
-import { useQuery } from '@tanstack/react-query';
-import { useRouter } from 'expo-router';
+import { useQuery, useQueryClient } from '@tanstack/react-query';
+import { useFocusEffect, useRouter } from 'expo-router';
 import {
   Calendar,
   Receipt,
@@ -19,49 +19,174 @@ import {
 import { api } from '../../lib/api';
 import { getPaymentUrgency } from '../../lib/paymentUrgency';
 import type { Payment } from '../../lib/types/payment';
-import { useStudent } from '../../context/StudentContext';
+import { paymentKeys } from '../../lib/queryKeys';
+import {
+  formatCurrency,
+  formatDate,
+  formatMonthLabel,
+  formatMonthLabelFromKey,
+} from '../../lib/paymentFormat';
+import { StatusPill } from '../../components/ui/StatusPill';
+import { paymentStatusConfig } from '../../lib/status';
+import * as Notifications from 'expo-notifications';
 
-function formatMonthLabel(referenceMonth: string) {
-  const date = new Date(referenceMonth + 'T00:00:00');
-  const label = date.toLocaleDateString('pt-BR', {
-    month: 'long',
-    year: 'numeric',
-  });
-  return label.charAt(0).toUpperCase() + label.slice(1);
-}
+// Novo componente — pode ficar no topo do próprio payments.tsx,
+// ou em components/PaymentsStatusSection.tsx se preferir separar
+function PaymentsStatusSection({
+  openPayments,
+  openPaymentsByStudent,
+  hasMultipleStudentsOpen,
+  eligibilityMap,
+  selectedIds,
+  toggleSelection,
+  allSelected,
+  selectAll,
+  clearSelection,
+  router,
+}: {
+  openPayments: Payment[];
+  openPaymentsByStudent: {
+    studentId: string;
+    name: string;
+    payments: Payment[];
+  }[];
+  hasMultipleStudentsOpen: boolean;
+  eligibilityMap: Map<string, boolean>;
+  selectedIds: Set<string>;
+  toggleSelection: (id: string) => void;
+  allSelected: boolean;
+  selectAll: () => void;
+  clearSelection: () => void;
+  router: ReturnType<typeof useRouter>;
+}) {
+  // Estado 1: tudo em dia
+  if (openPayments.length === 0) {
+    return (
+      <View className="px-5 mt-4">
+        <View
+          className="bg-white rounded-2xl p-5 flex-row items-center gap-3.5"
+          style={{ borderWidth: 1, borderColor: 'rgba(0,0,0,0.08)' }}
+        >
+          <View className="w-10 h-10 rounded-xl items-center justify-center bg-[#F3EADD]">
+            <Check size={20} color="#B08D57" />
+          </View>
+          <View className="flex-1">
+            <Text
+              className="text-[15px] font-medium text-[#1A1A1A] mb-0.5"
+              style={{ fontFamily: 'PlayfairDisplay_600SemiBold' }}
+            >
+              Tudo em dia
+            </Text>
+            <Text className="text-[13px] text-gray-500">
+              Nenhuma fatura pendente no momento
+            </Text>
+          </View>
+        </View>
+      </View>
+    );
+  }
 
-// referenceMonth vem como "2026-08" (sem dia) — precisa completar
-// antes de criar o Date, senão dá Invalid Date.
-function formatMonthLabelFromKey(monthKey: string) {
-  return formatMonthLabel(monthKey + '-01');
-}
+  // Estado 2: exatamente 1 fatura aberta — card único, sem resumo
+  if (openPayments.length === 1) {
+    const payment = openPayments[0];
+    return (
+      <View className="px-5 mt-4">
+        <OpenPaymentCard
+          payment={payment}
+          selected={false}
+          eligible
+          showStudentName={false}
+          onToggle={() => {}}
+          onViewDetails={() => router.push(`/payment-detail/${payment.id}`)}
+          isSingleOpen
+          onPay={() => router.push(`/payment/${payment.id}`)}
+        />
+      </View>
+    );
+  }
 
-function formatDate(iso: string) {
-  return new Date(iso).toLocaleDateString('pt-BR');
-}
-
-function formatCurrency(value: number) {
-  return value.toLocaleString('pt-BR', {
-    minimumFractionDigits: 2,
-    maximumFractionDigits: 2,
-  });
-}
-
-function statusConfig(status: Payment['status']) {
-  if (status === 'PAID')
-    return { label: 'Paga', bg: 'bg-green-50', text: 'text-green-700' };
-  if (status === 'OVERDUE')
-    return { label: 'Atrasada', bg: 'bg-red-50', text: 'text-red-700' };
-  return { label: 'Pendente', bg: 'bg-yellow-50', text: 'text-yellow-700' };
-}
-
-function StatusBadge({ status }: { status: Payment['status'] }) {
-  const config = statusConfig(status);
+  // Estado 3: 2+ faturas abertas — mantém resumo + lista (comportamento já existente)
   return (
-    <View className={`rounded-full px-2.5 py-1 ${config.bg}`}>
-      <Text className={`text-[11px] font-bold ${config.text}`}>
-        {config.label}
-      </Text>
+    <View className="px-5 mt-4">
+      <View
+        className="bg-white rounded-2xl px-5 py-4 mb-3 flex-row items-center justify-between"
+        style={{
+          shadowColor: '#000',
+          shadowOpacity: 0.06,
+          shadowRadius: 8,
+          elevation: 2,
+          borderWidth: 1,
+          borderColor: '#FEE2E2',
+        }}
+      >
+        <View style={{ flex: 1, marginRight: 8 }}>
+          <Text className="text-[11px] font-bold uppercase tracking-widest text-red-600 mb-1">
+            {openPayments.length} faturas em aberto
+          </Text>
+          <Text
+            className="text-xl"
+            style={{ fontFamily: 'PlayfairDisplay_700Bold' }}
+            numberOfLines={1}
+          >
+            Total: R$
+            {formatCurrency(
+              openPayments.reduce((s, p) => s + Number(p.amount), 0),
+            )}
+          </Text>
+        </View>
+        <TouchableOpacity
+          onPress={allSelected ? clearSelection : selectAll}
+          className="bg-[#F5F1EA] rounded-full px-3 py-2"
+          style={{ flexShrink: 0 }}
+        >
+          <Text className="text-xs font-bold text-[#B08D57]" numberOfLines={1}>
+            {allSelected ? 'Limpar' : 'Selecionar todas'}
+          </Text>
+        </TouchableOpacity>
+      </View>
+
+      {hasMultipleStudentsOpen
+        ? openPaymentsByStudent.map(({ studentId, name, payments }) => (
+            <View key={studentId} className="mb-2">
+              <View className="flex-row items-center gap-2 mb-2 ml-1">
+                <View className="w-5 h-5 rounded-full bg-[#B08D57] items-center justify-center">
+                  <Text className="text-white text-[10px] font-bold">
+                    {name.charAt(0).toUpperCase()}
+                  </Text>
+                </View>
+                <Text
+                  className="text-xs font-bold uppercase tracking-widest text-gray-500 flex-1"
+                  numberOfLines={1}
+                >
+                  {name}
+                </Text>
+              </View>
+              {payments.map((payment) => (
+                <OpenPaymentCard
+                  key={payment.id}
+                  payment={payment}
+                  selected={selectedIds.has(payment.id)}
+                  eligible={eligibilityMap.get(payment.id) ?? true}
+                  showStudentName={false}
+                  onToggle={() => toggleSelection(payment.id)}
+                  onViewDetails={() =>
+                    router.push(`/payment-detail/${payment.id}`)
+                  }
+                />
+              ))}
+            </View>
+          ))
+        : openPayments.map((payment) => (
+            <OpenPaymentCard
+              key={payment.id}
+              payment={payment}
+              selected={selectedIds.has(payment.id)}
+              eligible={eligibilityMap.get(payment.id) ?? true}
+              showStudentName={false}
+              onToggle={() => toggleSelection(payment.id)}
+              onViewDetails={() => router.push(`/payment-detail/${payment.id}`)}
+            />
+          ))}
     </View>
   );
 }
@@ -76,8 +201,8 @@ function OpenPaymentCard({
   showStudentName,
   onToggle,
   onViewDetails,
-  isSingleOpen, // <-- NOVO
-  onPay, // <-- NOVO
+  isSingleOpen,
+  onPay,
 }: {
   payment: Payment;
   selected: boolean;
@@ -85,15 +210,22 @@ function OpenPaymentCard({
   showStudentName: boolean;
   onToggle: () => void;
   onViewDetails: () => void;
-  isSingleOpen?: boolean; // <-- NOVO
-  onPay?: () => void; // <-- NOVO
+  isSingleOpen?: boolean;
+  onPay?: () => void;
 }) {
   const urgency = getPaymentUrgency(payment.dueDate, payment.status);
 
+  // quando o card tem botão de pagamento dedicado (onPay), ele não
+  // tem função de seleção — nesse caso o card inteiro deve ser um
+  // container "mudo" (View), não um TouchableOpacity, senão o RN
+  // ainda mostra o feedback visual de toque (opacity piscando) mesmo
+  // sem nenhuma ação acontecer, o que confunde o usuário
+  const isSelectable = !onPay && eligible;
+  const CardContainer = isSelectable ? TouchableOpacity : View;
+
   return (
-    <TouchableOpacity
-      activeOpacity={0.7}
-      onPress={eligible ? onToggle : undefined}
+    <CardContainer
+      {...(isSelectable ? { activeOpacity: 0.7, onPress: onToggle } : {})}
       className="bg-white rounded-2xl overflow-hidden mb-3"
       style={{
         shadowColor: '#000',
@@ -105,8 +237,7 @@ function OpenPaymentCard({
       }}
     >
       <View className="p-5 flex-row">
-        {/* Checkbox só aparece quando há múltiplas faturas abertas */}
-        {!isSingleOpen && (
+        {!onPay && (
           <View className="mr-4 pt-1">
             <View
               className={`w-6 h-6 rounded-full items-center justify-center ${
@@ -124,17 +255,20 @@ function OpenPaymentCard({
         )}
 
         <View className="flex-1">
-          <View className="flex-row items-center justify-between mb-2">
-            <Text className="text-[11px] font-bold uppercase tracking-widest text-gray-400">
+          <View className="flex-row items-center justify-between mb-2 gap-2">
+            <Text
+              className="text-[11px] font-bold uppercase tracking-widest text-gray-400 flex-1"
+              numberOfLines={1}
+            >
               {showStudentName ? payment.student.name : 'Fatura do mês'}
             </Text>
-            <StatusBadge status={payment.status} />
+            <StatusPill {...paymentStatusConfig(payment.status)} />
           </View>
           <Text
             className="text-2xl"
             style={{ fontFamily: 'PlayfairDisplay_700Bold' }}
           >
-            R$ {payment.amount}
+            R$ {formatCurrency(payment.amount)}
           </Text>
           <Text className="text-gray-500 mt-1">
             {formatMonthLabel(payment.referenceMonth)}
@@ -154,12 +288,21 @@ function OpenPaymentCard({
 
           {urgency && (
             <View
-              className="self-start rounded-full px-2.5 py-1 mt-2"
-              style={{ backgroundColor: urgency.colorBg }}
+              style={{
+                backgroundColor: urgency.colorBg,
+                borderRadius: 999,
+                paddingHorizontal: 10,
+                paddingVertical: 4,
+                marginTop: 8,
+                alignSelf: 'flex-start',
+              }}
             >
               <Text
-                className="text-[11px] font-bold"
-                style={{ color: urgency.colorText }}
+                style={{
+                  color: urgency.colorText,
+                  fontSize: 11,
+                  fontWeight: 'bold',
+                }}
               >
                 {urgency.label}
               </Text>
@@ -173,8 +316,12 @@ function OpenPaymentCard({
                 onViewDetails();
               }}
               hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+              style={{ flexShrink: 0 }}
             >
-              <Text className="text-xs font-bold text-[#B08D57] underline">
+              <Text
+                className="text-xs font-bold text-[#B08D57] underline"
+                numberOfLines={1}
+              >
                 Ver detalhes
               </Text>
             </TouchableOpacity>
@@ -192,7 +339,7 @@ function OpenPaymentCard({
           </View>
         </View>
       </View>
-    </TouchableOpacity>
+    </CardContainer>
   );
 }
 
@@ -265,9 +412,11 @@ function HistoryRow({
         </Text>
       </View>
       <View className="items-end mr-2">
-        <Text className="text-sm font-bold">R$ {payment.amount}</Text>
+        <Text className="text-sm font-bold">
+          R$ {formatCurrency(payment.amount)}
+        </Text>
         <View className="mt-1">
-          <StatusBadge status={payment.status} />
+          <StatusPill {...paymentStatusConfig(payment.status)} />
         </View>
       </View>
       <ChevronRight size={16} color="#D4CFC4" />
@@ -334,21 +483,32 @@ function HistoryMonthGroup({
               }
               onPress={() => onViewDetails(payment.id)}
             >
-              <View className="flex-1">
-                <Text className="text-sm font-medium">
+              <View style={{ flex: 1, marginRight: 8 }}>
+                <Text className="text-sm font-medium" numberOfLines={1}>
                   {payment.student.name}
                 </Text>
-                <Text className="text-xs text-gray-500 mt-0.5">
+                <Text
+                  className="text-xs text-gray-500 mt-0.5"
+                  numberOfLines={1}
+                >
                   Venc. {formatDate(payment.dueDate)}
                   {payment.paidAt
                     ? ` · Paga em ${formatDate(payment.paidAt)}`
                     : ''}
                 </Text>
               </View>
-              <View className="items-end mr-2">
-                <Text className="text-sm font-bold">R$ {payment.amount}</Text>
+              <View
+                style={{
+                  alignItems: 'flex-end',
+                  marginRight: 8,
+                  flexShrink: 0,
+                }}
+              >
+                <Text className="text-sm font-bold" style={{ flexShrink: 0 }}>
+                  R$ {formatCurrency(payment.amount)}
+                </Text>
                 <View className="mt-1">
-                  <StatusBadge status={payment.status} />
+                  <StatusPill {...paymentStatusConfig(payment.status)} />
                 </View>
               </View>
               <ChevronRight size={16} color="#D4CFC4" />
@@ -365,13 +525,22 @@ export default function Payments() {
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
   const [historyFilter, setHistoryFilter] = useState<string>('all'); // <-- NOVO
 
+  const queryClient = useQueryClient();
+
   const { data, isLoading, error } = useQuery({
-    queryKey: ['payments'],
+    queryKey: paymentKeys.my(),
     queryFn: async () => {
       const response = await api.get<Payment[]>('/payments/my');
       return response.data;
     },
   });
+
+  useFocusEffect(
+    useCallback(() => {
+      queryClient.invalidateQueries({ queryKey: paymentKeys.my() });
+      Notifications.setBadgeCountAsync(0); // limpa o número vermelho no ícone
+    }, [queryClient]),
+  );
 
   const openPayments = useMemo(() => {
     if (!data) return [];
@@ -381,6 +550,19 @@ export default function Payments() {
         (a, b) => new Date(a.dueDate).getTime() - new Date(b.dueDate).getTime(),
       );
   }, [data]);
+
+  // se uma fatura selecionada sumir de openPayments (ex: acabou de ser
+  // paga, e o invalidateQueries trouxe o status novo), ela precisa sair
+  // da seleção também — senão o rodapé fica mostrando uma seleção
+  // "fantasma" que não existe mais na lista
+  useEffect(() => {
+    setSelectedIds((prev) => {
+      const openIds = new Set(openPayments.map((p) => p.id));
+      const next = new Set([...prev].filter((id) => openIds.has(id)));
+      // só cria um novo Set se algo realmente mudou, evita re-render à toa
+      return next.size === prev.size ? prev : next;
+    });
+  }, [openPayments]);
 
   // Agrupa as faturas abertas por aluno — usado só na renderização
   const openPaymentsByStudent = useMemo(() => {
@@ -550,107 +732,38 @@ export default function Payments() {
     }
   }
 
+  async function resetNotificationsDebug() {
+    await Notifications.dismissAllNotificationsAsync();
+    await Notifications.setBadgeCountAsync(0);
+  }
   return (
     <View className="flex-1 bg-[#F5F1EA]">
       <ScrollView className="flex-1">
-        {openPayments.length > 0 && (
-          <View className="px-5 mt-4">
-            {hasMultipleOpen && (
-              <View
-                className="bg-white rounded-2xl px-5 py-4 mb-3 flex-row items-center justify-between"
-                style={{
-                  shadowColor: '#000',
-                  shadowOpacity: 0.06,
-                  shadowRadius: 8,
-                  elevation: 2,
-                  borderWidth: 1,
-                  borderColor: '#FEE2E2',
-                }}
-              >
-                <View>
-                  <Text className="text-[11px] font-bold uppercase tracking-widest text-red-600 mb-1">
-                    {openPayments.length} faturas em aberto
-                  </Text>
-                  <Text
-                    className="text-xl"
-                    style={{ fontFamily: 'PlayfairDisplay_700Bold' }}
-                  >
-                    Total: R${' '}
-                    {formatCurrency(
-                      openPayments.reduce((s, p) => s + Number(p.amount), 0),
-                    )}
-                  </Text>
-                </View>
-                <TouchableOpacity
-                  onPress={allSelected ? clearSelection : selectAll}
-                  className="bg-[#F5F1EA] rounded-full px-3 py-2"
-                >
-                  <Text className="text-xs font-bold text-[#B08D57]">
-                    {allSelected ? 'Limpar' : 'Selecionar todas'}
-                  </Text>
-                </TouchableOpacity>
-              </View>
-            )}
+        <PaymentsStatusSection
+          openPayments={openPayments}
+          openPaymentsByStudent={openPaymentsByStudent}
+          hasMultipleStudentsOpen={hasMultipleStudentsOpen}
+          eligibilityMap={eligibilityMap}
+          selectedIds={selectedIds}
+          toggleSelection={toggleSelection}
+          allSelected={allSelected}
+          selectAll={selectAll}
+          clearSelection={clearSelection}
+          router={router}
+        />
 
-            {hasMultipleStudentsOpen
-              ? // Múltiplos alunos: agrupa com cabeçalho por aluno
-                openPaymentsByStudent.map(({ studentId, name, payments }) => (
-                  <View key={studentId} className="mb-2">
-                    {/* Cabeçalho do aluno */}
-                    <View className="flex-row items-center gap-2 mb-2 ml-1">
-                      <View className="w-5 h-5 rounded-full bg-[#B08D57] items-center justify-center">
-                        <Text className="text-white text-[10px] font-bold">
-                          {name.charAt(0).toUpperCase()}
-                        </Text>
-                      </View>
-                      <Text className="text-xs font-bold uppercase tracking-widest text-gray-500">
-                        {name}
-                      </Text>
-                    </View>
-
-                    {payments.map((payment) => (
-                      <OpenPaymentCard
-                        key={payment.id}
-                        payment={payment}
-                        selected={selectedIds.has(payment.id)}
-                        eligible={eligibilityMap.get(payment.id) ?? true}
-                        showStudentName={false} // nome já está no cabeçalho da seção
-                        onToggle={() => toggleSelection(payment.id)}
-                        onViewDetails={() =>
-                          router.push(`/payment-detail/${payment.id}`)
-                        }
-                        isSingleOpen={openPayments.length === 1}
-                        onPay={
-                          openPayments.length === 1
-                            ? () => router.push(`/payment/${payment.id}`)
-                            : undefined
-                        }
-                      />
-                    ))}
-                  </View>
-                ))
-              : // Aluno único: renderização flat (comportamento original)
-                openPayments.map((payment) => (
-                  <OpenPaymentCard
-                    key={payment.id}
-                    payment={payment}
-                    selected={selectedIds.has(payment.id)}
-                    eligible={eligibilityMap.get(payment.id) ?? true}
-                    showStudentName={false}
-                    onToggle={() => toggleSelection(payment.id)}
-                    onViewDetails={() =>
-                      router.push(`/payment-detail/${payment.id}`)
-                    }
-                    isSingleOpen={openPayments.length === 1}
-                    onPay={
-                      openPayments.length === 1
-                        ? () => router.push(`/payment/${payment.id}`)
-                        : undefined
-                    }
-                  />
-                ))}
+        {/* {__DEV__ && (
+          <View className="px-5 mt-2">
+            <TouchableOpacity
+              onPress={resetNotificationsDebug}
+              className="bg-red-50 border border-red-200 rounded-xl py-3 items-center"
+            >
+              <Text className="text-red-600 text-xs font-bold">
+                🧪 Resetar notificações (debug)
+              </Text>
+            </TouchableOpacity>
           </View>
-        )}
+        )} */}
 
         <View className="px-5 mt-2 mb-10">
           <Text className="text-xs font-bold uppercase tracking-widest text-gray-400 mb-3">
@@ -731,10 +844,10 @@ export default function Payments() {
         >
           <View className="flex-row items-center justify-between mb-3">
             <Text className="text-sm text-gray-500">
-              {selectedIds.size}{' '}
+              {selectedIds.size}
               {selectedIds.size === 1
-                ? 'fatura selecionada'
-                : 'faturas selecionadas'}
+                ? ' fatura selecionada'
+                : ' faturas selecionadas'}
             </Text>
             <Text
               className="text-lg font-bold"
@@ -748,7 +861,7 @@ export default function Payments() {
             onPress={handlePaySelected}
           >
             <Text className="text-white font-bold">
-              {selectedIds.size === 1 ? 'Pagar fatura' : 'Pagar selecionadas'}
+              {selectedIds.size === 1 ? 'Pagar fatura' : 'Pagar faturas'}
             </Text>
           </TouchableOpacity>
         </View>
