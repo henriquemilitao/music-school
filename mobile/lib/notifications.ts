@@ -17,22 +17,12 @@ Notifications.setNotificationHandler({
 export async function registerForPushNotificationsAsync(): Promise<
   string | null
 > {
-  if (Platform.OS === 'android') {
-    await Notifications.setNotificationChannelAsync('default', {
-      name: 'default',
-      importance: Notifications.AndroidImportance.MAX,
-      vibrationPattern: [0, 250, 250, 250],
-      lightColor: '#FF231F7C',
-    });
-  }
-
   if (!Device.isDevice) {
-    console.log(
-      'Push notifications só funcionam em device físico, não em emulador.',
-    );
+    console.log('Push notifications só funcionam em device físico.');
     return null;
   }
 
+  // 1. Solicita a permissão primeiro
   const { status: existingStatus } = await Notifications.getPermissionsAsync();
   let finalStatus = existingStatus;
 
@@ -46,6 +36,16 @@ export async function registerForPushNotificationsAsync(): Promise<
     return null;
   }
 
+  // 2. Registra o canal com importância Máxima para o Android exibir o banner
+  if (Platform.OS === 'android') {
+    await Notifications.setNotificationChannelAsync('default', {
+      name: 'Padrão',
+      importance: Notifications.AndroidImportance.MAX,
+      vibrationPattern: [0, 250, 250, 250],
+      lightColor: '#B08D57',
+    });
+  }
+
   const projectId = Constants.expoConfig?.extra?.eas?.projectId;
 
   if (!projectId) {
@@ -54,10 +54,6 @@ export async function registerForPushNotificationsAsync(): Promise<
   }
 
   try {
-    // IMPORTANTE: força buscar/revalidar o token toda vez, não
-    // confia só no cache do SDK — é isso que garante que, depois de
-    // um rebuild/reinstall, a gente pegue o token realmente vÃ¡lido
-    // no FCM, não um cache morto.
     const tokenResponse = await Notifications.getExpoPushTokenAsync({
       projectId,
     });
@@ -68,11 +64,6 @@ export async function registerForPushNotificationsAsync(): Promise<
   }
 }
 
-// NOVO — registra um listener que dispara toda vez que o SDK nativo
-// detecta que o token FCM mudou por baixo dos panos (rebuild, app
-// reinstalado, credenciais do Firebase trocadas, etc). Sem isso, o
-// app só busca o token uma vez no login e nunca mais reconfirma —
-// exatamente o bug que causou o DeviceNotRegistered.
 export function subscribeToPushTokenChanges(
   onTokenChange: (token: string) => void,
 ) {

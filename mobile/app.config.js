@@ -22,9 +22,8 @@ module.exports = {
       },
       edgeToEdgeEnabled: true,
       predictiveBackGestureEnabled: false,
-      package: 'com.henrique_militao.mobile',
-      googleServicesFile:
-        process.env.GOOGLE_SERVICES_JSON ?? './google-services.json',
+      package: 'com.henrique.pianissima',
+      googleServicesFile: './google-services.json',
     },
     web: {
       favicon: './assets/icon.png',
@@ -33,13 +32,7 @@ module.exports = {
       'expo-router',
       'expo-font',
       '@react-native-community/datetimepicker',
-      [
-        'expo-notifications',
-        {
-          icon: './assets/notification-icon.png',
-          color: '#B08D57',
-        },
-      ],
+      'expo-notifications',
     ],
     extra: {
       router: {},

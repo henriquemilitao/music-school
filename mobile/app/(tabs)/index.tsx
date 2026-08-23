@@ -22,7 +22,7 @@ import { useStudent } from '../../context/StudentContext';
 import { dashboardKeys } from '../../lib/queryKeys';
 import { lessonStatusConfig } from '../../lib/status';
 import { StatusPill } from '../../components/ui/StatusPill';
-import { useCallback } from 'react';
+import { useCallback, useEffect } from 'react';
 import { formatCurrency } from '../../lib/paymentFormat';
 import * as Notifications from 'expo-notifications';
 import { registerForPushNotificationsAsync } from '../../lib/notifications';
@@ -274,6 +274,17 @@ export default function Index() {
     }, [queryClient]),
   );
 
+  useEffect(() => {
+    // Escuta notificações chegando com o app aberto
+    const subscription = Notifications.addNotificationReceivedListener(
+      (notification) => {
+        console.log('NOTIFICAÇÃO CHEGOU NO CELULAR! Data:', notification);
+      },
+    );
+
+    return () => subscription.remove();
+  }, []);
+
   // ⬇️ MOVIDO PRA CÁ, antes de qualquer return condicional
   const handleLessonFinish = useCallback(() => {
     queryClient.invalidateQueries({ queryKey: dashboardKeys.all });
@@ -335,6 +346,9 @@ export default function Index() {
 
     if (token) {
       console.log('PUSH TOKEN GERADO:', token);
+      // Pega o token nativo do Firebase (FCM)
+      const deviceToken = await Notifications.getDevicePushTokenAsync();
+      console.log('FCM TOKEN NATIVO:', deviceToken.data);
       Alert.alert('Token Gerado com Sucesso!', token);
     } else {
       Alert.alert('Erro', 'Não foi possível gerar o token. Verifique os logs.');
