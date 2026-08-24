@@ -32,7 +32,13 @@ module.exports = {
       'expo-router',
       'expo-font',
       '@react-native-community/datetimepicker',
-      'expo-notifications',
+      [
+        'expo-notifications',
+        {
+          icon: './assets/notification-icon.png',
+          color: '#B08D57',
+        },
+      ],
     ],
     extra: {
       router: {},
