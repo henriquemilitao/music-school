@@ -28,17 +28,18 @@ module.exports = {
     web: {
       favicon: './assets/icon.png',
     },
+
+    // 👇 O LUGAR CORRETO PARA O FIREBASE LER O ÍCONE
+    notification: {
+      icon: './assets/notification_icon.png',
+      color: '#B08D57',
+    },
+
     plugins: [
       'expo-router',
       'expo-font',
       '@react-native-community/datetimepicker',
-      [
-        'expo-notifications',
-        {
-          icon: './assets/notification_icon.png',
-          color: '#B08D57',
-        },
-      ],
+      'expo-notifications', // Volta a ser apenas uma string
     ],
     extra: {
       router: {},
