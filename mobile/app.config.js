@@ -17,8 +17,8 @@ module.exports = {
     },
     android: {
       adaptiveIcon: {
-        foregroundImage: './assets/adaptive-icon.png',
-        backgroundColor: '#ffffff',
+        foregroundImage: './assets/icon.png',
+        backgroundColor: '#F7F4EE',
       },
       edgeToEdgeEnabled: true,
       predictiveBackGestureEnabled: false,
@@ -32,7 +32,13 @@ module.exports = {
       'expo-router',
       'expo-font',
       '@react-native-community/datetimepicker',
-      'expo-notifications',
+      [
+        'expo-notifications',
+        {
+          icon: './assets/notification_icon.png',
+          color: '#B08D57',
+        },
+      ],
     ],
     extra: {
       router: {},
