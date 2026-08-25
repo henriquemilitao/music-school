@@ -19,7 +19,7 @@ import {
 } from 'lucide-react-native';
 import { useAuth } from '../context/AuthContext';
 
-const logo = require('../assets/images/logo.jpeg');
+const logo = require('../assets/images/logo.png');
 
 function getInitials(name: string) {
   const parts = name.trim().split(' ');

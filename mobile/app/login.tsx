@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import {
   View,
   Text,
@@ -7,17 +7,43 @@ import {
   Alert,
   Image,
   KeyboardAvoidingView,
+  ScrollView,
   Platform,
+  Keyboard,
 } from 'react-native';
 import { useRouter } from 'expo-router';
+import { Eye, EyeOff } from 'lucide-react-native';
 import { useAuth } from '../context/AuthContext';
 
-const logo = require('../assets/images/logo.jpeg');
+const logo = require('../assets/images/logo.png');
 
 export default function Login() {
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [isSubmitting, setIsSubmitting] = useState(false);
+  const [isKeyboardVisible, setIsKeyboardVisible] = useState(false);
+  const [isEmailFocused, setIsEmailFocused] = useState(false);
+  const [isPasswordFocused, setIsPasswordFocused] = useState(false);
+  const [showPassword, setShowPassword] = useState(false);
+
+  useEffect(() => {
+    const showEvent =
+      Platform.OS === 'ios' ? 'keyboardWillShow' : 'keyboardDidShow';
+    const hideEvent =
+      Platform.OS === 'ios' ? 'keyboardWillHide' : 'keyboardDidHide';
+
+    const showSub = Keyboard.addListener(showEvent, () =>
+      setIsKeyboardVisible(true),
+    );
+    const hideSub = Keyboard.addListener(hideEvent, () =>
+      setIsKeyboardVisible(false),
+    );
+
+    return () => {
+      showSub.remove();
+      hideSub.remove();
+    };
+  }, []);
 
   const { signIn } = useAuth();
   const router = useRouter();
@@ -42,18 +68,27 @@ export default function Login() {
   return (
     <KeyboardAvoidingView
       className="flex-1 bg-[#F5F1EA]"
-      behavior={Platform.OS === 'ios' ? 'padding' : undefined}
+      behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
+      keyboardVerticalOffset={Platform.OS === 'android' ? 0 : 0}
     >
-      <View className="flex-1 justify-center px-6">
+      <ScrollView
+        contentContainerStyle={{
+          flexGrow: 1,
+          justifyContent: isKeyboardVisible ? 'flex-start' : 'center',
+          paddingTop: isKeyboardVisible ? 130 : 0,
+        }}
+        keyboardShouldPersistTaps="handled"
+        showsVerticalScrollIndicator={false}
+        className="px-6"
+      >
         <View className="items-center mb-10">
-          <Image
-            source={logo}
-            style={{ width: 202, height: 202 }}
-            resizeMode="contain"
-          />
-          {/* <Text className="text-xs tracking-[3px] text-[#B08D57] font-bold mt-4">
-            AQUI TEM MÚSICA
-          </Text> */}
+          {!isKeyboardVisible && (
+            <Image
+              source={logo}
+              style={{ width: 202, height: 202 }}
+              resizeMode="contain"
+            />
+          )}
           <Text
             className="text-3xl text-[#1A1A1A]"
             style={{ fontFamily: 'PlayfairDisplay_700Bold' }}
@@ -78,14 +113,16 @@ export default function Login() {
             <TextInput
               className="rounded-xl px-4 py-3 text-[#1A1A1A]"
               style={{
-                borderWidth: 1,
-                borderColor: 'rgba(0,0,0,0.08)',
+                borderWidth: isEmailFocused ? 1.5 : 1,
+                borderColor: isEmailFocused ? '#B08D57' : 'rgba(0,0,0,0.08)',
                 backgroundColor: '#F5F1EA',
               }}
               placeholder="seu@email.com"
               placeholderTextColor="#B0AA9C"
               value={email}
               onChangeText={setEmail}
+              onFocus={() => setIsEmailFocused(true)}
+              onBlur={() => setIsEmailFocused(false)}
               autoCapitalize="none"
               keyboardType="email-address"
             />
@@ -95,19 +132,36 @@ export default function Login() {
             <Text className="text-xs font-bold uppercase tracking-widest text-gray-400 mb-1.5">
               Senha
             </Text>
-            <TextInput
-              className="rounded-xl px-4 py-3 text-[#1A1A1A]"
+            <View
+              className="rounded-xl flex-row items-center"
               style={{
-                borderWidth: 1,
-                borderColor: 'rgba(0,0,0,0.08)',
+                borderWidth: isPasswordFocused ? 1.5 : 1,
+                borderColor: isPasswordFocused ? '#B08D57' : 'rgba(0,0,0,0.08)',
                 backgroundColor: '#F5F1EA',
               }}
-              placeholder="••••••••"
-              placeholderTextColor="#B0AA9C"
-              value={password}
-              onChangeText={setPassword}
-              secureTextEntry
-            />
+            >
+              <TextInput
+                className="flex-1 px-4 py-3 text-[#1A1A1A]"
+                placeholder="••••••••"
+                placeholderTextColor="#B0AA9C"
+                value={password}
+                onChangeText={setPassword}
+                onFocus={() => setIsPasswordFocused(true)}
+                onBlur={() => setIsPasswordFocused(false)}
+                secureTextEntry={!showPassword}
+              />
+              <TouchableOpacity
+                onPress={() => setShowPassword((prev) => !prev)}
+                className="px-4"
+                hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+              >
+                {showPassword ? (
+                  <EyeOff size={20} color="#B0AA9C" />
+                ) : (
+                  <Eye size={20} color="#B0AA9C" />
+                )}
+              </TouchableOpacity>
+            </View>
           </View>
 
           <TouchableOpacity
@@ -122,10 +176,12 @@ export default function Login() {
           </TouchableOpacity>
         </View>
 
-        <Text className="text-center text-gray-400 text-xs mt-8">
-          Pianíssima · Aqui tem música
-        </Text>
-      </View>
+        {!isKeyboardVisible && (
+          <Text className="text-center text-gray-400 text-xs mt-8">
+            Pianíssima · Aqui tem música
+          </Text>
+        )}
+      </ScrollView>
     </KeyboardAvoidingView>
   );
 }
