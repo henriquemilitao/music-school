@@ -22,7 +22,7 @@ module.exports = {
       },
       edgeToEdgeEnabled: true,
       predictiveBackGestureEnabled: false,
-      package: 'com.henrique.pianissima',
+      package: 'com.henrique_militao.pianissima',
       googleServicesFile: './google-services.json',
     },
     web: {

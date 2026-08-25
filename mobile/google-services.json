@@ -1,21 +1,21 @@
 {
   "project_info": {
-    "project_number": "80630495888",
-    "project_id": "pianissima-teste",
-    "storage_bucket": "pianissima-teste.firebasestorage.app"
+    "project_number": "455819498590",
+    "project_id": "pianissima-v3",
+    "storage_bucket": "pianissima-v3.firebasestorage.app"
   },
   "client": [
     {
       "client_info": {
-        "mobilesdk_app_id": "1:80630495888:android:883780fff34cee834bf615",
+        "mobilesdk_app_id": "1:455819498590:android:3f7c8df17f33410b9b50cf",
         "android_client_info": {
-          "package_name": "com.henrique.pianissima"
+          "package_name": "com.henrique_militao.pianissima"
         }
       },
       "oauth_client": [],
       "api_key": [
         {
-          "current_key": "AIzaSyBZslAWerzQEgpSOPBBtY4DWeagXcFNKic"
+          "current_key": "AIzaSyBe_pM2g6C9f4YVJY1tAjcoILrM721kf9Y"
         }
       ],
       "services": {
