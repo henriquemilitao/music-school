@@ -74,7 +74,7 @@ export class AuthService {
     });
 
     const appUrl = this.config.getOrThrow<string>('APP_URL');
-    return `${appUrl}/set-password?token=${rawToken}`;
+    return `${appUrl}/set-password.html?token=${rawToken}`;
   }
 
   // reemite um convite novo — invalida qualquer convite anterior

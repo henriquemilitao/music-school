@@ -5,6 +5,8 @@ import {
 } from '@nestjs/platform-fastify';
 import { ValidationPipe } from '@nestjs/common';
 import { DocumentBuilder, SwaggerModule } from '@nestjs/swagger';
+import fastifyStatic from '@fastify/static';
+import { join } from 'path';
 
 import { AppModule } from './app.module';
 
@@ -12,25 +14,31 @@ async function bootstrap() {
   const app = await NestFactory.create<NestFastifyApplication>(
     AppModule,
     new FastifyAdapter(),
-    { rawBody: true }, // necessário pra validar a assinatura HMAC do webhook da AbacatePay
+    { rawBody: true },
   );
 
-  // valida automaticamente os DTOs nas requisições
+  const publicPath = join(__dirname, '..', '..', 'public');
+  console.log('📁 Servindo arquivos estáticos de:', publicPath);
+
+  await app.register(fastifyStatic, {
+    root: publicPath,
+    prefix: '/',
+  });
+
+  console.log('✅ fastify-static registrado');
+
   app.useGlobalPipes(
     new ValidationPipe({
-      whitelist: true, // remove campos que não estão no DTO
-      forbidNonWhitelisted: true, // retorna erro se vier campo não permitido
-      transform: true, // transforma os tipos automaticamente (string → number, etc)
+      whitelist: true,
+      forbidNonWhitelisted: true,
+      transform: true,
     }),
   );
 
-  app.enableCors({
-    origin: '*', // no MVP liberado pra tudo — vai restringir quando tiver produção
-  });
+  app.enableCors({ origin: '*' });
 
-  // Swagger
   const config = new DocumentBuilder()
-    .setTitle('Music School API') // muda isso
+    .setTitle('Music School API')
     .setVersion('1.0')
     .addBearerAuth()
     .build();
