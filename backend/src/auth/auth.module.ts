@@ -14,7 +14,6 @@ import { JwtStrategy } from './jwt.strategy';
       useFactory: (config: ConfigService) => ({
         secret: config.getOrThrow<string>('JWT_SECRET'),
         signOptions: {
-          // cast explícito: o tipo espera StringValue, não string genérica
           expiresIn: config.get('JWT_EXPIRES_IN', '7d') as '7d',
         },
       }),
@@ -22,6 +21,6 @@ import { JwtStrategy } from './jwt.strategy';
   ],
   providers: [AuthService, JwtStrategy],
   controllers: [AuthController],
-  exports: [JwtModule],
+  exports: [JwtModule, AuthService], // AuthService exportado pro UsersModule usar
 })
 export class AuthModule {}

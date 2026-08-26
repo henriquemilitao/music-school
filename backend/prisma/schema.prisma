@@ -70,16 +70,17 @@ model School {
 }
 
 model User {
-  id           String   @id @default(uuid())
+  id           String          @id @default(uuid())
   schoolId     String
-  school       School   @relation(fields: [schoolId], references: [id])
+  school       School          @relation(fields: [schoolId], references: [id])
   name         String
-  email        String   @unique
-  passwordHash String
+  email        String          @unique
+  passwordHash String? // AGORA OPCIONAL — usuário convidado ainda não tem senha
+  invites      AccountInvite[]
   phone        String?
-  role         Role     @default(STUDENT)
-  isActive     Boolean  @default(true)
-  createdAt    DateTime @default(now())
+  role         Role            @default(STUDENT)
+  isActive     Boolean         @default(true)
+  createdAt    DateTime        @default(now())
 
   // NOVO — token do Expo Push (ExponentPushToken[...]) pra mandar
   // notificação. Null se o usuário nunca deu permissão ou nunca
@@ -92,6 +93,18 @@ model User {
   paymentBundles PaymentBundle[]
 
   @@map("users")
+}
+
+model AccountInvite {
+  id        String    @id @default(uuid())
+  userId    String
+  user      User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  tokenHash String    @unique // hash SHA-256 do token, nunca o token puro
+  expiresAt DateTime
+  usedAt    DateTime?
+  createdAt DateTime  @default(now())
+
+  @@map("account_invites")
 }
 
 model Student {

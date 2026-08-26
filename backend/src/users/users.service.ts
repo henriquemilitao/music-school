@@ -4,14 +4,17 @@ import {
   NotFoundException,
 } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
+import { AuthService } from '../auth/auth.service';
 import { CreateUserDto } from './dto/create-user.dto';
 import { Role } from '@prisma/client';
-import * as bcrypt from 'bcrypt';
 import { calculateAge } from '../common/utils/age.util';
 
 @Injectable()
 export class UsersService {
-  constructor(private prisma: PrismaService) {}
+  constructor(
+    private prisma: PrismaService,
+    private authService: AuthService,
+  ) {}
 
   async create(dto: CreateUserDto, schoolId: string) {
     const existing = await this.prisma.user.findUnique({
@@ -22,14 +25,13 @@ export class UsersService {
       throw new ConflictException('Email já cadastrado');
     }
 
-    const passwordHash = await bcrypt.hash(dto.password, 10);
-
+    // sem senha na criação — a pessoa define via link de convite
     const user = await this.prisma.user.create({
       data: {
         schoolId,
         name: dto.name,
         email: dto.email,
-        passwordHash,
+        passwordHash: null,
         phone: dto.phone,
         role: dto.role ?? Role.STUDENT,
       },
@@ -50,7 +52,9 @@ export class UsersService {
       });
     }
 
-    return user;
+    const inviteLink = await this.authService.createInvite(user.id);
+
+    return { ...user, inviteLink };
   }
 
   async findMe(userId: string) {
@@ -87,10 +91,6 @@ export class UsersService {
   }
 
   async updatePushToken(userId: string, pushToken: string) {
-    // Um pushToken pertence a UM device físico. Se outro usuário
-    // (conta de teste anterior, ou device emprestado) já estiver
-    // com esse mesmo token registrado, ele precisa perder o token —
-    // senão os dois recebem push um do outro.
     await this.prisma.user.updateMany({
       where: {
         pushToken,
