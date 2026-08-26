@@ -3,6 +3,7 @@ module.exports = {
     name: 'Pianíssima',
     slug: 'mobile',
     version: '1.0.0',
+    scheme: 'pianissima', // NOVO — necessário pro deep link pianissima://set-password funcionar
     orientation: 'portrait',
     icon: './assets/icon.png',
     userInterfaceStyle: 'light',

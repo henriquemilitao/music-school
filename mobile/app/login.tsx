@@ -81,7 +81,7 @@ export default function Login() {
         showsVerticalScrollIndicator={false}
         className="px-6"
       >
-        <View className="items-center mb-10 justifu">
+        <View className="items-center mb-10 mt-10">
           {!isKeyboardVisible && (
             <Image
               source={logo}
@@ -175,6 +175,22 @@ export default function Login() {
             </Text>
           </TouchableOpacity>
         </View>
+
+        {__DEV__ && (
+          <TouchableOpacity
+            className="items-center py-3 mt-2"
+            onPress={() => {
+              // troque TOKEN_AQUI pelo token que veio no inviteLink da API
+              router.push(
+                '/set-password?token=fe69af2690444d8a7197f036d6f3a47d6b9b33714ff6ca98568cef732cab3ab5',
+              );
+            }}
+          >
+            <Text className="text-gray-400 text-xs">
+              [DEV] Testar tela de criar senha
+            </Text>
+          </TouchableOpacity>
+        )}
 
         {!isKeyboardVisible && (
           <Text className="text-center text-gray-400 text-xs mt-8">

@@ -214,6 +214,14 @@ function OpenPaymentCard({
   onPay?: () => void;
 }) {
   const urgency = getPaymentUrgency(payment.dueDate, payment.status);
+  const isOverdue = payment.status === 'OVERDUE';
+
+  // pill do topo: usa o label da urgência (com dias) quando atrasada,
+  // senão cai no label padrão do status ("Pendente", "Paga")
+  const pillConfig =
+    isOverdue && urgency
+      ? { ...paymentStatusConfig(payment.status), label: urgency.label }
+      : paymentStatusConfig(payment.status);
 
   // quando o card tem botão de pagamento dedicado (onPay), ele não
   // tem função de seleção — nesse caso o card inteiro deve ser um
@@ -262,7 +270,7 @@ function OpenPaymentCard({
             >
               {showStudentName ? payment.student.name : 'Fatura do mês'}
             </Text>
-            <StatusPill {...paymentStatusConfig(payment.status)} />
+            <StatusPill {...pillConfig} />
           </View>
           <Text
             className="text-2xl"
@@ -286,7 +294,8 @@ function OpenPaymentCard({
             </Text>
           )}
 
-          {urgency && (
+          {/* badge de baixo só aparece se NÃO estiver atrasada */}
+          {urgency && !isOverdue && (
             <View
               style={{
                 backgroundColor: urgency.colorBg,
@@ -309,7 +318,7 @@ function OpenPaymentCard({
             </View>
           )}
 
-          <View className="flex-row items-center gap-3 mt-3">
+          <View className="flex-column gap-3 mt-3">
             <TouchableOpacity
               onPress={(e) => {
                 e.stopPropagation?.();
@@ -319,7 +328,7 @@ function OpenPaymentCard({
               style={{ flexShrink: 0 }}
             >
               <Text
-                className="text-xs font-bold text-[#B08D57] underline"
+                className="text-xs font-bold text-[#B08D57] underline text-center"
                 numberOfLines={1}
               >
                 Ver detalhes

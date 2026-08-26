@@ -60,6 +60,10 @@ function AuthGate({ children }: { children: React.ReactNode }) {
   const { user, isLoading } = useAuth();
   const pathname = usePathname();
 
+  // Rotas acessíveis sem estar logado
+  const PUBLIC_ROUTES = ['/login', '/set-password'];
+  const isPublicRoute = PUBLIC_ROUTES.includes(pathname);
+
   if (isLoading) {
     return (
       <View className="flex-1 items-center justify-center bg-[#F5F1EA]">
@@ -68,12 +72,10 @@ function AuthGate({ children }: { children: React.ReactNode }) {
     );
   }
 
-  if (!user && pathname !== '/login') {
+  if (!user && !isPublicRoute) {
     return <Redirect href="/login" />;
   }
 
-  // Redireciona pro grupo certo baseado no role, se o usuário
-  // estiver tentando acessar a raiz "/" (ex: logo após o login)
   if (user && pathname === '/') {
     if (user.role === 'ADMIN') {
       return <Redirect href="/(admin)/students" />;

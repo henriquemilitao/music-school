@@ -114,21 +114,21 @@ function TabsLayoutInner() {
         }}
       >
         <MaterialTopTabs.Screen
-          name="index"
-          options={{
-            title: TAB_LABELS.index,
-            tabBarIcon: ({ color }) => {
-              const Icon = TAB_ICONS.index;
-              return <Icon color={color} size={20} />;
-            },
-          }}
-        />
-        <MaterialTopTabs.Screen
           name="lessons"
           options={{
             title: TAB_LABELS.lessons,
             tabBarIcon: ({ color }) => {
               const Icon = TAB_ICONS.lessons;
+              return <Icon color={color} size={20} />;
+            },
+          }}
+        />
+        <MaterialTopTabs.Screen
+          name="index"
+          options={{
+            title: TAB_LABELS.index,
+            tabBarIcon: ({ color }) => {
+              const Icon = TAB_ICONS.index;
               return <Icon color={color} size={20} />;
             },
           }}
