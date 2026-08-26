@@ -61,11 +61,11 @@ export function TopBar() {
         </View>
 
         <TouchableOpacity
-          className="w-9 h-9 rounded-full bg-white items-center justify-center"
-          style={{ borderWidth: 1, borderColor: 'rgba(0,0,0,0.05)' }}
+          // className="w-10 h-10 rounded-full bg-white items-center justify-center"
+          // style={{ borderWidth: 1, borderColor: 'rgba(0,0,0,0.05)' }}
           onPress={() => setMenuOpen(true)}
         >
-          <Menu size={18} color="#1A1A1A" />
+          <Menu size={25} color="#1A1A1A" />
         </TouchableOpacity>
       </View>
 
@@ -103,7 +103,7 @@ export function TopBar() {
                   </Text>
                 </View>
                 <TouchableOpacity onPress={() => setMenuOpen(false)}>
-                  <X size={18} color="#9CA3AF" />
+                  <X size={22} color="#9CA3AF" />
                 </TouchableOpacity>
               </View>
 

@@ -141,7 +141,8 @@ export default function PaymentCheckout() {
           >
             R$ {formatCurrency(payment.amount)}
           </Text>
-          <StatusPill {...config} size="md" />
+          {/* só mostra o pill quando pago — "atrasada" some, já está pagando */}
+          {isPaid && <StatusPill {...config} size="md" />}
         </View>
       </View>
 
@@ -192,37 +193,28 @@ export default function PaymentCheckout() {
               elevation: 2,
             }}
           >
-            <View className="flex-row items-center justify-between mb-1">
+            <View className="flex-row items-center justify-between mb-3">
               <View className="flex-row items-center gap-2">
                 <QrCode size={20} color="#B08D57" />
                 <Text className="text-sm font-bold">Pague via PIX</Text>
               </View>
 
               {countdown && !pixExpired && (
-                <View className="flex-row items-center gap-1.5 bg-[#F5F1EA] rounded-full px-2.5 py-1">
-                  <Timer size={13} color="#B08D57" />
-                  <Text className="text-xs font-bold text-[#B08D57]">
-                    {formatPixCountdown(countdown.minutes, countdown.seconds)}
-                  </Text>
+                <View className="items-end">
+                  <View className="flex-row items-center gap-1.5 bg-[#F5F1EA] rounded-full px-2.5 py-1">
+                    <Timer size={13} color="#B08D57" />
+                    <Text className="text-xs font-bold text-[#B08D57]">
+                      {formatPixCountdown(countdown.minutes, countdown.seconds)}
+                    </Text>
+                  </View>
+                  {payment.pixExpiresAt && (
+                    <Text className="text-[10px] text-gray-400 mt-1">
+                      Válido até {formatExpiresAtTime(payment.pixExpiresAt)}
+                    </Text>
+                  )}
                 </View>
               )}
-
-              {payment.pixExpiresAt && !pixExpired && (
-                <Text className="text-[11px] text-gray-400 text-center mb-3">
-                  Válido até{' '}
-                  {new Date(payment.pixExpiresAt).toLocaleTimeString('pt-BR', {
-                    hour: '2-digit',
-                    minute: '2-digit',
-                  })}
-                </Text>
-              )}
             </View>
-
-            {payment.pixExpiresAt && !pixExpired && (
-              <Text className="text-[11px] text-gray-400 text-right mb-3">
-                Válido até {formatExpiresAtTime(payment.pixExpiresAt)}
-              </Text>
-            )}
 
             {pixExpired ? (
               <View className="items-center py-6">
@@ -269,7 +261,7 @@ export default function PaymentCheckout() {
                     </Text>
 
                     <View className="bg-[#F5F1EA] rounded-xl p-3 mb-3">
-                      <Text className="text-xs text-gray-500" numberOfLines={2}>
+                      <Text className="text-xs text-gray-500" numberOfLines={1}>
                         {payment.pixCopyPaste}
                       </Text>
                     </View>

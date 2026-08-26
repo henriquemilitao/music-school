@@ -56,3 +56,11 @@ export function formatCurrency(value: number | string): string {
 export function formatPixCountdown(minutes: number, seconds: number) {
   return `${String(minutes).padStart(2, '0')}:${String(seconds).padStart(2, '0')}`;
 }
+
+// só o nome do mês, sem ano — usado no card "Fatura de agosto",
+// onde o ano seria redundante/desnecessário
+export function formatMonthNameOnly(referenceMonth: string) {
+  const date = new Date(referenceMonth + 'T00:00:00');
+  const label = date.toLocaleDateString('pt-BR', { month: 'long' });
+  return label; // mês já minúsculo fica melhor em "Fatura de agosto"
+}

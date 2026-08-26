@@ -76,8 +76,15 @@ export default function PaymentDetail() {
     );
   }
 
-  const isPaid = payment.status === 'PAID';
-  const config = paymentStatusConfig(payment.status);
+  const isPaid = payment!.status === 'PAID';
+  const isOverdue = payment!.status === 'OVERDUE';
+  const urgency = getPaymentUrgency(payment!.dueDate, payment!.status);
+
+  // pill do topo: label com dias quando atrasada, senão o padrão
+  const config =
+    isOverdue && urgency
+      ? { ...paymentStatusConfig(payment!.status), label: urgency.label }
+      : paymentStatusConfig(payment!.status);
 
   return (
     <ScrollView className="flex-1 bg-[#F5F1EA]">
@@ -134,24 +141,6 @@ export default function PaymentDetail() {
             </View>
           </View>
 
-          {!isPaid &&
-            (() => {
-              const urgency = getPaymentUrgency(
-                payment.dueDate,
-                payment.status,
-              );
-              if (!urgency) return null;
-              return (
-                <View style={{ alignSelf: 'flex-start' }}>
-                  <StatusPill
-                    label={urgency.label}
-                    colorText={urgency.colorText}
-                    colorBg={urgency.colorBg}
-                  />
-                </View>
-              );
-            })()}
-
           {isPaid && payment.paidAt && (
             <View className="flex-row items-center gap-3">
               <View className="w-9 h-9 rounded-xl bg-green-50 items-center justify-center">
@@ -173,7 +162,7 @@ export default function PaymentDetail() {
             onPress={() => router.push(`/payment/${payment.id}`)}
           >
             <QrCode size={18} color="#fff" />
-            <Text className="text-white font-bold">Pagar agora</Text>
+            <Text className="text-white font-bold">Gerar PIX</Text>
           </TouchableOpacity>
         )}
 

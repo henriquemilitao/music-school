@@ -15,6 +15,7 @@ import {
   ChevronDown,
   Check,
   Lock,
+  QrCode,
 } from 'lucide-react-native';
 import { api } from '../../lib/api';
 import { getPaymentUrgency } from '../../lib/paymentUrgency';
@@ -25,6 +26,7 @@ import {
   formatDate,
   formatMonthLabel,
   formatMonthLabelFromKey,
+  formatMonthNameOnly,
 } from '../../lib/paymentFormat';
 import { StatusPill } from '../../components/ui/StatusPill';
 import { paymentStatusConfig } from '../../lib/status';
@@ -268,7 +270,9 @@ function OpenPaymentCard({
               className="text-[11px] font-bold uppercase tracking-widest text-gray-400 flex-1"
               numberOfLines={1}
             >
-              {showStudentName ? payment.student.name : 'Fatura do mês'}
+              {showStudentName
+                ? payment.student.name
+                : `Fatura de ${formatMonthNameOnly(payment.referenceMonth)}`}
             </Text>
             <StatusPill {...pillConfig} />
           </View>
@@ -277,9 +281,6 @@ function OpenPaymentCard({
             style={{ fontFamily: 'PlayfairDisplay_700Bold' }}
           >
             R$ {formatCurrency(payment.amount)}
-          </Text>
-          <Text className="text-gray-500 mt-1">
-            {formatMonthLabel(payment.referenceMonth)}
           </Text>
           <View className="flex-row items-center gap-1.5 mt-2">
             <Calendar size={14} color="#9CA3AF" />
@@ -318,34 +319,35 @@ function OpenPaymentCard({
             </View>
           )}
 
-          <View className="flex-column gap-3 mt-3">
+          <View
+            className="mt-3"
+            style={{
+              flexDirection: 'row',
+              justifyContent: isSingleOpen && onPay ? 'center' : 'flex-start',
+            }}
+          >
             <TouchableOpacity
               onPress={(e) => {
                 e.stopPropagation?.();
                 onViewDetails();
               }}
               hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
-              style={{ flexShrink: 0 }}
             >
-              <Text
-                className="text-xs font-bold text-[#B08D57] underline text-center"
-                numberOfLines={1}
-              >
+              <Text className="text-xs font-bold text-[#B08D57] underline ">
                 Ver detalhes
               </Text>
             </TouchableOpacity>
-
-            {isSingleOpen && onPay && (
-              <TouchableOpacity
-                onPress={onPay}
-                className="flex-1 bg-[#B08D57] rounded-xl py-3 items-center"
-              >
-                <Text className="text-white font-bold text-sm">
-                  Pagar fatura
-                </Text>
-              </TouchableOpacity>
-            )}
           </View>
+
+          {isSingleOpen && onPay && (
+            <TouchableOpacity
+              onPress={onPay}
+              className="mt-3 bg-[#B08D57] rounded-xl py-3 flex-row items-center justify-center gap-2"
+            >
+              <QrCode size={18} color="#fff" />
+              <Text className="text-white font-bold text-sm">Gerar PIX</Text>
+            </TouchableOpacity>
+          )}
         </View>
       </View>
     </CardContainer>
@@ -866,11 +868,15 @@ export default function Payments() {
             </Text>
           </View>
           <TouchableOpacity
-            className="bg-[#B08D57] rounded-xl py-4 items-center"
+            className="bg-[#B08D57] rounded-xl py-3 flex-row items-center justify-center gap-2"
             onPress={handlePaySelected}
           >
+            <QrCode size={18} color="#fff" />
             <Text className="text-white font-bold">
-              {selectedIds.size === 1 ? 'Pagar fatura' : 'Pagar faturas'}
+              {/* {selectedIds.size === 1
+                ? 'Gerar PIX da fatura'
+                : 'Gerar PIX das faturas'} */}
+              Gerar PIX
             </Text>
           </TouchableOpacity>
         </View>

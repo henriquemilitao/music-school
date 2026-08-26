@@ -258,20 +258,21 @@ export default function PaymentBundleDetail() {
               </View>
 
               {countdown && !pixExpired && (
-                <View className="flex-row items-center gap-1.5 bg-[#F5F1EA] rounded-full px-2.5 py-1">
-                  <Timer size={13} color="#B08D57" />
-                  <Text className="text-xs font-bold text-[#B08D57]">
-                    {formatPixCountdown(countdown.minutes, countdown.seconds)}
-                  </Text>
+                <View className="items-end">
+                  <View className="flex-row items-center gap-1.5 bg-[#F5F1EA] rounded-full px-2.5 py-1">
+                    <Timer size={13} color="#B08D57" />
+                    <Text className="text-xs font-bold text-[#B08D57]">
+                      {formatPixCountdown(countdown.minutes, countdown.seconds)}
+                    </Text>
+                  </View>
+                  {bundle.pixExpiresAt && (
+                    <Text className="text-[10px] text-gray-400 mt-1">
+                      Válido até {formatExpiresAtTime(bundle.pixExpiresAt)}
+                    </Text>
+                  )}
                 </View>
               )}
             </View>
-
-            {bundle.pixExpiresAt && !pixExpired && (
-              <Text className="text-[11px] text-gray-400 text-right mb-3">
-                Válido até {formatExpiresAtTime(bundle.pixExpiresAt)}
-              </Text>
-            )}
 
             {pixExpired ? (
               <View className="items-center py-6">
@@ -318,7 +319,7 @@ export default function PaymentBundleDetail() {
                     </Text>
 
                     <View className="bg-[#F5F1EA] rounded-xl p-3 mb-3">
-                      <Text className="text-xs text-gray-500" numberOfLines={2}>
+                      <Text className="text-xs text-gray-500" numberOfLines={1}>
                         {bundle.pixCopyPaste}
                       </Text>
                     </View>
