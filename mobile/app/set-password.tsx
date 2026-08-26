@@ -1,5 +1,4 @@
-// app/set-password.tsx
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import {
   View,
   Text,
@@ -11,6 +10,7 @@ import {
   ScrollView,
   Platform,
   ActivityIndicator,
+  Keyboard,
 } from 'react-native';
 import { useRouter, useLocalSearchParams } from 'expo-router';
 import { Eye, EyeOff } from 'lucide-react-native';
@@ -34,6 +34,28 @@ export default function SetPassword() {
   const [isPasswordFocused, setIsPasswordFocused] = useState(false);
   const [isConfirmFocused, setIsConfirmFocused] = useState(false);
   const [isSubmitting, setIsSubmitting] = useState(false);
+  const [isKeyboardVisible, setIsKeyboardVisible] = useState(false);
+
+  const confirmInputRef = useRef<TextInput>(null);
+
+  useEffect(() => {
+    const showEvent =
+      Platform.OS === 'ios' ? 'keyboardWillShow' : 'keyboardDidShow';
+    const hideEvent =
+      Platform.OS === 'ios' ? 'keyboardWillHide' : 'keyboardDidHide';
+
+    const showSub = Keyboard.addListener(showEvent, () =>
+      setIsKeyboardVisible(true),
+    );
+    const hideSub = Keyboard.addListener(hideEvent, () =>
+      setIsKeyboardVisible(false),
+    );
+
+    return () => {
+      showSub.remove();
+      hideSub.remove();
+    };
+  }, []);
 
   useEffect(() => {
     async function validateToken() {
@@ -93,7 +115,6 @@ export default function SetPassword() {
     }
   }
 
-  // ─── Estado: validando token ───
   if (invite.status === 'loading') {
     return (
       <View className="flex-1 bg-[#F5F1EA] items-center justify-center">
@@ -103,7 +124,6 @@ export default function SetPassword() {
     );
   }
 
-  // ─── Estado: token inválido/expirado ───
   if (invite.status === 'invalid') {
     return (
       <View className="flex-1 bg-[#F5F1EA] items-center justify-center px-8">
@@ -128,33 +148,39 @@ export default function SetPassword() {
     );
   }
 
-  // ─── Estado: token válido — formulário ───
   return (
     <KeyboardAvoidingView
       className="flex-1 bg-[#F5F1EA]"
       behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
     >
       <ScrollView
-        contentContainerStyle={{ flexGrow: 1, justifyContent: 'center' }}
+        contentContainerStyle={{
+          justifyContent: isKeyboardVisible ? 'flex-start' : 'center',
+          paddingTop: isKeyboardVisible ? 80 : 0,
+        }}
         keyboardShouldPersistTaps="handled"
         showsVerticalScrollIndicator={false}
         className="px-6"
       >
-        <View className="items-center mb-8">
-          <Image
-            source={logo}
-            style={{ width: 140, height: 140 }}
-            resizeMode="contain"
-          />
+        <View className="items-center mb-8 mt-10">
+          {!isKeyboardVisible && (
+            <Image
+              source={logo}
+              style={{ width: 240, height: 240 }}
+              resizeMode="contain"
+            />
+          )}
           <Text
             className="text-3xl text-[#1A1A1A] text-center"
             style={{ fontFamily: 'PlayfairDisplay_700Bold' }}
           >
             Criar senha
           </Text>
-          <Text className="text-gray-500 text-sm text-center mt-2">
-            Olá, {invite.name}! Defina uma senha para {invite.email}
-          </Text>
+          {!isKeyboardVisible && (
+            <Text className="text-gray-500 text-sm text-center mt-2">
+              Olá, {invite.name}! Defina uma senha para {invite.email}
+            </Text>
+          )}
         </View>
 
         <View
@@ -187,6 +213,9 @@ export default function SetPassword() {
                 onFocus={() => setIsPasswordFocused(true)}
                 onBlur={() => setIsPasswordFocused(false)}
                 secureTextEntry={!showPassword}
+                returnKeyType="next"
+                onSubmitEditing={() => confirmInputRef.current?.focus()}
+                blurOnSubmit={false}
               />
               <TouchableOpacity
                 onPress={() => setShowPassword((prev) => !prev)}
@@ -206,21 +235,39 @@ export default function SetPassword() {
             <Text className="text-xs font-bold uppercase tracking-widest text-gray-400 mb-1.5">
               Confirmar senha
             </Text>
-            <TextInput
-              className="rounded-xl px-4 py-3 text-[#1A1A1A]"
+            <View
+              className="rounded-xl flex-row items-center"
               style={{
                 borderWidth: isConfirmFocused ? 1.5 : 1,
                 borderColor: isConfirmFocused ? '#B08D57' : 'rgba(0,0,0,0.08)',
                 backgroundColor: '#F5F1EA',
               }}
-              placeholder="Repita a senha"
-              placeholderTextColor="#B0AA9C"
-              value={confirmPassword}
-              onChangeText={setConfirmPassword}
-              onFocus={() => setIsConfirmFocused(true)}
-              onBlur={() => setIsConfirmFocused(false)}
-              secureTextEntry={!showPassword}
-            />
+            >
+              <TextInput
+                ref={confirmInputRef}
+                className="flex-1 px-4 py-3 text-[#1A1A1A]"
+                placeholder="Repita a senha"
+                placeholderTextColor="#B0AA9C"
+                value={confirmPassword}
+                onChangeText={setConfirmPassword}
+                onFocus={() => setIsConfirmFocused(true)}
+                onBlur={() => setIsConfirmFocused(false)}
+                secureTextEntry={!showPassword}
+                returnKeyType="done"
+                onSubmitEditing={Keyboard.dismiss}
+              />
+              <TouchableOpacity
+                onPress={() => setShowPassword((prev) => !prev)}
+                className="px-4"
+                hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+              >
+                {showPassword ? (
+                  <EyeOff size={20} color="#B0AA9C" />
+                ) : (
+                  <Eye size={20} color="#B0AA9C" />
+                )}
+              </TouchableOpacity>
+            </View>
           </View>
 
           <TouchableOpacity

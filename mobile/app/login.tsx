@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import {
   View,
   Text,
@@ -25,6 +25,7 @@ export default function Login() {
   const [isEmailFocused, setIsEmailFocused] = useState(false);
   const [isPasswordFocused, setIsPasswordFocused] = useState(false);
   const [showPassword, setShowPassword] = useState(false);
+  const passwordInputRef = useRef<TextInput>(null);
 
   useEffect(() => {
     const showEvent =
@@ -90,10 +91,10 @@ export default function Login() {
             />
           )}
           <Text
-            className="text-3xl text-[#1A1A1A]"
+            className="text-3xl text-[#1A1A1A] -mt-10"
             style={{ fontFamily: 'PlayfairDisplay_700Bold' }}
           >
-            Bem-vindo
+            Bem-vindo(a)
           </Text>
         </View>
 
@@ -125,6 +126,9 @@ export default function Login() {
               onBlur={() => setIsEmailFocused(false)}
               autoCapitalize="none"
               keyboardType="email-address"
+              returnKeyType="next"
+              onSubmitEditing={() => passwordInputRef.current?.focus()}
+              blurOnSubmit={false}
             />
           </View>
 
@@ -141,6 +145,7 @@ export default function Login() {
               }}
             >
               <TextInput
+                ref={passwordInputRef}
                 className="flex-1 px-4 py-3 text-[#1A1A1A]"
                 placeholder="••••••••"
                 placeholderTextColor="#B0AA9C"
@@ -149,6 +154,8 @@ export default function Login() {
                 onFocus={() => setIsPasswordFocused(true)}
                 onBlur={() => setIsPasswordFocused(false)}
                 secureTextEntry={!showPassword}
+                returnKeyType="done"
+                onSubmitEditing={Keyboard.dismiss}
               />
               <TouchableOpacity
                 onPress={() => setShowPassword((prev) => !prev)}
@@ -175,22 +182,6 @@ export default function Login() {
             </Text>
           </TouchableOpacity>
         </View>
-
-        {__DEV__ && (
-          <TouchableOpacity
-            className="items-center py-3 mt-2"
-            onPress={() => {
-              // troque TOKEN_AQUI pelo token que veio no inviteLink da API
-              router.push(
-                '/set-password?token=fe69af2690444d8a7197f036d6f3a47d6b9b33714ff6ca98568cef732cab3ab5',
-              );
-            }}
-          >
-            <Text className="text-gray-400 text-xs">
-              [DEV] Testar tela de criar senha
-            </Text>
-          </TouchableOpacity>
-        )}
 
         {!isKeyboardVisible && (
           <Text className="text-center text-gray-400 text-xs mt-8">
