@@ -268,22 +268,22 @@ export default function Index() {
 
   useFocusEffect(
     useCallback(() => {
-      console.log('Dashboard focou, invalidando', selectedStudentId);
+      // console.log('Dashboard focou, invalidando', selectedStudentId);
 
       queryClient.invalidateQueries({ queryKey: dashboardKeys.all });
     }, [queryClient]),
   );
 
-  useEffect(() => {
-    // Escuta notificações chegando com o app aberto
-    const subscription = Notifications.addNotificationReceivedListener(
-      (notification) => {
-        console.log('NOTIFICAÇÃO CHEGOU NO CELULAR! Data:', notification);
-      },
-    );
+  // useEffect(() => {
+  //   // Escuta notificações chegando com o app aberto
+  //   const subscription = Notifications.addNotificationReceivedListener(
+  //     (notification) => {
+  //       console.log('NOTIFICAÇÃO CHEGOU NO CELULAR! Data:', notification);
+  //     },
+  //   );
 
-    return () => subscription.remove();
-  }, []);
+  //   return () => subscription.remove();
+  // }, []);
 
   // ⬇️ MOVIDO PRA CÁ, antes de qualquer return condicional
   const handleLessonFinish = useCallback(() => {
@@ -331,29 +331,29 @@ export default function Index() {
   // vez do badge verde hardcoded que existia antes.
   const lastLessonConfig = lessonStatusConfig('COMPLETED', false);
 
-  async function handleTestNotification() {
-    await Notifications.scheduleNotificationAsync({
-      content: {
-        title: 'Notificação da Pianíssima 🎶',
-        body: 'Teste de notificação local no Dev Client funcionando!',
-      },
-      trigger: null, // Dispara instantaneamente
-    });
-  }
+  // async function handleTestNotification() {
+  //   await Notifications.scheduleNotificationAsync({
+  //     content: {
+  //       title: 'Notificação da Pianíssima 🎶',
+  //       body: 'Teste de notificação local no Dev Client funcionando!',
+  //     },
+  //     trigger: null, // Dispara instantaneamente
+  //   });
+  // }
 
-  async function handleGetPushToken() {
-    const token = await registerForPushNotificationsAsync();
+  // async function handleGetPushToken() {
+  //   const token = await registerForPushNotificationsAsync();
 
-    if (token) {
-      console.log('PUSH TOKEN GERADO:', token);
-      // Pega o token nativo do Firebase (FCM)
-      const deviceToken = await Notifications.getDevicePushTokenAsync();
-      console.log('FCM TOKEN NATIVO:', deviceToken.data);
-      Alert.alert('Token Gerado com Sucesso!', token);
-    } else {
-      Alert.alert('Erro', 'Não foi possível gerar o token. Verifique os logs.');
-    }
-  }
+  //   if (token) {
+  //     console.log('PUSH TOKEN GERADO:', token);
+  //     // Pega o token nativo do Firebase (FCM)
+  //     const deviceToken = await Notifications.getDevicePushTokenAsync();
+  //     console.log('FCM TOKEN NATIVO:', deviceToken.data);
+  //     Alert.alert('Token Gerado com Sucesso!', token);
+  //   } else {
+  //     Alert.alert('Erro', 'Não foi possível gerar o token. Verifique os logs.');
+  //   }
+  // }
   return (
     <View className="flex-1 bg-[#F5F1EA]">
       <ScrollView className="flex-1 px-4 pt-4">
@@ -482,7 +482,7 @@ export default function Index() {
             </>
           )}
         </DashboardCard>
-
+        {/* 
         <TouchableOpacity
           className="bg-[#B08D57] p-3.5 rounded-2xl items-center mb-4"
           onPress={handleTestNotification}
@@ -490,14 +490,14 @@ export default function Index() {
           <Text className="text-white font-bold">
             Disparar Notificação Teste
           </Text>
-        </TouchableOpacity>
+        </TouchableOpacity> */}
 
-        <TouchableOpacity
+        {/* <TouchableOpacity
           className="bg-black p-3.5 rounded-2xl items-center mb-4"
           onPress={handleGetPushToken}
         >
           <Text className="text-white font-bold">Obter Expo Push Token</Text>
-        </TouchableOpacity>
+        </TouchableOpacity> */}
 
         <Text className="text-center text-gray-400 text-xs mt-4 mb-8">
           Pianíssima · Aqui tem música

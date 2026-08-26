@@ -277,7 +277,7 @@ export default function Lessons() {
 
   useFocusEffect(
     useCallback(() => {
-      console.log('Lessons focou, invalidando', selectedStudentId);
+      // console.log('Lessons focou, invalidando', selectedStudentId);
 
       queryClient.invalidateQueries({
         queryKey: ['lessons', selectedStudentId],

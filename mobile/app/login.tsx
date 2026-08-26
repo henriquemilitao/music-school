@@ -67,7 +67,7 @@ export default function Login() {
 
   return (
     <KeyboardAvoidingView
-      className="flex-1 bg-[#F5F1EA]"
+      className="flex bg-[#F5F1EA]"
       behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
       keyboardVerticalOffset={Platform.OS === 'android' ? 0 : 0}
     >
@@ -81,11 +81,11 @@ export default function Login() {
         showsVerticalScrollIndicator={false}
         className="px-6"
       >
-        <View className="items-center mb-10">
+        <View className="items-center mb-10 justifu">
           {!isKeyboardVisible && (
             <Image
               source={logo}
-              style={{ width: 202, height: 202 }}
+              style={{ width: 302, height: 302 }}
               resizeMode="contain"
             />
           )}
