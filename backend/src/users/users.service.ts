@@ -5,8 +5,10 @@ import {
 } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
 import { AuthService } from '../auth/auth.service';
+import { EnrollmentsService } from '../enrollments/enrollments.service';
 import { CreateUserDto } from './dto/create-user.dto';
-import { Role } from '@prisma/client';
+import { CreateFullUserDto } from './dto/create-full-user.dto';
+import { Role, Student } from '@prisma/client';
 import { calculateAge } from '../common/utils/age.util';
 
 @Injectable()
@@ -14,6 +16,7 @@ export class UsersService {
   constructor(
     private prisma: PrismaService,
     private authService: AuthService,
+    private enrollmentsService: EnrollmentsService,
   ) {}
 
   async create(dto: CreateUserDto, schoolId: string) {
@@ -119,5 +122,83 @@ export class UsersService {
       },
       orderBy: { name: 'asc' },
     });
+  }
+
+  // ─────────────────────────────────────────────
+  // CRIAÇÃO COMPLETA — user + aluno(s) + matrícula(s) de uma vez
+  // ─────────────────────────────────────────────
+  async createFull(dto: CreateFullUserDto, schoolId: string) {
+    const existing = await this.prisma.user.findUnique({
+      where: { email: dto.email },
+    });
+    if (existing) {
+      throw new ConflictException('Email já cadastrado');
+    }
+
+    // 1. cria o User titular (sem senha — mesmo fluxo de convite de sempre)
+    const user = await this.prisma.user.create({
+      data: {
+        schoolId,
+        name: dto.name,
+        email: dto.email,
+        passwordHash: null,
+        phone: dto.phone,
+        role: dto.role ?? Role.STUDENT,
+      },
+    });
+
+    // tipagem explícita — em vez de deixar o TS inferir never[]
+    const createdStudents: Array<{
+      student: Student;
+      enrollment: Awaited<ReturnType<EnrollmentsService['create']>>;
+    }> = [];
+
+    // 2. cria cada Student vinculado a esse User
+    for (const studentDto of dto.students) {
+      const student = await this.prisma.student.create({
+        data: {
+          userId: user.id,
+          name: studentDto.name,
+          birthDate: studentDto.birthDate
+            ? new Date(studentDto.birthDate)
+            : undefined,
+          instrument: studentDto.instrument,
+          notes: studentDto.notes,
+        },
+      });
+
+      // 3. reaproveita o EnrollmentsService já existente — mesma
+      // lógica de gerar Lessons + Payment do primeiro período,
+      // idempotência, cálculo de weekDay a partir do startDate, etc.
+      const enrollment = await this.enrollmentsService.create(
+        {
+          studentId: student.id,
+          teacherId: studentDto.enrollment.teacherId,
+          startTime: studentDto.enrollment.startTime,
+          durationMinutes: studentDto.enrollment.durationMinutes,
+          monthlyAmount: studentDto.enrollment.monthlyAmount,
+          startDate: studentDto.enrollment.startDate,
+          firstPaymentPaid: studentDto.enrollment.firstPaymentPaid,
+        },
+        schoolId,
+      );
+
+      createdStudents.push({ student, enrollment });
+    }
+
+    // 4. gera o link de convite, igual o create() simples já faz
+    const inviteLink = await this.authService.createInvite(user.id);
+
+    return {
+      user: {
+        id: user.id,
+        name: user.name,
+        email: user.email,
+        phone: user.phone,
+        role: user.role,
+      },
+      students: createdStudents,
+      inviteLink,
+    };
   }
 }

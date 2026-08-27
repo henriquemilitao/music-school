@@ -88,17 +88,6 @@ CREATE TABLE "teachers" (
 );
 
 -- CreateTable
-CREATE TABLE "guardians" (
-    "id" TEXT NOT NULL,
-    "studentId" TEXT NOT NULL,
-    "userId" TEXT NOT NULL,
-    "relationship" TEXT,
-    "createdAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
-
-    CONSTRAINT "guardians_pkey" PRIMARY KEY ("id")
-);
-
--- CreateTable
 CREATE TABLE "enrollments" (
     "id" TEXT NOT NULL,
     "schoolId" TEXT NOT NULL,
@@ -196,9 +185,6 @@ CREATE UNIQUE INDEX "account_invites_tokenHash_key" ON "account_invites"("tokenH
 CREATE UNIQUE INDEX "teachers_userId_key" ON "teachers"("userId");
 
 -- CreateIndex
-CREATE UNIQUE INDEX "guardians_studentId_userId_key" ON "guardians"("studentId", "userId");
-
--- CreateIndex
 CREATE UNIQUE INDEX "payments_idempotencyKey_key" ON "payments"("idempotencyKey");
 
 -- CreateIndex
@@ -215,12 +201,6 @@ ALTER TABLE "students" ADD CONSTRAINT "students_userId_fkey" FOREIGN KEY ("userI
 
 -- AddForeignKey
 ALTER TABLE "teachers" ADD CONSTRAINT "teachers_userId_fkey" FOREIGN KEY ("userId") REFERENCES "users"("id") ON DELETE CASCADE ON UPDATE CASCADE;
-
--- AddForeignKey
-ALTER TABLE "guardians" ADD CONSTRAINT "guardians_studentId_fkey" FOREIGN KEY ("studentId") REFERENCES "students"("id") ON DELETE CASCADE ON UPDATE CASCADE;
-
--- AddForeignKey
-ALTER TABLE "guardians" ADD CONSTRAINT "guardians_userId_fkey" FOREIGN KEY ("userId") REFERENCES "users"("id") ON DELETE CASCADE ON UPDATE CASCADE;
 
 -- AddForeignKey
 ALTER TABLE "enrollments" ADD CONSTRAINT "enrollments_schoolId_fkey" FOREIGN KEY ("schoolId") REFERENCES "schools"("id") ON DELETE RESTRICT ON UPDATE CASCADE;

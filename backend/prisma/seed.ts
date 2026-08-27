@@ -465,7 +465,6 @@ async function main() {
   await prisma.paymentBundle.deleteMany();
   await prisma.lesson.deleteMany();
   await prisma.enrollment.deleteMany();
-  await prisma.guardian.deleteMany();
   await prisma.student.deleteMany();
   await prisma.teacher.deleteMany();
   await prisma.user.deleteMany();

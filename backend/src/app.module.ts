@@ -6,7 +6,6 @@ import { UsersModule } from './users/users.module';
 import { SchoolsModule } from './schools/schools.module';
 import { StudentsModule } from './students/students.module';
 import { TeachersModule } from './teachers/teachers.module';
-import { GuardiansModule } from './guardians/guardians.module';
 import { LessonsModule } from './lessons/lessons.module';
 import { PaymentsModule } from './payments/payments.module';
 import { EnrollmentsModule } from './enrollments/enrollments.module';
@@ -23,7 +22,6 @@ import { NotificationsModule } from './notifications/notifications.module';
     SchoolsModule,
     StudentsModule,
     TeachersModule,
-    GuardiansModule,
     LessonsModule,
     PaymentsModule,
     EnrollmentsModule,

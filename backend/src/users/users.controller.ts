@@ -8,6 +8,7 @@ import { Roles } from '../auth/roles.decorator';
 import { Role } from '@prisma/client';
 import { CurrentUser } from 'src/auth/current-user.decorator';
 import { UpdatePushTokenDto } from './dto/update-push-token.dto';
+import { CreateFullUserDto } from './dto/create-full-user.dto';
 
 @ApiTags('users')
 @ApiBearerAuth()
@@ -25,6 +26,31 @@ export class UsersController {
     @CurrentUser() user: { schoolId: string },
   ) {
     return this.usersService.create(dto, user.schoolId);
+  }
+
+  @Post('full')
+  @Roles(Role.ADMIN)
+  @ApiOperation({
+    summary: 'Criar usuário + aluno(s) + matrícula(s) completos, de uma vez',
+    description: `Rota "canhão" pra cadastro rápido via Swagger/Insomnia, sem precisar de telas de admin.
+
+Cria em cascata:
+1. O User titular da conta (quem vai logar no app com email + senha, definida depois via link de convite)
+2. Um ou mais Students vinculados a esse User
+3. Para cada Student, sua Enrollment (matrícula) — o que já gera automaticamente o primeiro mês de Lessons e o primeiro Payment (marcado como PAID se firstPaymentPaid=true, senão PENDING/OVERDUE conforme a data)
+
+Casos de uso cobertos pelo array "students":
+- Titular É o próprio aluno → envie 1 item em "students" com o mesmo nome do titular
+- Titular é responsável de 1+ filhos (não é aluno ele mesmo) → 1 item por filho
+- Titular é aluno E também responsável por outro(s) → combine os dois casos no mesmo array
+
+Ao final, retorna o inviteLink — mesmo link que a rota POST /users já retorna — pra você enviar pro titular criar a senha.`,
+  })
+  createFull(
+    @Body() dto: CreateFullUserDto,
+    @CurrentUser() user: { schoolId: string },
+  ) {
+    return this.usersService.createFull(dto, user.schoolId);
   }
 
   // 2. Adicione essa rota na classe UsersController (qualquer usuário

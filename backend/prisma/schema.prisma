@@ -89,7 +89,6 @@ model User {
 
   students       Student[]
   teacher        Teacher?
-  guardians      Guardian[]
   paymentBundles PaymentBundle[]
 
   @@map("users")
@@ -118,7 +117,6 @@ model Student {
   notes     String?
   createdAt DateTime @default(now())
 
-  guardians   Guardian[]
   lessons     Lesson[]
   payments    Payment[]
   enrollments Enrollment[]
@@ -137,19 +135,6 @@ model Teacher {
   enrollments Enrollment[]
 
   @@map("teachers")
-}
-
-model Guardian {
-  id           String   @id @default(uuid())
-  studentId    String
-  student      Student  @relation(fields: [studentId], references: [id], onDelete: Cascade)
-  userId       String
-  user         User     @relation(fields: [userId], references: [id], onDelete: Cascade)
-  relationship String?
-  createdAt    DateTime @default(now())
-
-  @@unique([studentId, userId])
-  @@map("guardians")
 }
 
 enum LessonFrequency {
