@@ -14,7 +14,8 @@ export const statusConfig = paymentStatusConfig;
 export type PaymentStatus = 'PENDING' | 'OVERDUE' | 'PAID';
 
 export function formatMonthLabel(referenceMonth: string) {
-  const date = new Date(referenceMonth + 'T00:00:00');
+  const monthKey = referenceMonth.slice(0, 7); // normaliza pra "YYYY-MM"
+  const date = new Date(monthKey + '-01T00:00:00');
   const label = date.toLocaleDateString('pt-BR', {
     month: 'long',
     year: 'numeric',
@@ -60,7 +61,8 @@ export function formatPixCountdown(minutes: number, seconds: number) {
 // só o nome do mês, sem ano — usado no card "Fatura de agosto",
 // onde o ano seria redundante/desnecessário
 export function formatMonthNameOnly(referenceMonth: string) {
-  const date = new Date(referenceMonth + 'T00:00:00');
+  const monthKey = referenceMonth.slice(0, 7);
+  const date = new Date(monthKey + '-01T00:00:00');
   const label = date.toLocaleDateString('pt-BR', { month: 'long' });
-  return label; // mês já minúsculo fica melhor em "Fatura de agosto"
+  return label;
 }

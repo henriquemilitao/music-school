@@ -634,7 +634,8 @@ export default function Payments() {
   const historyByMonth = useMemo(() => {
     const groups: Record<string, Payment[]> = {};
     filteredHistory.forEach((p) => {
-      (groups[p.referenceMonth] ??= []).push(p);
+      const monthKey = p.referenceMonth.slice(0, 7); // "2026-09" mesmo se vier ISO completo
+      (groups[monthKey] ??= []).push(p);
     });
     return Object.keys(groups)
       .sort()

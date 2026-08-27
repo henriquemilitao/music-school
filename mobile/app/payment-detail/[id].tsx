@@ -141,6 +141,17 @@ export default function PaymentDetail() {
             </View>
           </View>
 
+          {/* NOVO — só aparece quando PENDING (não atrasado, não pago) */}
+          {!isPaid && !isOverdue && urgency && (
+            <View style={{ alignSelf: 'flex-start' }}>
+              <StatusPill
+                label={urgency.label}
+                colorText={urgency.colorText}
+                colorBg={urgency.colorBg}
+              />
+            </View>
+          )}
+
           {isPaid && payment.paidAt && (
             <View className="flex-row items-center gap-3">
               <View className="w-9 h-9 rounded-xl bg-green-50 items-center justify-center">

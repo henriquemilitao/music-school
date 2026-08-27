@@ -103,6 +103,7 @@ function DashboardCard({
   accentBg,
   accentColor,
   label,
+  topRight, // 👈 novo
   onPress,
   children,
 }: {
@@ -110,6 +111,7 @@ function DashboardCard({
   accentBg: string;
   accentColor: string;
   label: string;
+  topRight?: React.ReactNode; // 👈 novo
   onPress: () => void;
   children: React.ReactNode;
 }) {
@@ -131,9 +133,12 @@ function DashboardCard({
         <Icon size={18} color={accentColor} />
       </View>
       <View className="flex-1">
-        <Text className="text-[10px] font-bold tracking-widest text-gray-400 uppercase mb-0.5">
-          {label}
-        </Text>
+        <View className="flex-row items-center justify-between mb-0.5">
+          <Text className="text-[10px] font-bold tracking-widest text-gray-400 uppercase">
+            {label}
+          </Text>
+          {topRight}
+        </View>
         {children}
       </View>
       <ChevronRight size={16} color="#D4CFC4" />
@@ -226,17 +231,23 @@ function NextLessonStatus({
 // enquanto outro filho acumulava atrasos sem nenhum sinal visual.
 function OtherStudentsPendingNote({
   otherStudents,
+  currentStudentHasOpenPayments,
   onPress,
 }: {
   otherStudents: DashboardItem[];
+  currentStudentHasOpenPayments: boolean;
   onPress: () => void;
 }) {
   if (otherStudents.length === 0) return null;
 
+  const verb = currentStudentHasOpenPayments ? 'também tem' : 'tem';
+
   const label =
     otherStudents.length === 1
-      ? `${otherStudents[0].student.name} também tem fatura em aberto`
-      : `${otherStudents.length} outros alunos têm faturas em aberto`;
+      ? `${otherStudents[0].student.name} ${verb} fatura em aberto`
+      : `${otherStudents.length} outros alunos ${
+          currentStudentHasOpenPayments ? 'também têm' : 'têm'
+        } faturas em aberto`;
 
   return (
     <TouchableOpacity
@@ -405,6 +416,7 @@ export default function Index() {
           accentColor="#059669"
           label="Última aula"
           onPress={() => router.push('/lessons')}
+          topRight={lastLesson ? <StatusPill {...lastLessonConfig} /> : null}
         >
           {lastLesson ? (
             <>
@@ -418,9 +430,6 @@ export default function Index() {
                 {lastLesson.teacher ? `${lastLesson.teacher.user.name} · ` : ''}
                 {formatInstrument(student.instrument)}
               </Text>
-              <View style={{ marginTop: 6, alignSelf: 'flex-start' }}>
-                <StatusPill {...lastLessonConfig} />
-              </View>
             </>
           ) : (
             <Text className="text-[13px] text-gray-400">
@@ -435,6 +444,21 @@ export default function Index() {
           accentColor="#F5F1EA"
           label={`Fatura${mostUrgentPayment?.referenceMonth ? ` · ${formatReferenceMonth(mostUrgentPayment.referenceMonth)}` : ''}`}
           onPress={() => router.push('/payments')}
+          topRight={
+            mostUrgentPayment?.status === 'OVERDUE' && paymentUrgency ? (
+              <StatusPill
+                label={paymentUrgency.label}
+                colorText={paymentUrgency.colorText}
+                colorBg={paymentUrgency.colorBg}
+              />
+            ) : mostUrgentPayment?.status === 'PENDING' ? (
+              <StatusPill
+                label="Pendente"
+                colorText="#D97706"
+                colorBg="#FFFBEB"
+              />
+            ) : null
+          }
         >
           {mostUrgentPayment ? (
             <>
@@ -447,15 +471,7 @@ export default function Index() {
               <Text className="text-[13px] text-gray-500 mt-0.5">
                 Vence {formatShortDate(mostUrgentPayment.dueDate)}
               </Text>
-              {paymentUrgency && (
-                <View style={{ marginTop: 6, alignSelf: 'flex-start' }}>
-                  <StatusPill
-                    label={paymentUrgency.label}
-                    colorText={paymentUrgency.colorText}
-                    colorBg={paymentUrgency.colorBg}
-                  />
-                </View>
-              )}
+
               {extraOpenCount > 0 && (
                 <Text className="text-[11px] text-gray-400 mt-1.5">
                   + {extraOpenCount}{' '}
@@ -467,6 +483,7 @@ export default function Index() {
               )}
               <OtherStudentsPendingNote
                 otherStudents={otherStudentsWithOpenPayments}
+                currentStudentHasOpenPayments={true}
                 onPress={() => router.push('/payments')}
               />
             </>
@@ -477,6 +494,7 @@ export default function Index() {
               </Text>
               <OtherStudentsPendingNote
                 otherStudents={otherStudentsWithOpenPayments}
+                currentStudentHasOpenPayments={false}
                 onPress={() => router.push('/payments')}
               />
             </>
