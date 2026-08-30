@@ -14,25 +14,38 @@ export function getPaymentUrgency(
   dueDateIso: string,
   status: 'PENDING' | 'OVERDUE' | 'PAID',
 ): PaymentUrgency | null {
-  // fatura paga não precisa de aviso de urgência
   if (status === 'PAID') return null;
 
   const dueDate = new Date(dueDateIso);
   const now = new Date();
 
-  // zera as horas pra contar em dias corridos, não em horas fracionadas
+  // Usa os métodos UTC (getUTCFullYear/getUTCMonth/getUTCDate) em
+  // vez dos locais (getFullYear/getMonth/getDate) — dueDateIso
+  // representa um DIA CIVIL em UTC (ex: "2026-09-07T00:00:00.000Z" =
+  // dia 7), não um instante que deva ser reinterpretado no fuso do
+  // dispositivo. Ler com os métodos locais faria o mesmo bug de
+  // "voltar 1 dia" vazar pro cálculo de diffDays abaixo, o que
+  // bagunçaria tanto a contagem de dias restantes/atraso quanto o
+  // texto exibido ("vence em X dias" / "atrasada há X dias").
   const dueDateOnly = new Date(
-    dueDate.getFullYear(),
-    dueDate.getMonth(),
-    dueDate.getDate(),
+    Date.UTC(
+      dueDate.getUTCFullYear(),
+      dueDate.getUTCMonth(),
+      dueDate.getUTCDate(),
+    ),
   );
+
+  // "now" (o momento atual real) esse sim é correto continuar
+  // pegando no fuso LOCAL do dispositivo — queremos saber "que dia é
+  // hoje, na visão do usuário", não em UTC. Só zeramos a hora, pra
+  // comparar dia contra dia sem a fração de horas do momento atual
+  // atrapalhar o cálculo.
   const nowOnly = new Date(now.getFullYear(), now.getMonth(), now.getDate());
 
   const diffDays = Math.round(
     (dueDateOnly.getTime() - nowOnly.getTime()) / (1000 * 60 * 60 * 24),
   );
 
-  // já venceu (ou o status já veio como OVERDUE do backend)
   if (diffDays < 0 || status === 'OVERDUE') {
     const daysLate = Math.abs(diffDays);
     return {
@@ -57,12 +70,9 @@ export function getPaymentUrgency(
     };
   }
 
-  // perto do vencimento (dentro de uma semana) -> âmbar; longe -> verde
   const isNear = diffDays <= 7;
   return {
     label: `Vence em ${diffDays} dias`,
-    // colorText: isNear ? '#D97706' : '#059669',
-    // colorBg: isNear ? '#FFFBEB' : '#ECFDF5',
     colorText: '#D97706',
     colorBg: '#FFFBEB',
   };
