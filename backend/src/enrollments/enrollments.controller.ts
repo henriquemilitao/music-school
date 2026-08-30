@@ -15,6 +15,7 @@ import { JwtAuthGuard } from '../auth/jwt-auth.guard';
 import { RolesGuard } from '../auth/roles.guard';
 import { Roles } from '../auth/roles.decorator';
 import { type AuthUser, CurrentUser } from '../auth/current-user.decorator';
+import { EnrollmentRenewalCron } from './enrollment-renewal.cron';
 
 @ApiTags('enrollments')
 @ApiBearerAuth()
@@ -22,7 +23,10 @@ import { type AuthUser, CurrentUser } from '../auth/current-user.decorator';
 @Roles(Role.ADMIN) // todos os endpoints são admin only
 @Controller('enrollments')
 export class EnrollmentsController {
-  constructor(private enrollmentsService: EnrollmentsService) {}
+  constructor(
+    private enrollmentsService: EnrollmentsService,
+    private enrollmentsCron: EnrollmentRenewalCron,
+  ) {}
 
   @Post()
   @ApiOperation({ summary: 'Criar matrícula e gerar primeiro mês de aulas' })
@@ -58,5 +62,11 @@ export class EnrollmentsController {
   @ApiOperation({ summary: 'Encerrar matrícula' })
   deactivate(@Param('id') id: string, @CurrentUser() user: AuthUser) {
     return this.enrollmentsService.deactivate(id, user.schoolId);
+  }
+
+  @Post('renovar-mensalidade-debug')
+  async trigger() {
+    await this.enrollmentsCron.handleRenewal();
+    return { status: 'disparado' };
   }
 }

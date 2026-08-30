@@ -46,14 +46,25 @@ enum PaymentMethod {
 // ─────────────────────────────────────────────
 
 model School {
-  id        String   @id @default(uuid())
-  name      String
-  slug      String   @unique
-  cnpj      String?
-  address   String?
-  phone     String?
-  email     String?
-  settings  Json? // ex: { "renewalDaysBeforeEnd": 10 }
+  id       String  @id @default(uuid())
+  name     String
+  slug     String  @unique
+  cnpj     String?
+  address  String?
+  phone    String?
+  email    String?
+  settings Json? // ex: { "renewalDaysBeforeEnd": 10 }
+
+  // Offset fixo do fuso horário dessa escola em relação ao UTC (ex:
+  // -4 pra Mato Grosso do Sul, -3 pra São Paulo). Usado toda vez que
+  // o backend precisa converter um horário "local" digitado pelo
+  // admin (ex: "aula às 8h") pro timestamp UTC real que fica salvo
+  // no banco — sem isso, o sistema não teria como saber que "8h"
+  // significa "8h de Campo Grande" e não "8h em Londres".
+  // Não lida com horário de verão automaticamente (o Brasil não usa
+  // mais desde 2019, então um valor fixo é suficiente por enquanto).
+  timezoneOffsetHours Int @default(-4)
+
   createdAt DateTime @default(now())
 
   // fallback manual — não usado no fluxo com gateway
@@ -143,6 +154,11 @@ enum LessonFrequency {
 }
 
 // Matrícula — define o padrão de recorrência das aulas de um aluno
+// E TAMBÉM o padrão de cobrança (quando vence a mensalidade). Esses
+// dois ciclos são independentes um do outro: o ciclo de AULAS ancora
+// num dia do mês (ex: sempre dia 15), e o ciclo de VENCIMENTO ancora
+// em outro dia do mês (ex: sempre dia 10) — um aluno pode começar a
+// aula dia 15 mas vencer dia 10, sem relação entre as duas datas.
 model Enrollment {
   id        String   @id @default(uuid())
   schoolId  String
@@ -152,24 +168,52 @@ model Enrollment {
   teacherId String?
   teacher   Teacher? @relation(fields: [teacherId], references: [id])
 
-  weekDay         Int // 0=domingo, 1=segunda... 6=sábado
+  weekDay         Int // 0=domingo, 1=segunda... 6=sábado — derivado de firstLessonDate na criação, nunca digitado direto pelo admin
   startTime       String // horário no formato "15:00"
   durationMinutes Int             @default(60)
   frequency       LessonFrequency @default(WEEKLY)
-  monthlyAmount   Decimal         @db.Decimal(10, 2) // valor da mensalidade
+  monthlyAmount   Decimal         @db.Decimal(10, 2) // valor cheio da mensalidade (sem desconto de pontualidade — o desconto é calculado depois, na hora de gerar o PIX)
 
-  startDate DateTime // data da primeira aula
-  isActive  Boolean  @default(true) // false = encerrado, cron não renova mais
+  // ── Ciclo de AULAS ──────────────────────────────────────────
+  // firstLessonDate: data da primeira aula dessa matrícula. Define
+  // duas coisas ao mesmo tempo: (1) o weekDay acima, e (2) o "dia
+  // âncora" que o ciclo mensal de aulas vai sempre tentar repetir
+  // (ex: se a 1ª aula é dia 15, todo ciclo seguinte também começa
+  // no dia 15, ajustando pra baixo só se o mês não tiver esse dia,
+  // como fevereiro).
+  firstLessonDate DateTime
 
-  // controle de renovação — data de início do último período de 30
-  // dias já gerado. O cron soma 30 dias nisso pra saber a próxima
-  // data-âncora do ciclo seguinte.
-  lastPeriodStart DateTime?
+  // lastLessonPeriodStart: MEMÓRIA interna do sistema (o admin nunca
+  // preenche isso) — guarda a data de início do último ciclo de aulas
+  // que já foi gerado (aulas criadas + fatura criada) pra essa
+  // matrícula. O cron usa isso pra saber "de onde eu continuo" — sem
+  // isso, ele não teria como saber se e quando gerou o último período.
+  // Fica null até a primeira geração acontecer (na criação da matrícula).
+  lastLessonPeriodStart DateTime?
 
-  // rótulo legível do último período gerado, ex: "2026-07-15" —
-  // usado só como parte de idempotencyKey/referenceMonth, não pra
-  // cálculo de datas (isso é lastPeriodStart)
-  lastGeneratedMonth String?
+  // ── Ciclo de VENCIMENTO (pagamento) ─────────────────────────
+  // firstPaymentDueDate: data do primeiro vencimento da mensalidade,
+  // informada pelo admin na criação. INDEPENDENTE de firstLessonDate
+  // — pode ser antes, igual, ou depois da primeira aula. Se o admin
+  // não informar esse campo na criação (DTO), o service usa
+  // firstLessonDate como valor padrão (ver EnrollmentsService.create).
+  firstPaymentDueDate DateTime
+
+  // lastPaymentDueDate: MEMÓRIA interna do sistema (equivalente a
+  // lastLessonPeriodStart, mas pro lado do vencimento) — guarda a
+  // data do último vencimento já gerado. O cron soma 1 mês nisso
+  // (mantendo o dia-âncora de firstPaymentDueDate) pra saber a data
+  // do PRÓXIMO vencimento a cobrar. Fica null até a primeira geração.
+  lastPaymentDueDate DateTime?
+
+  // lastGeneratedPeriodKey: rótulo em TEXTO (ex: "2026-09-15") do
+  // último ciclo de aulas já gerado — usado só como parte da
+  // idempotencyKey do Payment e pra checar rapidamente "esse período
+  // já foi processado?" sem precisar comparar objetos Date. Não é
+  // usado em nenhum cálculo de data, só como identificador/trava.
+  lastGeneratedPeriodKey String?
+
+  isActive Boolean @default(true) // false = matrícula encerrada, cron nunca mais renova
 
   createdAt DateTime @default(now())
 
@@ -213,10 +257,10 @@ model Payment {
   enrollment   Enrollment? @relation(fields: [enrollmentId], references: [id])
 
   amount         Decimal       @db.Decimal(10, 2)
-  dueDate        DateTime // vencimento = 1º dia de aula do período
+  dueDate        DateTime // vencimento desta fatura específica — copiado de Enrollment.firstPaymentDueDate (1ª fatura) ou calculado pelo cron a partir de lastPaymentDueDate (renovações)
   paidAt         DateTime? // preenchido quando confirmar pagamento
   status         PaymentStatus @default(PENDING)
-  referenceMonth String // "2026-07"
+  referenceMonth String // rótulo do mês desta fatura, ex: "2026-09". Informado pelo admin na criação (opcional) OU calculado automaticamente a partir do mês de dueDate quando o admin não informar
 
   paymentMethod PaymentMethod @default(GATEWAY)
   provider      String? // "infinitepay" | "abacatepay" | "manual"

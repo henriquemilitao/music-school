@@ -170,6 +170,8 @@ export class UsersService {
       // 3. reaproveita o EnrollmentsService já existente — mesma
       // lógica de gerar Lessons + Payment do primeiro período,
       // idempotência, cálculo de weekDay a partir do startDate, etc.
+      // dentro de createFull(), no loop "for (const studentDto of dto.students)"
+
       const enrollment = await this.enrollmentsService.create(
         {
           studentId: student.id,
@@ -177,7 +179,19 @@ export class UsersService {
           startTime: studentDto.enrollment.startTime,
           durationMinutes: studentDto.enrollment.durationMinutes,
           monthlyAmount: studentDto.enrollment.monthlyAmount,
-          startDate: studentDto.enrollment.startDate,
+          // Renomeado de startDate — mesma ideia de antes, só nome mais
+          // claro (é a data da aula, não do pagamento).
+          firstLessonDate: studentDto.enrollment.firstLessonDate,
+          // NOVO — repassa o vencimento customizado, se o admin informou
+          // um na hora de cadastrar esse aluno específico. Se vier
+          // undefined, o EnrollmentsService.create aplica o default
+          // (mesma data de firstLessonDate) — não precisamos resolver
+          // esse default aqui, ele já é tratado lá dentro.
+          firstPaymentDueDate: studentDto.enrollment.firstPaymentDueDate,
+          // NOVO — mesma ideia: repassa o rótulo manual se veio, senão
+          // undefined e o default (mês do vencimento) é calculado lá
+          // dentro do EnrollmentsService.create.
+          referenceMonth: studentDto.enrollment.referenceMonth,
           firstPaymentPaid: studentDto.enrollment.firstPaymentPaid,
         },
         schoolId,

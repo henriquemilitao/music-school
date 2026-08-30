@@ -20,7 +20,7 @@ import {
 } from 'lucide-react-native';
 import { api } from '../../lib/api';
 import { formatInstrument } from '../../lib/instrument';
-import { formatCurrency } from '../../lib/paymentFormat';
+import { formatCurrency, formatDate } from '../../lib/paymentFormat';
 
 // ─── Tipos ────────────────────────────────────────────────────────────
 
@@ -73,13 +73,6 @@ const WEEKDAYS = [
 
 function capitalize(s: string) {
   return s.charAt(0).toUpperCase() + s.slice(1);
-}
-
-function formatDate(iso: string) {
-  return new Date(iso).toLocaleDateString('pt-BR', {
-    day: '2-digit',
-    month: 'short',
-  });
 }
 
 // Ex: "Sábado, 5 de julho" — dia da semana + dia + mês

@@ -597,6 +597,38 @@ export class PaymentsService {
     });
   }
 
+  private readonly PUNCTUALITY_DISCOUNT = 20;
+
+  // Meia-noite UTC de hoje — MESMA normalização usada em
+  // EnrollmentsService.markOverduePayments(). Precisa ser idêntica pra
+  // nunca haver um dia em que o cron considera "atrasado" mas o
+  // gerador de PIX ainda considera "em dia" (ou vice-versa).
+  private todayStartUTC(): Date {
+    const now = new Date();
+    return new Date(
+      Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate()),
+    );
+  }
+
+  // Decide o valor a cobrar AGORA pra uma fatura — nunca lido do
+  // status salvo no banco (que só é atualizado 1x/dia pelo cron e pode
+  // estar defasado), sempre comparado direto contra dueDate. Pontual
+  // (ainda dentro do prazo) = desconto de pontualidade; atrasado =
+  // valor cheio. NÃO altera payment.amount no banco — esse continua
+  // sendo sempre o valor cheio da mensalidade, esse cálculo é só pro
+  // valor da cobrança PIX gerada agora.
+  private calculateChargeAmount(payment: {
+    amount: unknown; // Decimal do Prisma
+    dueDate: Date;
+  }): number {
+    const fullAmount = Number(payment.amount);
+    const isStillOnTime =
+      payment.dueDate.getTime() >= this.todayStartUTC().getTime();
+    return isStillOnTime
+      ? Math.max(fullAmount - this.PUNCTUALITY_DISCOUNT, 0)
+      : fullAmount;
+  }
+
   // Verifica se o PIX de uma fatura/bundle ainda é válido (existe e
   // não expirou). Se não for, gera um novo na hora — é aqui que
   // implementamos "gerar sob demanda" em vez de na criação da fatura.
@@ -627,7 +659,7 @@ export class PaymentsService {
     // vez de devolver o antigo já morto. Ver nota completa em
     // mercadopago.provider.ts / payment-provider.interface.ts.
     const charge = await this.provider.createCharge({
-      amount: Number(payment.amount),
+      amount: this.calculateChargeAmount(payment), // ANTES: Number(payment.amount)
       externalReference: `payment:${payment.id}`,
       description: `Mensalidade ${payment.referenceMonth} - ${payment.student.user.name}`,
       expiresInSeconds: this.PIX_EXPIRATION_SECONDS,
@@ -667,8 +699,17 @@ export class PaymentsService {
       ...new Set(bundle.payments.map((p) => p.student.name)),
     ].join(', ');
 
+    // NOVO — soma o valor de cada fatura já com o desconto de
+    // pontualidade individualmente aplicado (pontual desconta 20,
+    // atrasada cobra cheio) — 3 pendentes = 60 off; 2 pendentes + 1
+    // atrasada = só 40 off, nunca desconta a atrasada.
+    const chargeAmount = bundle.payments.reduce(
+      (sum, p) => sum + this.calculateChargeAmount(p),
+      0,
+    );
+
     const charge = await this.provider.createCharge({
-      amount: Number(bundle.amount),
+      amount: chargeAmount, // ANTES: Number(bundle.amount)
       externalReference: `bundle:${bundle.id}`,
       description: `Pagamento agregado (${bundle.payments.length} faturas) - ${studentNames}`,
       expiresInSeconds: this.PIX_EXPIRATION_SECONDS,

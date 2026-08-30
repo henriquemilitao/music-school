@@ -29,6 +29,7 @@ CREATE TABLE "schools" (
     "phone" TEXT,
     "email" TEXT,
     "settings" JSONB,
+    "timezoneOffsetHours" INTEGER NOT NULL DEFAULT -4,
     "createdAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
     "pixKey" TEXT,
     "pixKeyType" TEXT,
@@ -98,10 +99,12 @@ CREATE TABLE "enrollments" (
     "durationMinutes" INTEGER NOT NULL DEFAULT 60,
     "frequency" "LessonFrequency" NOT NULL DEFAULT 'WEEKLY',
     "monthlyAmount" DECIMAL(10,2) NOT NULL,
-    "startDate" TIMESTAMP(3) NOT NULL,
+    "firstLessonDate" TIMESTAMP(3) NOT NULL,
+    "lastLessonPeriodStart" TIMESTAMP(3),
+    "firstPaymentDueDate" TIMESTAMP(3) NOT NULL,
+    "lastPaymentDueDate" TIMESTAMP(3),
+    "lastGeneratedPeriodKey" TEXT,
     "isActive" BOOLEAN NOT NULL DEFAULT true,
-    "lastPeriodStart" TIMESTAMP(3),
-    "lastGeneratedMonth" TEXT,
     "createdAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
 
     CONSTRAINT "enrollments_pkey" PRIMARY KEY ("id")
