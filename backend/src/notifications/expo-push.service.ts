@@ -58,6 +58,7 @@ export class ExpoPushService {
       });
 
       const result = await response.json();
+      this.logger.log(`Resposta da Expo Push API: ${JSON.stringify(result)}`);
 
       if (!response.ok) {
         this.logger.error(
