@@ -24,6 +24,7 @@ import {
   formatMonthLabel,
   formatFullDate,
   formatCurrency,
+  getDisplayAmount,
 } from '../../lib/paymentFormat';
 import { paymentStatusConfig } from '../../lib/status';
 import { StatusPill } from '../../components/ui/StatusPill';
@@ -40,7 +41,7 @@ export default function PaymentDetail() {
   } = useQuery({
     queryKey: paymentKeys.detail(id!),
     queryFn: async () => {
-      const response = await api.get<Payment>(`/payments/my/${id}`);
+      const response = await api.post<Payment>(`/payments/my/${id}/charge`);
       return response.data;
     },
     enabled: !!id,
@@ -113,7 +114,7 @@ export default function PaymentDetail() {
             className="text-4xl"
             style={{ fontFamily: 'PlayfairDisplay_700Bold' }}
           >
-            R$ {formatCurrency(payment.amount)}
+            R$ {formatCurrency(getDisplayAmount(payment))}
           </Text>
           <StatusPill {...config} size="md" />
         </View>

@@ -75,3 +75,20 @@ export function formatMonthNameOnly(referenceMonth: string) {
   });
   return label;
 }
+
+// Valor a EXIBIR pra uma fatura: se já foi paga e tem paidAmount
+// registrado (valor real cobrado no PIX, com desconto de pontualidade
+// se aplicável), usa esse. Senão, cai no amount cheio — cobre faturas
+// ainda pendentes (não faz sentido mostrar desconto antes de pagar,
+// já que pode virar atrasada) e faturas antigas pagas antes dessa
+// migration existir (paidAmount null nesse caso).
+export function getDisplayAmount(payment: {
+  amount: string;
+  paidAmount?: string | null;
+  status: 'PENDING' | 'OVERDUE' | 'PAID';
+}): string {
+  if (payment.status === 'PAID' && payment.paidAmount) {
+    return payment.paidAmount;
+  }
+  return payment.amount;
+}

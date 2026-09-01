@@ -27,6 +27,7 @@ import {
   formatMonthLabel,
   formatMonthLabelFromKey,
   formatMonthNameOnly,
+  getDisplayAmount,
 } from '../../lib/paymentFormat';
 import { StatusPill } from '../../components/ui/StatusPill';
 import { paymentStatusConfig } from '../../lib/status';
@@ -424,7 +425,7 @@ function HistoryRow({
       </View>
       <View className="items-end mr-2">
         <Text className="text-sm font-bold">
-          R$ {formatCurrency(payment.amount)}
+          R$ {formatCurrency(getDisplayAmount(payment))}
         </Text>
         <View className="mt-1">
           <StatusPill {...paymentStatusConfig(payment.status)} />
@@ -448,7 +449,7 @@ function HistoryMonthGroup({
   onViewDetails: (id: string) => void;
 }) {
   const [open, setOpen] = useState(true);
-  const total = payments.reduce((s, p) => s + Number(p.amount), 0);
+  const total = payments.reduce((s, p) => s + Number(getDisplayAmount(p)), 0);
 
   return (
     <View
@@ -516,7 +517,7 @@ function HistoryMonthGroup({
                 }}
               >
                 <Text className="text-sm font-bold" style={{ flexShrink: 0 }}>
-                  R$ {formatCurrency(payment.amount)}
+                  R$ {formatCurrency(getDisplayAmount(payment))}
                 </Text>
                 <View className="mt-1">
                   <StatusPill {...paymentStatusConfig(payment.status)} />

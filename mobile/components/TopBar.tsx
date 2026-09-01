@@ -156,9 +156,10 @@ export function TopBar() {
             >
               <TouchableOpacity
                 className="flex-row items-center gap-3 px-3 py-3 rounded-xl"
-                onPress={() => {
+                onPress={async () => {
                   setMenuOpen(false);
-                  signOut();
+                  await signOut();
+                  router.replace('/login');
                 }}
               >
                 <LogOut size={18} color="#DC2626" />

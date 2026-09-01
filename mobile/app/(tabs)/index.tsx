@@ -75,7 +75,10 @@ function formatFullDate(iso: string) {
 
 function formatShortDate(iso: string) {
   const date = new Date(iso);
-  return `${date.getDate()} de ${date.toLocaleDateString('pt-BR', { month: 'long' })}`;
+  const day = String(date.getDate()).padStart(2, '0');
+  const month = date.toLocaleDateString('pt-BR', { month: 'long' });
+
+  return `${day} de ${month}`;
 }
 
 function formatTime(iso: string) {
