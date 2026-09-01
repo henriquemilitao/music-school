@@ -256,7 +256,8 @@ model Payment {
   enrollmentId String? // null = pagamento avulso
   enrollment   Enrollment? @relation(fields: [enrollmentId], references: [id])
 
-  amount         Decimal       @db.Decimal(10, 2)
+  amount         Decimal       @db.Decimal(10, 2) // valor cheio da mensalidade (sempre)
+  paidAmount     Decimal?      @db.Decimal(10, 2) // NOVO — valor efetivamente cobrado no PIX gerado (com ou sem desconto). Null até o primeiro PIX ser gerado.
   dueDate        DateTime // vencimento desta fatura específica — copiado de Enrollment.firstPaymentDueDate (1ª fatura) ou calculado pelo cron a partir de lastPaymentDueDate (renovações)
   paidAt         DateTime? // preenchido quando confirmar pagamento
   status         PaymentStatus @default(PENDING)

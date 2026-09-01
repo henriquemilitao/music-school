@@ -68,9 +68,16 @@ export class PaymentsController {
 
   // GET /payments/my/:id — detalhe de uma fatura específica do aluno logado
   @Get('my/:id')
-  @ApiOperation({ summary: 'Buscar uma fatura específica do usuário logado' })
+  @ApiOperation({ summary: 'Ver detalhes de uma fatura (sem gerar PIX)' })
   findMyOne(@Param('id') id: string, @CurrentUser() user: AuthUser) {
     return this.paymentsService.findMyPaymentById(id, user.id);
+  }
+
+  // POST /payments/my/:id/charge — gera/garante o PIX
+  @Post('my/:id/charge')
+  @ApiOperation({ summary: 'Gerar (ou renovar) o PIX de uma fatura' })
+  generateMyCharge(@Param('id') id: string, @CurrentUser() user: AuthUser) {
+    return this.paymentsService.getOrCreateMyPaymentCharge(id, user.id);
   }
 
   // ─── Rotas do admin ───────────────────────────────────────────────────

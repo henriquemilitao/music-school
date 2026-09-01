@@ -41,6 +41,7 @@ export class PaymentsService {
         id: true,
         studentId: true,
         amount: true,
+        paidAmount: true,
         dueDate: true,
         paidAt: true,
         status: true,
@@ -100,6 +101,9 @@ export class PaymentsService {
   // GET /payments/my/:id — busca uma fatura específica, mas só se
   // pertencer a um student vinculado ao usuário logado (evita que um
   // aluno veja a fatura de outro só trocando o id na URL)
+  // GET /payments/my/:id — SÓ LEITURA, nunca gera PIX. Usado pela tela
+  // de "Ver detalhes", que só quer mostrar informação, não iniciar
+  // cobrança.
   async findMyPaymentById(paymentId: string, userId: string) {
     const existing = await this.prisma.payment.findFirst({
       where: { id: paymentId, student: { userId } },
@@ -107,57 +111,69 @@ export class PaymentsService {
     });
     if (!existing) throw new NotFoundException('Pagamento não encontrado');
 
+    const oldestOpen =
+      existing.status === 'PAID'
+        ? null
+        : await this.findOldestOpenPayment(existing.studentId);
+    const isOldest =
+      existing.status === 'PAID' ? null : oldestOpen?.id === existing.id;
+
+    const payment = await this.prisma.payment.findUniqueOrThrow({
+      where: { id: paymentId },
+      select: {
+        id: true,
+        studentId: true,
+        amount: true,
+        paidAmount: true,
+        dueDate: true,
+        paidAt: true,
+        status: true,
+        referenceMonth: true,
+        checkoutUrl: true,
+        pixCopyPaste: true,
+        pixQrCode: true,
+        pixExpiresAt: true,
+        paymentBundleId: true,
+        student: { select: { name: true } },
+      },
+    });
+
+    return {
+      ...payment,
+      isEligibleForPayment: isOldest,
+      blockingPaymentId: isOldest === false ? (oldestOpen?.id ?? null) : null,
+    };
+  }
+
+  // POST/GET /payments/my/:id/charge — GERA/GARANTE o PIX. Usado pela
+  // tela de checkout ("Gerar PIX"), a única que deve efetivamente criar
+  // cobrança no gateway.
+  async getOrCreateMyPaymentCharge(paymentId: string, userId: string) {
+    const existing = await this.prisma.payment.findFirst({
+      where: { id: paymentId, student: { userId } },
+      select: { id: true, studentId: true, status: true },
+    });
+    if (!existing) throw new NotFoundException('Pagamento não encontrado');
+
     if (existing.status === 'PAID') {
-      const paid = await this.prisma.payment.findUniqueOrThrow({
-        where: { id: paymentId },
-        select: {
-          id: true,
-          studentId: true,
-          amount: true,
-          dueDate: true,
-          paidAt: true,
-          status: true,
-          referenceMonth: true,
-          checkoutUrl: true,
-          pixCopyPaste: true,
-          pixQrCode: true,
-          pixExpiresAt: true,
-          paymentBundleId: true,
-          student: { select: { name: true } },
-        },
-      });
-      return { ...paid, isEligibleForPayment: null, blockingPaymentId: null };
+      throw new BadRequestException('Essa fatura já foi paga');
     }
 
     const oldestOpen = await this.findOldestOpenPayment(existing.studentId);
     const isOldest = oldestOpen?.id === existing.id;
 
-    // só gera/renova o PIX se essa fatura realmente pode ser paga agora
-    const payment = isOldest
-      ? await this.ensurePaymentCharge(paymentId)
-      : await this.prisma.payment.findUniqueOrThrow({
-          where: { id: paymentId },
-          select: {
-            id: true,
-            studentId: true,
-            amount: true,
-            dueDate: true,
-            paidAt: true,
-            status: true,
-            referenceMonth: true,
-            checkoutUrl: true,
-            pixCopyPaste: true,
-            pixQrCode: true,
-            pixExpiresAt: true,
-            paymentBundleId: true,
-            student: { select: { name: true } },
-          },
-        });
+    if (!isOldest) {
+      throw new BadRequestException(
+        'Existe uma fatura mais antiga em aberto — pague-a primeiro',
+      );
+    }
+
+    const payment = await this.ensurePaymentCharge(paymentId);
 
     return {
       ...payment,
-      isEligibleForPayment: isOldest,
-      blockingPaymentId: isOldest ? null : (oldestOpen?.id ?? null),
+      isEligibleForPayment: true,
+      blockingPaymentId: null,
     };
   }
 
@@ -653,13 +669,15 @@ export class PaymentsService {
       return payment;
     }
 
+    const chargeAmount = this.calculateChargeAmount(payment);
+
     // idempotencySalt = Date.now() garante que essa renovação gera
     // uma chave de idempotência DIFERENTE da tentativa anterior (que
     // expirou), então o Mercado Pago cria um PIX novo de verdade em
     // vez de devolver o antigo já morto. Ver nota completa em
     // mercadopago.provider.ts / payment-provider.interface.ts.
     const charge = await this.provider.createCharge({
-      amount: this.calculateChargeAmount(payment), // ANTES: Number(payment.amount)
+      amount: chargeAmount, // ANTES: Number(payment.amount)
       externalReference: `payment:${payment.id}`,
       description: `Mensalidade ${payment.referenceMonth} - ${payment.student.user.name}`,
       expiresInSeconds: this.PIX_EXPIRATION_SECONDS,
@@ -675,6 +693,7 @@ export class PaymentsService {
         pixCopyPaste: charge.pixCopyPaste,
         pixQrCode: charge.pixQrCode,
         pixExpiresAt: charge.expiresAt ?? null,
+        paidAmount: chargeAmount, // NOVO — grava o valor que foi cobrado nesse PIX específico
       },
       include: {
         student: { select: { name: true } },
@@ -699,12 +718,15 @@ export class PaymentsService {
       ...new Set(bundle.payments.map((p) => p.student.name)),
     ].join(', ');
 
-    // NOVO — soma o valor de cada fatura já com o desconto de
-    // pontualidade individualmente aplicado (pontual desconta 20,
-    // atrasada cobra cheio) — 3 pendentes = 60 off; 2 pendentes + 1
-    // atrasada = só 40 off, nunca desconta a atrasada.
-    const chargeAmount = bundle.payments.reduce(
-      (sum, p) => sum + this.calculateChargeAmount(p),
+    // Calcula o valor individual de cada fatura E salva em paidAmount —
+    // assim o histórico de cada fatura reflete o que ela custou dentro
+    // desse bundle, mesmo que a pessoa só veja o "total" na tela do bundle.
+    const chargesByPayment = bundle.payments.map((p) => ({
+      id: p.id,
+      chargeAmount: this.calculateChargeAmount(p),
+    }));
+    const chargeAmount = chargesByPayment.reduce(
+      (sum, c) => sum + c.chargeAmount,
       0,
     );
 
@@ -715,6 +737,15 @@ export class PaymentsService {
       expiresInSeconds: this.PIX_EXPIRATION_SECONDS,
       idempotencySalt: String(Date.now()),
     });
+
+    await this.prisma.$transaction(
+      chargesByPayment.map((c) =>
+        this.prisma.payment.update({
+          where: { id: c.id },
+          data: { paidAmount: c.chargeAmount },
+        }),
+      ),
+    );
 
     return this.prisma.paymentBundle.update({
       where: { id: bundle.id },
