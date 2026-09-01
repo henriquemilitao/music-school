@@ -1,13 +1,26 @@
+const APP_VARIANT = process.env.APP_VARIANT || 'development';
+
+const IS_DEV = APP_VARIANT === 'development';
+
 module.exports = {
   expo: {
-    name: 'Pianíssima',
+    name: IS_DEV ? 'Pianíssima (Dev)' : 'Pianíssima',
     slug: 'mobile',
     version: '1.0.0',
-    scheme: 'pianissima', // NOVO — necessário pro deep link pianissima://set-password funcionar
+    scheme: 'pianissima',
     orientation: 'portrait',
     icon: './assets/icon.png',
     userInterfaceStyle: 'light',
     newArchEnabled: true,
+
+    // Configurações do EAS Update
+    updates: {
+      url: 'https://u.expo.dev/a6d3384d-04f9-45ab-9ee8-d9c1258633f0',
+    },
+    runtimeVersion: {
+      policy: 'appVersion',
+    },
+
     splash: {
       image: './assets/splash-icon.png',
       resizeMode: 'contain',
@@ -23,7 +36,9 @@ module.exports = {
       },
       edgeToEdgeEnabled: true,
       predictiveBackGestureEnabled: false,
-      package: 'com.henrique_militao.pianissima',
+      package: IS_DEV
+        ? 'com.henrique_militao.pianissima.dev'
+        : 'com.henrique_militao.pianissima',
       googleServicesFile: './google-services.json',
     },
     web: {

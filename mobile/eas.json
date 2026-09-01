@@ -6,22 +6,25 @@
   "build": {
     "development": {
       "developmentClient": true,
-      "distribution": "internal"
+      "distribution": "internal",
+      "env": {
+        "APP_VARIANT": "development"
+      }
     },
     "preview": {
       "distribution": "internal",
+      "channel": "preview",
       "env": {
+        "APP_VARIANT": "preview",
         "EXPO_PUBLIC_API_URL": "https://music-school-production-25a7.up.railway.app"
       }
     },
     "production": {
       "autoIncrement": true,
+      "channel": "production",
       "env": {
         "EXPO_PUBLIC_API_URL": "https://music-school-production-25a7.up.railway.app"
       }
     }
-  },
-  "submit": {
-    "production": {}
   }
 }
