@@ -159,7 +159,6 @@ export function TopBar() {
                 onPress={async () => {
                   setMenuOpen(false);
                   await signOut();
-                  router.replace('/login');
                 }}
               >
                 <LogOut size={18} color="#DC2626" />

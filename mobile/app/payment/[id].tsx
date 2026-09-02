@@ -60,8 +60,21 @@ export default function PaymentCheckout() {
   } = useQuery({
     queryKey: paymentKeys.detail(id!),
     queryFn: async () => {
-      const response = await api.get<Payment>(`/payments/my/${id}`);
-      return response.data;
+      // Primeiro busca em modo leitura pra saber status/elegibilidade
+      const readResponse = await api.get<Payment>(`/payments/my/${id}`);
+      const current = readResponse.data;
+
+      // Essa é a tela de checkout — é aqui (e só aqui) que geramos o
+      // PIX de fato. Só chamamos a rota de charge quando a fatura
+      // ainda está aberta e é a elegível (senão o backend rejeita com 400).
+      if (current.status !== 'PAID' && current.isEligibleForPayment) {
+        const chargeResponse = await api.post<Payment>(
+          `/payments/my/${id}/charge`,
+        );
+        return chargeResponse.data;
+      }
+
+      return current;
     },
     enabled: !!id,
     refetchOnMount: 'always',
@@ -87,6 +100,30 @@ export default function PaymentCheckout() {
     setTimeout(() => setCopied(false), 2500);
   }
 
+  const isPaid = payment?.status === 'PAID';
+  const isBlocked = !isPaid && payment?.isEligibleForPayment === false;
+
+  // "Ainda gerando o PIX de verdade": cobre tanto o load inicial
+  // (isLoading) quanto o refetch que essa MESMA tela dispara ao
+  // montar (refetchOnMount: 'always' -> POST .../charge em
+  // background). Sem isso, se essa queryKey já tinha dado em cache
+  // (ex: veio da tela de detalhes), isLoading nasce `false` e a UI
+  // mostra "QR code não foi gerado" por alguns segundos até o
+  // charge terminar — essa flag evita esse flash de erro.
+  const isGeneratingCharge =
+    (isLoading || isFetching) && !isPaid && !isBlocked && !payment?.pixQrCode;
+
+  if (isGeneratingCharge) {
+    return (
+      <View className="flex-1 items-center justify-center bg-[#F5F1EA] px-6">
+        <ActivityIndicator size="large" color="#B08D57" />
+        <Text className="text-gray-400 text-sm mt-4 text-center">
+          Gerando seu PIX...
+        </Text>
+      </View>
+    );
+  }
+
   if (isLoading) {
     return (
       <View className="flex-1 items-center justify-center bg-[#F5F1EA]">
@@ -105,8 +142,6 @@ export default function PaymentCheckout() {
     );
   }
 
-  const isPaid = payment.status === 'PAID';
-  const isBlocked = !isPaid && payment.isEligibleForPayment === false;
   const config = paymentStatusConfig(payment.status);
   const pixExpired = countdown?.isPast ?? false;
 
@@ -249,8 +284,13 @@ export default function PaymentCheckout() {
                     </View>
                   </View>
                 ) : (
-                  <Text className="text-gray-400 text-center text-sm mb-4">
-                    O QR code ainda não foi gerado para essa fatura.
+                  // Se chegou até aqui, isGeneratingCharge já é false —
+                  // ou seja, a busca/geração terminou e mesmo assim não
+                  // veio PIX. É um caso de erro de verdade (ex: falha
+                  // no gateway), não mais um estado de carregamento.
+                  <Text className="text-red-500 text-center text-sm mb-4">
+                    Não foi possível gerar o PIX dessa fatura. Tente novamente
+                    em instantes.
                   </Text>
                 )}
 

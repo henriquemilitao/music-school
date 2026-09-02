@@ -2,10 +2,12 @@ admin user
 
 apos o admin dar como uma fatura paga, manualmente, tem que atualizar o inicio de novo na listagem dos alunos
 
-
-
 normal user
 
 =====logoou e login com outro user da email n cadastrado --------------
 =====pix sendo gerado ao clicar em ver detalhes
 =====paguei com desconto, mas ao olhar o historico mostra o valor sem desconto
+
+-----------achei um bug num fluxo aqui. uma fatura com qr code ja expirado, se eu clico em gerar pix la na tela e pagamentos geral, vai para a tela do pix, e fica falando pix expirado e ao clicar no botao nao gera. Se eu sair e for pra detalhes e clicar em gerar ai gera normalmente, ESTRANHO
+
+---------APOS PAGAR UMA FATURA, NAO CONSIGO ENTRAR EM VER DETALHES DELA

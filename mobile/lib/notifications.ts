@@ -14,6 +14,8 @@ Notifications.setNotificationHandler({
   }),
 });
 
+const projectId = Constants.expoConfig?.extra?.eas?.projectId;
+
 export async function registerForPushNotificationsAsync(): Promise<
   string | null
 > {
@@ -46,8 +48,6 @@ export async function registerForPushNotificationsAsync(): Promise<
     });
   }
 
-  const projectId = Constants.expoConfig?.extra?.eas?.projectId;
-
   if (!projectId) {
     console.log('projectId não encontrado — confira o app.config.js');
     return null;
@@ -64,12 +64,38 @@ export async function registerForPushNotificationsAsync(): Promise<
   }
 }
 
+// IMPORTANTE: addPushTokenListener dispara com o token NATIVO do
+// sistema (FCM no Android, APNs no iOS) sempre que ele muda — NÃO é
+// um Expo Push Token, mesmo vindo de dentro do expo-notifications.
+// Se repassarmos event.data direto pro backend, sobrescrevemos o
+// ExponentPushToken(...) correto com algo tipo
+// "cFUr75KRRVGjiisqG955p6:APA91b..." (formato FCM), que o backend
+// não reconhece e descarta ("Nenhum token válido no lote").
+//
+// Por isso, ao disparar esse listener, NÃO usamos event.data — pedimos
+// de novo um Expo Push Token fresco via getExpoPushTokenAsync (que
+// internamente já usa o token nativo atualizado por baixo dos panos).
 export function subscribeToPushTokenChanges(
   onTokenChange: (token: string) => void,
 ) {
-  const subscription = Notifications.addPushTokenListener((event) => {
-    console.log('Push token mudou, revalidando:', event.data);
-    onTokenChange(event.data);
+  const subscription = Notifications.addPushTokenListener(async (event) => {
+    console.log(
+      'Token nativo mudou — revalidando Expo Push Token (ignorando event.data, que é o token nativo)',
+    );
+
+    if (!projectId) {
+      console.log('projectId não encontrado — confira o app.config.js');
+      return;
+    }
+
+    try {
+      const tokenResponse = await Notifications.getExpoPushTokenAsync({
+        projectId,
+      });
+      onTokenChange(tokenResponse.data);
+    } catch (error) {
+      console.log('Erro ao revalidar push token:', error);
+    }
   });
 
   return () => subscription.remove();

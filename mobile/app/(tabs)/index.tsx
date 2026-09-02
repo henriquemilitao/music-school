@@ -503,8 +503,8 @@ export default function Index() {
             </>
           )}
         </DashboardCard>
-        {/* 
-        <TouchableOpacity
+
+        {/* <TouchableOpacity
           className="bg-[#B08D57] p-3.5 rounded-2xl items-center mb-4"
           onPress={handleTestNotification}
         >

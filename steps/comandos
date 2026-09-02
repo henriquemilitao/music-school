@@ -52,7 +52,7 @@ henriquemilitao@DESKTOP-THGO3KT:~/projetos/music-school/backend/src$ curl -H "Co
 }'
 
 pegar o id e colocar abaix
-henriquemilitao@DESKTOP-THGO3KT:~/projetos/music-scho curl -H "Content-Type: application/json" -X POST https://exp.host/--/api/v2/push/getReceipts -d '{ "ids": ["01a02a28-77c2-70ae-8018-d8232e6c6922"]}'
+henriquemilitao@DESKTOP-THGO3KT:~/projetos/music-scho curl -H "Content-Type: application/json" -X POST https://exp.host/--/api/v2/push/getReceipts -d '{ "ids": ["ExponentPushToken[KJSHXjOIV4Ar8YntMxAd_6]"]}'
 
 
 =======
@@ -64,3 +64,6 @@ eas env:create --scope project --name GOOGLE_SERVICES_JSON --type file --value .
 
 da pra buildar local primeiro comnpx expo prebuild --platform android --clean
 >>>>>>> mobile
+
+
+eas update --channel preview --message "Ajustes na tela"

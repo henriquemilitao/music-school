@@ -41,7 +41,10 @@ export default function PaymentDetail() {
   } = useQuery({
     queryKey: paymentKeys.detail(id!),
     queryFn: async () => {
-      const response = await api.post<Payment>(`/payments/my/${id}/charge`);
+      // Somente leitura — nunca gera/renova PIX aqui. Essa tela é só
+      // para visualizar a fatura, seja ela PAID, PENDING ou OVERDUE.
+      // Gerar PIX é responsabilidade exclusiva da tela /payment/[id].
+      const response = await api.get<Payment>(`/payments/my/${id}`);
       return response.data;
     },
     enabled: !!id,
