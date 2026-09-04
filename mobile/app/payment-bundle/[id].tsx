@@ -120,7 +120,8 @@ export default function PaymentBundleDetail() {
     return (
       <View className="flex-1 items-center justify-center bg-[#F5F1EA] px-6">
         <Text className="text-red-500 text-center">
-          Não foi possível carregar esse pagamento agregado
+          Não foi possível carregar esse pagamento. Verifique sua conexão com a
+          internet e tente novamente.
         </Text>
       </View>
     );
@@ -290,7 +291,7 @@ export default function PaymentBundleDetail() {
                     <QrCode size={16} color="#fff" />
                   )}
                   <Text className="text-white font-bold">
-                    {isFetching ? 'Gerando...' : 'Gerar novo PIX'}
+                    {isFetching ? 'Gerando novo PIX...' : 'Gerar novo PIX'}
                   </Text>
                 </TouchableOpacity>
               </View>

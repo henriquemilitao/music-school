@@ -11,3 +11,11 @@ normal user
 -----------achei um bug num fluxo aqui. uma fatura com qr code ja expirado, se eu clico em gerar pix la na tela e pagamentos geral, vai para a tela do pix, e fica falando pix expirado e ao clicar no botao nao gera. Se eu sair e for pra detalhes e clicar em gerar ai gera normalmente, ESTRANHO
 
 ---------APOS PAGAR UMA FATURA, NAO CONSIGO ENTRAR EM VER DETALHES DELA
+
+nao carregou aulas nem pagamentos numa primeira vez, seja qual for o motivo, mas no teste foi por causa de wifi. Dai quando conectou ao wifi, o dashboard recarrega, mas as outras 2 abas nao, a de aulas nem fica loading e a de pagamentos só fica loading por bastante tempo.
+
+-------fui acessar uma aula realizada, ficou carregando por muuuito tem, mas carregaou.
+
+ver como vai ser pra alunos que nao moram em cg a questao de horario.
+
+ao fazer logout alguma coisa tipo saindo.... login msm coisa, nao mostra nada pro user e enrola um monte.

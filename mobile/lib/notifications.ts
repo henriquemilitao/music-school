@@ -75,13 +75,20 @@ export async function registerForPushNotificationsAsync(): Promise<
 // Por isso, ao disparar esse listener, NÃO usamos event.data — pedimos
 // de novo um Expo Push Token fresco via getExpoPushTokenAsync (que
 // internamente já usa o token nativo atualizado por baixo dos panos).
+let lastNativeToken: string | null = null;
+
 export function subscribeToPushTokenChanges(
   onTokenChange: (token: string) => void,
 ) {
   const subscription = Notifications.addPushTokenListener(async (event) => {
-    console.log(
-      'Token nativo mudou — revalidando Expo Push Token (ignorando event.data, que é o token nativo)',
-    );
+    // event.data aqui é o token nativo (FCM/APNs), não o Expo Push Token —
+    // usamos só pra detectar se realmente mudou, sem repassar pro backend
+    if (event.data === lastNativeToken) {
+      return; // token nativo é o mesmo de antes, ignora
+    }
+    lastNativeToken = event.data;
+
+    console.log('Token nativo mudou de verdade — revalidando Expo Push Token');
 
     if (!projectId) {
       console.log('projectId não encontrado — confira o app.config.js');

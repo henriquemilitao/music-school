@@ -184,9 +184,14 @@ export default function Login() {
         </View>
 
         {!isKeyboardVisible && (
-          <Text className="text-center text-gray-400 text-xs mt-8">
-            Pianíssima · Aqui tem música
-          </Text>
+          <>
+            <Text className="text-center text-gray-400 text-xs mt-8">
+              Pianíssima · Aqui tem música
+            </Text>
+            {/* <Text style={{ color: 'red', fontWeight: 'bold' }}>
+              VERSÃO COM FIX 1.0.1
+            </Text> */}
+          </>
         )}
       </ScrollView>
     </KeyboardAvoidingView>

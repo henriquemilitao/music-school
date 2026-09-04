@@ -711,7 +711,8 @@ export default function Payments() {
     return (
       <View className="flex-1 items-center justify-center bg-[#F5F1EA] px-6">
         <Text className="text-red-500 text-center">
-          Não foi possível carregar suas faturas
+          Não foi possível carregar suas faturas. Verifique sua conexão com a
+          internet e tente novamente.
         </Text>
       </View>
     );

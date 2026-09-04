@@ -67,7 +67,23 @@ function TabFocusInvalidator() {
     if (!keysToInvalidate) return;
 
     keysToInvalidate.forEach((queryKey) => {
-      queryClient.invalidateQueries({ queryKey });
+      // If a single-element array is provided (e.g. ['lessons']),
+      // treat it as a prefix and invalidate any query whose
+      // first key element matches — this covers keys like
+      // ['lessons', selectedStudentId].
+      if (
+        Array.isArray(queryKey) &&
+        queryKey.length === 1 &&
+        typeof queryKey[0] === 'string'
+      ) {
+        const prefix = queryKey[0];
+        queryClient.invalidateQueries({
+          predicate: (q: any) =>
+            Array.isArray(q.queryKey) && q.queryKey[0] === prefix,
+        });
+      } else {
+        queryClient.invalidateQueries({ queryKey });
+      }
     });
   }, [routeName, queryClient]);
 

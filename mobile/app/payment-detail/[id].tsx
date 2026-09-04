@@ -34,6 +34,10 @@ export default function PaymentDetail() {
   const router = useRouter();
   const queryClient = useQueryClient();
 
+  // 1. Comente esta linha temporariamente
+  // useAppStateRefetch(paymentKeys.detail(id!));
+
+  // 2. Ajuste a query
   const {
     data: payment,
     isLoading,
@@ -41,19 +45,22 @@ export default function PaymentDetail() {
   } = useQuery({
     queryKey: paymentKeys.detail(id!),
     queryFn: async () => {
-      // Somente leitura — nunca gera/renova PIX aqui. Essa tela é só
-      // para visualizar a fatura, seja ela PAID, PENDING ou OVERDUE.
-      // Gerar PIX é responsabilidade exclusiva da tela /payment/[id].
       const response = await api.get<Payment>(`/payments/my/${id}`);
       return response.data;
     },
     enabled: !!id,
     refetchOnMount: 'always',
-    refetchInterval: (query) =>
-      query.state.data?.status === 'PAID' ? false : 5000,
+    // 3. Substitua o refetchInterval por esta função segura
+    refetchInterval: (query) => {
+      const data = query.state.data;
+      if (!data || data.status === 'PAID') {
+        return false;
+      }
+      return 5000;
+    },
   });
 
-  useAppStateRefetch(paymentKeys.detail(id!));
+  // useAppStateRefetch(paymentKeys.detail(id!));
 
   useEffect(() => {
     if (payment?.status === 'PAID') {
@@ -74,7 +81,8 @@ export default function PaymentDetail() {
     return (
       <View className="flex-1 items-center justify-center bg-[#F5F1EA] px-6">
         <Text className="text-red-500 text-center">
-          Não foi possível carregar essa fatura
+          Não foi possível carregar essa fatura. Verifique sua conexão com a
+          internet e tente novamente.
         </Text>
       </View>
     );
