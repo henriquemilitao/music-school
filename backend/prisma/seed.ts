@@ -32,7 +32,12 @@ const SCHOOL_TIMEZONE_OFFSET_HOURS = -4;
 // ciclo — ele nunca usa firstLessonDate/firstPaymentDueDate depois
 // da primeira geração.
 //
-// Com "hoje" fixado em 30/08 (ou a data real de quando você rodar
+// O ciclo anterior (fatura + aulas) é sempre gerado no MÊS PASSADO
+// em relação a "now" (ex: se now é setembro/2026, o ciclo anterior
+// vence em agosto/2026), pra deixar o cenário mais realista: fatura
+// já paga do mês que passou, aulas já concluídas nesse mesmo mês.
+//
+// Com "hoje" fixado em 01/09 (ou a data real de quando você rodar
 // isso), o próximo vencimento de cada aluno cai em:
 //   dueDay 07 → 07/09 → 8 dias restantes  → DEVE disparar (<=10)
 //   dueDay 08 → 08/09 → 9 dias restantes  → DEVE disparar (<=10)
@@ -41,16 +46,23 @@ const SCHOOL_TIMEZONE_OFFSET_HOURS = -4;
 //   dueDay 11 → 11/09 → 12 dias restantes → NÃO deve disparar (>10)
 // ─────────────────────────────────────────────────────────────
 
-// Constrói uma data em UTC, pro dia informado, DENTRO DO MÊS ATUAL
-// de "now", já ao MEIO-DIA UTC (12:00:00) — mesma normalização que
+// Constrói uma data em UTC, pro dia informado, DENTRO DO MÊS PASSADO
+// em relação a "now" (o ciclo que já foi concluído e pago), já ao
+// MEIO-DIA UTC (12:00:00) — mesma normalização que
 // EnrollmentsService.toNoonUTC/getNextMonthlyDateAtNoon aplicam no
 // service real. É isso que corrige o bug de "vencimento dia 07
 // aparecendo como dia 06 pro usuário": à meia-noite UTC, qualquer
 // fuso negativo (todo o Brasil) "escorrega" pro dia anterior; ao
 // meio-dia UTC, isso nunca acontece em fusos razoáveis.
-function dueDateThisMonthUTC(day: number): Date {
+//
+// Usamos Date.UTC com mês = now.getUTCMonth() - 1: o próprio Date.UTC
+// normaliza mês negativo "rolando" pro ano anterior automaticamente
+// (ex: se now está em janeiro(0), -1 vira dezembro(11) do ano
+// anterior), então isso funciona corretamente em qualquer mês do
+// ano, inclusive na virada de ano.
+function dueDateLastMonthUTC(day: number): Date {
   return new Date(
-    Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), day, 12, 0, 0, 0),
+    Date.UTC(now.getUTCFullYear(), now.getUTCMonth() - 1, day, 12, 0, 0, 0),
   );
 }
 
@@ -253,7 +265,11 @@ async function main() {
     },
   });
 
-  await prisma.user.create({
+  // Guardamos a referência do admin (não só criamos e descartamos)
+  // porque o id dele agora é usado como confirmedBy nas faturas PAID
+  // do ciclo anterior — simula que foi ESSE admin quem confirmou o
+  // pagamento manualmente, igual aconteceria no fluxo real.
+  const adminUser = await prisma.user.create({
     data: {
       schoolId: school.id,
       name: 'Admin',
@@ -305,14 +321,14 @@ async function main() {
       },
     });
 
-    // ── Simulando o CICLO ANTERIOR (já concluído) ──────────────
-    // previousDueDate: o vencimento "do mês passado", no dia
-    // configurado (cfg.dueDay), dentro do mês atual, já normalizado
-    // ao MEIO-DIA UTC — é esse valor que vai virar lastPaymentDueDate
-    // da matrícula, simulando que generatePeriod já rodou uma vez
-    // pra esse aluno anteriormente (com a correção de horário já
-    // aplicada, igual o service real faria).
-    const previousDueDate = dueDateThisMonthUTC(cfg.dueDay);
+    // ── Simulando o CICLO ANTERIOR (já concluído, em AGOSTO) ────
+    // previousDueDate: o vencimento "do mês passado" (agosto, em
+    // relação a "now" = setembro), no dia configurado (cfg.dueDay),
+    // já normalizado ao MEIO-DIA UTC — é esse valor que vai virar
+    // lastPaymentDueDate da matrícula, simulando que generatePeriod
+    // já rodou uma vez pra esse aluno anteriormente (com a correção
+    // de horário já aplicada, igual o service real faria).
+    const previousDueDate = dueDateLastMonthUTC(cfg.dueDay);
 
     // previousLessonPeriodStart: a data da aula desse ciclo anterior
     // — deslocada de lessonOffsetDays em relação ao vencimento,
@@ -351,8 +367,13 @@ async function main() {
       },
     });
 
-    // Fatura do ciclo anterior — já PAGA, representando que esse
-    // mês já foi concluído e quitado normalmente.
+    // Fatura do ciclo anterior (agosto) — já PAGA, representando que
+    // esse mês já foi concluído e quitado normalmente. Os campos
+    // abaixo espelham EXATAMENTE o que PaymentsService.confirmManually
+    // preenche num pagamento confirmado manualmente de verdade — sem
+    // isso, a fatura fica num estado "impossível" (PAID mas faltando
+    // dados que o fluxo real sempre gera), que é o que fazia a tela
+    // de detalhes falhar ao carregar.
     const previousPeriodKey = toPeriodKeyUTC(previousLessonPeriodStart);
     await prisma.payment.create({
       data: {
@@ -360,22 +381,39 @@ async function main() {
         studentId: student.id,
         enrollmentId: enrollment.id,
         amount: DEFAULT_AMOUNT,
+        // paidAmount: confirmManually não aplica desconto de
+        // pontualidade (isso só existe no fluxo de PIX via gateway),
+        // então o valor pago é sempre o valor cheio da mensalidade.
+        paidAmount: DEFAULT_AMOUNT,
         dueDate: previousDueDate,
         status: 'PAID',
         // paidAt arbitrário: 1 dia antes do vencimento, só pra ter
         // um valor plausível de "pagou em dia".
         paidAt: addDaysUTC(previousDueDate, -1),
         paymentMethod: 'MANUAL_PIX',
-        provider: 'manual',
+        // provider fica null nesse fluxo — confirmManually nunca seta
+        // provider (esse campo só é preenchido quando passa pelo
+        // gateway, em generateCheckout/ensurePaymentCharge).
+        // proofUrl: no fluxo real é o comprovante anexado pelo admin;
+        // aqui usamos uma URL de placeholder só pra o campo não ficar
+        // null, já que a tela de detalhes pode tentar exibir/linkar
+        // esse comprovante.
+        proofUrl:
+          'https://via.placeholder.com/400x600.png?text=Comprovante+PIX',
+        // confirmedBy: id do admin que "confirmou" o pagamento —
+        // confirmManually sempre preenche isso; usamos o admin criado
+        // logo acima nessa seed.
+        confirmedBy: adminUser.id,
         referenceMonth: toMonthKeyUTC(previousDueDate),
         idempotencyKey: `${student.id}-${previousPeriodKey}`,
       },
     });
 
-    // Aulas do ciclo anterior — todas COMPLETED, cobrindo 1 mês a
-    // partir de previousLessonPeriodStart. Não é crítico pro teste
-    // do cron em si (que olha só pra datas da Enrollment), mas deixa
-    // o cenário mais realista pra você inspecionar no banco/app.
+    // Aulas do ciclo anterior (agosto) — todas COMPLETED, cobrindo
+    // 1 mês a partir de previousLessonPeriodStart. Não é crítico pro
+    // teste do cron em si (que olha só pra datas da Enrollment), mas
+    // deixa o cenário mais realista pra você inspecionar no
+    // banco/app.
     const previousCycleEnd = new Date(previousLessonPeriodStart);
     previousCycleEnd.setUTCMonth(previousCycleEnd.getUTCMonth() + 1);
     await createCompletedLessonsInRange({
@@ -389,13 +427,14 @@ async function main() {
       toDate: previousCycleEnd,
     });
 
-    // Log detalhado por aluno — mostra a data exata do próximo
-    // vencimento esperado, pra você conferir visualmente contra o
-    // resultado do cron depois de rodar a rota de debug.
+    // Log detalhado por aluno — mostra a data exata do último
+    // vencimento (agosto) e o próximo esperado, pra você conferir
+    // visualmente contra o resultado do cron depois de rodar a rota
+    // de debug.
     console.log(
       `  ✓ ${cfg.studentName} — vencimento dia ${cfg.dueDay} — ` +
-        `último vencimento gerado: ${previousDueDate.toISOString().slice(0, 10)} (meio-dia UTC) — ` +
-        `próximo vencimento (aprox.): dia ${cfg.dueDay}/mês seguinte`,
+        `último vencimento gerado (mês passado): ${previousDueDate.toISOString().slice(0, 10)} (meio-dia UTC) — ` +
+        `próximo vencimento (aprox.): dia ${cfg.dueDay}/mês atual`,
     );
   }
 
