@@ -23,6 +23,7 @@
       "autoIncrement": true,
       "channel": "production",
       "env": {
+        "APP_VARIANT": "production",
         "EXPO_PUBLIC_API_URL": "https://music-school-production-25a7.up.railway.app"
       }
     }

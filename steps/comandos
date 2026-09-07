@@ -65,5 +65,11 @@ eas env:create --scope project --name GOOGLE_SERVICES_JSON --type file --value .
 da pra buildar local primeiro comnpx expo prebuild --platform android --clean
 >>>>>>> mobile
 
+comando para a paly store:
+eas build --platform android --profile production
 
+comando pra atualizar o app de preview:
 eas update --channel preview --message "Ajustes na tela"
+
+e o de production:
+eas update --channel production --message "Sua mensagem de ajuste aqui"
