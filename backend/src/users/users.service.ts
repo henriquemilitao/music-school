@@ -10,6 +10,8 @@ import { CreateUserDto } from './dto/create-user.dto';
 import { CreateFullUserDto } from './dto/create-full-user.dto';
 import { Role, Student } from '@prisma/client';
 import { calculateAge } from '../common/utils/age.util';
+import * as bcrypt from 'bcrypt';
+import { UnauthorizedException } from '@nestjs/common';
 
 @Injectable()
 export class UsersService {
@@ -214,5 +216,82 @@ export class UsersService {
       students: createdStudents,
       inviteLink,
     };
+  }
+
+  async deleteAccount(userId: string, password: string) {
+    const user = await this.prisma.user.findUnique({
+      where: { id: userId },
+      include: { students: true, teacher: true },
+    });
+
+    if (!user) throw new NotFoundException('Usuário não encontrado');
+
+    if (
+      !user.passwordHash ||
+      !(await bcrypt.compare(password, user.passwordHash))
+    ) {
+      throw new UnauthorizedException('Senha incorreta');
+    }
+
+    const anonymizedEmail = `deleted-${user.id}@removed.local`;
+
+    await this.prisma.$transaction(async (tx) => {
+      // 1. Anonimiza e desativa o titular da conta
+      await tx.user.update({
+        where: { id: userId },
+        data: {
+          name: 'Usuário removido',
+          email: anonymizedEmail,
+          phone: null,
+          passwordHash: null,
+          pushToken: null,
+          isActive: false,
+          deletedAt: new Date(),
+        },
+      });
+
+      // 2. Invalida qualquer convite pendente
+      await tx.accountInvite.updateMany({
+        where: { userId, usedAt: null },
+        data: { usedAt: new Date() },
+      });
+
+      // 3. Se for STUDENT (ou responsável) — anonimiza cada Student
+      //    vinculado. Lesson/Payment/Enrollment continuam intactos,
+      //    só sem o nome/data de nascimento da criança.
+      for (const student of user.students) {
+        await tx.student.update({
+          where: { id: student.id },
+          data: {
+            name: 'Aluno removido',
+            birthDate: null,
+            notes: null,
+          },
+        });
+      }
+
+      // 4. Se for TEACHER — anonimiza o perfil de professor e
+      //    DESVINCULA (null) das aulas e matrículas futuras, sem
+      //    apagar nada. As aulas continuam existindo, só sem professor
+      //    atribuído — a escola reatribui depois.
+      if (user.teacher) {
+        await tx.teacher.update({
+          where: { id: user.teacher.id },
+          data: { bio: null },
+        });
+
+        await tx.lesson.updateMany({
+          where: { teacherId: user.teacher.id },
+          data: { teacherId: null },
+        });
+
+        await tx.enrollment.updateMany({
+          where: { teacherId: user.teacher.id },
+          data: { teacherId: null },
+        });
+      }
+    });
+
+    return { status: 'ok', message: 'Conta excluída com sucesso' };
   }
 }

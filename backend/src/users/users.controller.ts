@@ -1,4 +1,12 @@
-import { Controller, Post, Get, Body, UseGuards, Patch } from '@nestjs/common';
+import {
+  Controller,
+  Post,
+  Get,
+  Body,
+  UseGuards,
+  Patch,
+  Delete,
+} from '@nestjs/common';
 import { ApiTags, ApiOperation, ApiBearerAuth } from '@nestjs/swagger';
 import { UsersService } from './users.service';
 import { CreateUserDto } from './dto/create-user.dto';
@@ -9,6 +17,7 @@ import { Role } from '@prisma/client';
 import { CurrentUser } from 'src/auth/current-user.decorator';
 import { UpdatePushTokenDto } from './dto/update-push-token.dto';
 import { CreateFullUserDto } from './dto/create-full-user.dto';
+import { DeleteAccountDto } from './dto/delete-account.dto';
 
 @ApiTags('users')
 @ApiBearerAuth()
@@ -81,5 +90,17 @@ Ao final, retorna o inviteLink — mesmo link que a rota POST /users já retorna
   @ApiOperation({ summary: 'Listar usuários da escola (admin)' })
   findAll(@CurrentUser() user: { schoolId: string }) {
     return this.usersService.findAllBySchool(user.schoolId);
+  }
+
+  // DELETE /users/me — o próprio usuário exclui a conta
+  @Delete('me')
+  @ApiOperation({
+    summary: 'Excluir a própria conta (LGPD / exigência Play Store)',
+  })
+  deleteAccount(
+    @Body() dto: DeleteAccountDto,
+    @CurrentUser() user: { id: string },
+  ) {
+    return this.usersService.deleteAccount(user.id, dto.password);
   }
 }

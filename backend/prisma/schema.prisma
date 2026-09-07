@@ -86,12 +86,14 @@ model User {
   school       School          @relation(fields: [schoolId], references: [id])
   name         String
   email        String          @unique
-  passwordHash String? // AGORA OPCIONAL — usuário convidado ainda não tem senha
+  passwordHash String? //      Usuário convidado ainda não tem senha
   invites      AccountInvite[]
   phone        String?
   role         Role            @default(STUDENT)
   isActive     Boolean         @default(true)
-  createdAt    DateTime        @default(now())
+  deletedAt    DateTime? //    Quando a conta foi excluída pelo próprio usuário
+
+  createdAt DateTime @default(now())
 
   // NOVO — token do Expo Push (ExponentPushToken[...]) pra mandar
   // notificação. Null se o usuário nunca deu permissão ou nunca
