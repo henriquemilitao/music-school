@@ -1,5 +1,5 @@
-import { useEffect, useState } from 'react';
-import { View, Text, TouchableOpacity, Modal, BackHandler } from 'react-native';
+import { useState } from 'react';
+import { View, Text, TouchableOpacity, Modal } from 'react-native';
 import { useRouter, usePathname } from 'expo-router';
 import {
   Music,
@@ -9,6 +9,7 @@ import {
   CalendarDays,
   CreditCard,
   LogOut,
+  Trash2,
 } from 'lucide-react-native';
 import { useAuth } from '../context/AuthContext';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
@@ -154,6 +155,18 @@ export function TopBar() {
               className="p-3 border-t border-gray-100"
               style={{ paddingBottom: Math.max(12, insets.bottom + 12) }}
             >
+              <TouchableOpacity
+                className="flex-row items-center gap-3 px-3 py-3 rounded-xl"
+                onPress={() => {
+                  setMenuOpen(false);
+                  router.push('/delete-account');
+                }}
+              >
+                <Trash2 size={18} color="#9CA3AF" />
+                <Text className="text-sm font-medium text-gray-500">
+                  Excluir conta
+                </Text>
+              </TouchableOpacity>
               <TouchableOpacity
                 className="flex-row items-center gap-3 px-3 py-3 rounded-xl"
                 onPress={async () => {

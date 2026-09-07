@@ -61,7 +61,7 @@ function AuthGate({ children }: { children: React.ReactNode }) {
   const pathname = usePathname();
 
   // Rotas acessíveis sem estar logado
-  const PUBLIC_ROUTES = ['/login', '/set-password'];
+  const PUBLIC_ROUTES = ['/login', '/set-password', '/delete-account'];
   const isPublicRoute = PUBLIC_ROUTES.includes(pathname);
 
   if (isLoading) {
