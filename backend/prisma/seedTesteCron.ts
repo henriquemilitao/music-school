@@ -3,84 +3,21 @@ import * as bcrypt from 'bcrypt';
 
 const prisma = new PrismaClient();
 
-// "now" é capturado uma única vez no início do script — todos os
-// cálculos de data abaixo usam essa mesma referência, pra garantir
-// que o script inteiro rode consistente mesmo que a execução leve
-// alguns segundos (evita pegar um "now" diferente em cada linha).
 const now = new Date();
-
-// Mesmo valor do School.timezoneOffsetHours (default -4) — usado
-// aqui pra aplicar a MESMA conversão de hora que o EnrollmentsService
-// real aplica em buildLessonsForPeriod. Se a seed não aplicar isso,
-// as aulas nascem com hora "crua" (ex: 8h UTC em vez de 12h UTC pra
-// representar 8h em Campo Grande), ficando inconsistente com o que
-// o service geraria numa execução real.
 const SCHOOL_TIMEZONE_OFFSET_HOURS = -4;
 
-// ─────────────────────────────────────────────────────────────
-// OBJETIVO DESSA SEED
-// ─────────────────────────────────────────────────────────────
-// Testar a fronteira exata do cron de renovação (renewDueSoon), que
-// dispara quando faltam <= 10 dias pro PRÓXIMO vencimento.
-//
-// Cada aluno abaixo simula um estado "como se o mês anterior de
-// aula+fatura já tivesse sido gerado e concluído" — ou seja, já
-// nasce com lastPaymentDueDate/lastLessonPeriodStart preenchidos,
-// simulando que generatePeriod já rodou uma vez pra ele no passado.
-// Isso é necessário porque o cron SÓ olha pra
-// lastPaymentDueDate/lastLessonPeriodStart pra calcular o próximo
-// ciclo — ele nunca usa firstLessonDate/firstPaymentDueDate depois
-// da primeira geração.
-//
-// O ciclo anterior (fatura + aulas) é sempre gerado no MÊS PASSADO
-// em relação a "now" (ex: se now é setembro/2026, o ciclo anterior
-// vence em agosto/2026), pra deixar o cenário mais realista: fatura
-// já paga do mês que passou, aulas já concluídas nesse mesmo mês.
-//
-// Com "hoje" fixado em 01/09 (ou a data real de quando você rodar
-// isso), o próximo vencimento de cada aluno cai em:
-//   dueDay 07 → 07/09 → 8 dias restantes  → DEVE disparar (<=10)
-//   dueDay 08 → 08/09 → 9 dias restantes  → DEVE disparar (<=10)
-//   dueDay 09 → 09/09 → 10 dias restantes → DEVE disparar (<=10, limite exato)
-//   dueDay 10 → 10/09 → 11 dias restantes → NÃO deve disparar (>10)
-//   dueDay 11 → 11/09 → 12 dias restantes → NÃO deve disparar (>10)
-// ─────────────────────────────────────────────────────────────
-
-// Constrói uma data em UTC, pro dia informado, DENTRO DO MÊS PASSADO
-// em relação a "now" (o ciclo que já foi concluído e pago), já ao
-// MEIO-DIA UTC (12:00:00) — mesma normalização que
-// EnrollmentsService.toNoonUTC/getNextMonthlyDateAtNoon aplicam no
-// service real. É isso que corrige o bug de "vencimento dia 07
-// aparecendo como dia 06 pro usuário": à meia-noite UTC, qualquer
-// fuso negativo (todo o Brasil) "escorrega" pro dia anterior; ao
-// meio-dia UTC, isso nunca acontece em fusos razoáveis.
-//
-// Usamos Date.UTC com mês = now.getUTCMonth() - 1: o próprio Date.UTC
-// normaliza mês negativo "rolando" pro ano anterior automaticamente
-// (ex: se now está em janeiro(0), -1 vira dezembro(11) do ano
-// anterior), então isso funciona corretamente em qualquer mês do
-// ano, inclusive na virada de ano.
 function dueDateLastMonthUTC(day: number): Date {
   return new Date(
     Date.UTC(now.getUTCFullYear(), now.getUTCMonth() - 1, day, 12, 0, 0, 0),
   );
 }
 
-// Soma (ou subtrai, se negativo) `days` dias corridos a uma data,
-// preservando o horário. Usado pra posicionar a "data da aula" do
-// ciclo anterior alguns dias antes/depois do vencimento — conforme
-// você pediu ("a data da aula perto da data de vencimento, alguns
-// dias antes ou depois").
 function addDaysUTC(date: Date, days: number): Date {
   const result = new Date(date);
   result.setUTCDate(result.getUTCDate() + days);
   return result;
 }
 
-// Rótulo em texto "YYYY-MM-DD" de uma data — mesmo formato que
-// EnrollmentsService.toPeriodKey gera, usado aqui pra montar a
-// idempotencyKey do Payment e o lastGeneratedPeriodKey da matrícula,
-// exatamente como o service faria numa geração real.
 function toPeriodKeyUTC(date: Date): string {
   const y = date.getUTCFullYear();
   const m = String(date.getUTCMonth() + 1).padStart(2, '0');
@@ -88,38 +25,24 @@ function toPeriodKeyUTC(date: Date): string {
   return `${y}-${m}-${d}`;
 }
 
-// Rótulo em texto "YYYY-MM" de uma data — mesmo formato que
-// EnrollmentsService.toMonthKey gera, usado aqui como
-// referenceMonth do Payment do ciclo anterior (simulado como já
-// PAID nessa seed).
 function toMonthKeyUTC(date: Date): string {
   const y = date.getUTCFullYear();
   const m = String(date.getUTCMonth() + 1).padStart(2, '0');
   return `${y}-${m}`;
 }
 
-// ─────────────────────────────────────────────────────────────
-// Helper: cria as aulas do ciclo anterior (já concluído) de um
-// aluno de teste, no dia da semana informado, dentro do intervalo
-// [fromDate, toDate). Toda aula gerada aqui nasce como COMPLETED,
-// já que representa o mês que "já aconteceu" antes desse teste.
-// ─────────────────────────────────────────────────────────────
 async function createCompletedLessonsInRange(p: {
   schoolId: string;
   studentId: string;
   teacherId: string;
   enrollmentId: string;
-  weekDay: number; // 0=domingo ... 6=sábado — dia da semana da aula
-  startTime: string; // "HH:MM"
-  fromDate: Date; // início do intervalo (inclusive)
-  toDate: Date; // fim do intervalo (exclusive)
+  weekDay: number;
+  startTime: string;
+  fromDate: Date;
+  toDate: Date;
 }) {
-  // Quebra "15:00" em [15, 0] — usado abaixo pra montar o horário
-  // exato de cada aula gerada.
   const [hours, minutes] = p.startTime.split(':').map(Number);
 
-  // cursor "caminha" dia a dia dentro do intervalo, começando exatamente
-  // na meia-noite UTC do dia de fromDate.
   const cursor = new Date(
     Date.UTC(
       p.fromDate.getUTCFullYear(),
@@ -128,9 +51,6 @@ async function createCompletedLessonsInRange(p: {
     ),
   );
 
-  // Percorre dia a dia enquanto não alcançar o fim do intervalo —
-  // a cada dia, checa se bate com o weekDay configurado; se bater,
-  // cria a aula COMPLETED naquele dia+horário.
   while (cursor < p.toDate) {
     if (cursor.getUTCDay() === p.weekDay) {
       const scheduledAt = new Date(
@@ -138,11 +58,6 @@ async function createCompletedLessonsInRange(p: {
           cursor.getUTCFullYear(),
           cursor.getUTCMonth(),
           cursor.getUTCDate(),
-          // Mesma conversão de hours - timezoneOffsetHours aplicada
-          // em EnrollmentsService.buildLessonsForPeriod — sem isso,
-          // as aulas dessa seed nasceriam com hora "crua" (ex: 8h
-          // UTC), diferente do que o service real produziria (12h
-          // UTC pra representar 8h em Campo Grande).
           hours - SCHOOL_TIMEZONE_OFFSET_HOURS,
           minutes,
           0,
@@ -157,93 +72,86 @@ async function createCompletedLessonsInRange(p: {
           enrollmentId: p.enrollmentId,
           scheduledAt,
           durationMinutes: 60,
-          // COMPLETED porque essa aula representa o mês que já
-          // aconteceu — não faz sentido nascer SCHEDULED.
           status: 'COMPLETED',
         },
       });
     }
-    // Avança 1 dia — setUTCDate lida sozinho com virada de mês.
     cursor.setUTCDate(cursor.getUTCDate() + 1);
   }
 }
 
-// ─────────────────────────────────────────────────────────────
-// Config de cada aluno de teste — só o essencial pra testar a
-// fronteira dos 10 dias do cron.
-// ─────────────────────────────────────────────────────────────
 type TestStudentConfig = {
   guardianName: string;
   guardianEmail: string;
   studentName: string;
-  weekDay: number; // dia da semana da aula (0=domingo...6=sábado)
-  startTime: string; // horário fixo da aula, "HH:MM"
-  dueDay: number; // dia do mês do vencimento — é o que muda entre os 5 casos
-  lessonOffsetDays: number; // quantos dias a aula fica distante do vencimento (pode ser negativo = antes do vencimento, ou positivo = depois)
+  weekDay: number;
+  startTime: string;
+  dueDay: number;
+  lessonOffsetDays: number;
 };
 
 const DEFAULT_AMOUNT = 250;
 
-// 5 alunos, um pra cada dia de vencimento que queremos testar
-// (07, 08, 09, 10, 11), cada um com a aula num dia da semana
-// diferente (segunda a sexta), posicionada alguns dias de distância
-// do vencimento — conforme você pediu.
+// ─────────────────────────────────────────────────────────────
+// CONTA DO REVISOR — GOOGLE PLAY
+// ─────────────────────────────────────────────────────────────
+// Credencial fixa, documentada no Play Console em App content →
+// App access, pra o revisor da Google logar e navegar pelo app.
+// Reaproveita a mesma escola/dados que este seed já cria — não
+// precisa de um seed separado só pra isso.
+const REVIEWER_EMAIL = 'revisor.googleplay@pianissima.app';
+const REVIEWER_PASSWORD = 'RevisaoPlayStore2026!'; // troque antes de usar de verdade
+
 const testStudents: TestStudentConfig[] = [
   {
     guardianName: 'Ana (Teste Dia07)',
     guardianEmail: 'teste.dia07@escolademo.com',
     studentName: 'Aluno Dia07',
-    weekDay: 1, // segunda-feira
+    weekDay: 1,
     startTime: '08:00',
     dueDay: 7,
-    lessonOffsetDays: 2, // aula 2 dias DEPOIS do vencimento
+    lessonOffsetDays: 2,
   },
   {
     guardianName: 'Bruno (Teste Dia08)',
     guardianEmail: 'teste.dia08@escolademo.com',
     studentName: 'Aluno Dia08',
-    weekDay: 2, // terça-feira
+    weekDay: 2,
     startTime: '09:00',
     dueDay: 8,
-    lessonOffsetDays: -3, // aula 3 dias ANTES do vencimento
+    lessonOffsetDays: -3,
   },
   {
     guardianName: 'Carla (Teste Dia09)',
     guardianEmail: 'teste.dia09@escolademo.com',
     studentName: 'Aluno Dia09',
-    weekDay: 3, // quarta-feira
+    weekDay: 3,
     startTime: '10:00',
     dueDay: 9,
-    lessonOffsetDays: 1, // aula 1 dia DEPOIS do vencimento
+    lessonOffsetDays: 1,
   },
   {
     guardianName: 'Diego (Teste Dia10)',
     guardianEmail: 'teste.dia10@escolademo.com',
     studentName: 'Aluno Dia10',
-    weekDay: 4, // quinta-feira
+    weekDay: 4,
     startTime: '11:00',
     dueDay: 10,
-    lessonOffsetDays: -2, // aula 2 dias ANTES do vencimento
+    lessonOffsetDays: -2,
   },
   {
     guardianName: 'Elis (Teste Dia11)',
     guardianEmail: 'teste.dia11@escolademo.com',
     studentName: 'Aluno Dia11',
-    weekDay: 5, // sexta-feira
+    weekDay: 5,
     startTime: '14:00',
     dueDay: 11,
-    lessonOffsetDays: 3, // aula 3 dias DEPOIS do vencimento
+    lessonOffsetDays: 3,
   },
 ];
 
-// ─────────────────────────────────────────────────────────────
-// MAIN
-// ─────────────────────────────────────────────────────────────
 async function main() {
   console.log('🧹 Limpando banco...');
-  // Ordem de deleteMany respeita as foreign keys — sempre apagando
-  // as tabelas "filhas" antes das "pais", senão o Postgres recusa
-  // por violação de chave estrangeira.
   await prisma.payment.deleteMany();
   await prisma.paymentBundle.deleteMany();
   await prisma.lesson.deleteMany();
@@ -259,16 +167,9 @@ async function main() {
       slug: 'escola-demo-teste-cron',
       email: 'contato@escolademo.com',
       phone: '11999999999',
-      // Não precisa passar timezoneOffsetHours explicitamente — o
-      // @default(-4) do schema cobre isso, e é o mesmo valor que
-      // SCHOOL_TIMEZONE_OFFSET_HOURS usa aqui na seed.
     },
   });
 
-  // Guardamos a referência do admin (não só criamos e descartamos)
-  // porque o id dele agora é usado como confirmedBy nas faturas PAID
-  // do ciclo anterior — simula que foi ESSE admin quem confirmou o
-  // pagamento manualmente, igual aconteceria no fluxo real.
   const adminUser = await prisma.user.create({
     data: {
       schoolId: school.id,
@@ -279,8 +180,23 @@ async function main() {
     },
   });
 
-  // Um único professor genérico pra todos os alunos de teste — o
-  // foco aqui é testar datas, não variedade de professores.
+  // ── Conta do revisor da Google Play ──────────────────────────
+  // ADMIN separado do admin de testes acima — credencial estável,
+  // pensada pra nunca mudar entre execuções do seed (mesmo e-mail,
+  // mesma senha), já que é isso que fica documentado no Play
+  // Console. Enxerga a mesma escola e os mesmos dados de demo
+  // (professor, alunos, aulas, pagamentos) criados logo abaixo.
+  console.log('🔎 Criando conta do revisor da Google Play...');
+  await prisma.user.create({
+    data: {
+      schoolId: school.id,
+      name: 'Revisor Google Play',
+      email: REVIEWER_EMAIL,
+      passwordHash: await bcrypt.hash(REVIEWER_PASSWORD, 10),
+      role: Role.ADMIN,
+    },
+  });
+
   const teacherUser = await prisma.user.create({
     data: {
       schoolId: school.id,
@@ -299,7 +215,6 @@ async function main() {
   );
 
   for (const cfg of testStudents) {
-    // Cria o responsável (User com role STUDENT) desse aluno de teste.
     const guardianUser = await prisma.user.create({
       data: {
         schoolId: school.id,
@@ -310,41 +225,21 @@ async function main() {
       },
     });
 
-    // Cria o Student vinculado a esse responsável.
     const student = await prisma.student.create({
       data: {
         userId: guardianUser.id,
         name: cfg.studentName,
         instrument: Instrument.PIANO,
-        // Data de nascimento fixa e arbitrária — não é o foco desse teste.
         birthDate: new Date(2015, 0, 1),
       },
     });
 
-    // ── Simulando o CICLO ANTERIOR (já concluído, em AGOSTO) ────
-    // previousDueDate: o vencimento "do mês passado" (agosto, em
-    // relação a "now" = setembro), no dia configurado (cfg.dueDay),
-    // já normalizado ao MEIO-DIA UTC — é esse valor que vai virar
-    // lastPaymentDueDate da matrícula, simulando que generatePeriod
-    // já rodou uma vez pra esse aluno anteriormente (com a correção
-    // de horário já aplicada, igual o service real faria).
     const previousDueDate = dueDateLastMonthUTC(cfg.dueDay);
-
-    // previousLessonPeriodStart: a data da aula desse ciclo anterior
-    // — deslocada de lessonOffsetDays em relação ao vencimento,
-    // conforme você pediu ("aula perto da data de vencimento,
-    // alguns dias antes ou depois"). É esse valor que vira
-    // lastLessonPeriodStart da matrícula.
     const previousLessonPeriodStart = addDaysUTC(
       previousDueDate,
       cfg.lessonOffsetDays,
     );
 
-    // firstLessonDate/firstPaymentDueDate da matrícula (os campos
-    // "originais", que nunca mudam depois de criados) — aqui usamos
-    // os mesmos valores do ciclo anterior simulado, já que pra fins
-    // desse teste não existe um ciclo anterior a esse ("esse foi o
-    // primeiro e único ciclo já gerado pra esse aluno").
     const enrollment = await prisma.enrollment.create({
       data: {
         schoolId: school.id,
@@ -356,24 +251,12 @@ async function main() {
         monthlyAmount: DEFAULT_AMOUNT,
         firstLessonDate: previousLessonPeriodStart,
         firstPaymentDueDate: previousDueDate,
-        // Simulando que generatePeriod já rodou uma vez: preenchemos
-        // a "memória" da matrícula como se esse ciclo anterior já
-        // tivesse sido gerado de verdade. É ISSO que faz o cron
-        // calcular o PRÓXIMO ciclo a partir daqui, em vez de tratar
-        // essa matrícula como "nunca gerou nada ainda".
         lastLessonPeriodStart: previousLessonPeriodStart,
         lastPaymentDueDate: previousDueDate,
         lastGeneratedPeriodKey: toPeriodKeyUTC(previousLessonPeriodStart),
       },
     });
 
-    // Fatura do ciclo anterior (agosto) — já PAGA, representando que
-    // esse mês já foi concluído e quitado normalmente. Os campos
-    // abaixo espelham EXATAMENTE o que PaymentsService.confirmManually
-    // preenche num pagamento confirmado manualmente de verdade — sem
-    // isso, a fatura fica num estado "impossível" (PAID mas faltando
-    // dados que o fluxo real sempre gera), que é o que fazia a tela
-    // de detalhes falhar ao carregar.
     const previousPeriodKey = toPeriodKeyUTC(previousLessonPeriodStart);
     await prisma.payment.create({
       data: {
@@ -381,39 +264,19 @@ async function main() {
         studentId: student.id,
         enrollmentId: enrollment.id,
         amount: DEFAULT_AMOUNT,
-        // paidAmount: confirmManually não aplica desconto de
-        // pontualidade (isso só existe no fluxo de PIX via gateway),
-        // então o valor pago é sempre o valor cheio da mensalidade.
         paidAmount: DEFAULT_AMOUNT,
         dueDate: previousDueDate,
         status: 'PAID',
-        // paidAt arbitrário: 1 dia antes do vencimento, só pra ter
-        // um valor plausível de "pagou em dia".
         paidAt: addDaysUTC(previousDueDate, -1),
         paymentMethod: 'MANUAL_PIX',
-        // provider fica null nesse fluxo — confirmManually nunca seta
-        // provider (esse campo só é preenchido quando passa pelo
-        // gateway, em generateCheckout/ensurePaymentCharge).
-        // proofUrl: no fluxo real é o comprovante anexado pelo admin;
-        // aqui usamos uma URL de placeholder só pra o campo não ficar
-        // null, já que a tela de detalhes pode tentar exibir/linkar
-        // esse comprovante.
         proofUrl:
           'https://via.placeholder.com/400x600.png?text=Comprovante+PIX',
-        // confirmedBy: id do admin que "confirmou" o pagamento —
-        // confirmManually sempre preenche isso; usamos o admin criado
-        // logo acima nessa seed.
         confirmedBy: adminUser.id,
         referenceMonth: toMonthKeyUTC(previousDueDate),
         idempotencyKey: `${student.id}-${previousPeriodKey}`,
       },
     });
 
-    // Aulas do ciclo anterior (agosto) — todas COMPLETED, cobrindo
-    // 1 mês a partir de previousLessonPeriodStart. Não é crítico pro
-    // teste do cron em si (que olha só pra datas da Enrollment), mas
-    // deixa o cenário mais realista pra você inspecionar no
-    // banco/app.
     const previousCycleEnd = new Date(previousLessonPeriodStart);
     previousCycleEnd.setUTCMonth(previousCycleEnd.getUTCMonth() + 1);
     await createCompletedLessonsInRange({
@@ -427,10 +290,6 @@ async function main() {
       toDate: previousCycleEnd,
     });
 
-    // Log detalhado por aluno — mostra a data exata do último
-    // vencimento (agosto) e o próximo esperado, pra você conferir
-    // visualmente contra o resultado do cron depois de rodar a rota
-    // de debug.
     console.log(
       `  ✓ ${cfg.studentName} — vencimento dia ${cfg.dueDay} — ` +
         `último vencimento gerado (mês passado): ${previousDueDate.toISOString().slice(0, 10)} (meio-dia UTC) — ` +
@@ -441,6 +300,8 @@ async function main() {
   console.log('\n✅ Seed de teste do cron concluída\n');
   console.log('  ADMIN');
   console.log('  admin@escolademo.com         / admin123\n');
+  console.log('  REVISOR GOOGLE PLAY (colar no Play Console → App access)');
+  console.log(`  ${REVIEWER_EMAIL}  / ${REVIEWER_PASSWORD}\n`);
   console.log('  ALUNOS DE TESTE (senha123 pra todos os responsáveis)');
   for (const cfg of testStudents) {
     console.log(

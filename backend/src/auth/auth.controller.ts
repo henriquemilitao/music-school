@@ -15,6 +15,9 @@ import { JwtAuthGuard } from './jwt-auth.guard';
 import { RolesGuard } from './roles.guard';
 import { Roles } from './roles.decorator';
 import { Role } from '@prisma/client';
+import { ForgotPasswordDto } from './dto/forgot-password.dto';
+import { ResetPasswordDto } from './dto/reset-password.dto';
+import { ValidateResetCodeDto } from './dto/validate-reset-code.dto';
 
 @ApiTags('auth')
 @Controller('auth')
@@ -42,6 +45,33 @@ export class AuthController {
   @ApiOperation({ summary: 'Define a senha a partir de um token de convite' })
   setPassword(@Body() dto: SetPasswordDto) {
     return this.authService.setPassword(dto.token, dto.password);
+  }
+
+  // ── Esqueci minha senha (fluxo por código — app mobile) ──────────
+
+  @Post('forgot-password')
+  @ApiOperation({
+    summary: 'Solicita código de verificação por e-mail para redefinir senha',
+  })
+  forgotPassword(@Body() dto: ForgotPasswordDto) {
+    return this.authService.forgotPassword(dto.email);
+  }
+
+  @Post('reset-password/validate')
+  @ApiOperation({
+    summary: 'Valida se o código de 6 dígitos ainda é válido (tela 2 do app)',
+  })
+  validateResetCode(@Body() dto: ValidateResetCodeDto) {
+    return this.authService.validateResetCode(dto.email, dto.code);
+  }
+
+  @Post('reset-password')
+  @ApiOperation({
+    summary:
+      'Define nova senha a partir do código de verificação (tela 3 do app)',
+  })
+  resetPassword(@Body() dto: ResetPasswordDto) {
+    return this.authService.resetPassword(dto.email, dto.code, dto.password);
   }
 
   @Post('invite/:userId/resend')

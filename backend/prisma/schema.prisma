@@ -81,17 +81,18 @@ model School {
 }
 
 model User {
-  id           String          @id @default(uuid())
-  schoolId     String
-  school       School          @relation(fields: [schoolId], references: [id])
-  name         String
-  email        String          @unique
-  passwordHash String? //      Usuário convidado ainda não tem senha
-  invites      AccountInvite[]
-  phone        String?
-  role         Role            @default(STUDENT)
-  isActive     Boolean         @default(true)
-  deletedAt    DateTime? //    Quando a conta foi excluída pelo próprio usuário
+  id                  String               @id @default(uuid())
+  schoolId            String
+  school              School               @relation(fields: [schoolId], references: [id])
+  name                String
+  email               String               @unique
+  passwordHash        String? //      Usuário convidado ainda não tem senha
+  invites             AccountInvite[]
+  passwordResetTokens PasswordResetToken[]
+  phone               String?
+  role                Role                 @default(STUDENT)
+  isActive            Boolean              @default(true)
+  deletedAt           DateTime? //    Quando a conta foi excluída pelo próprio usuário
 
   createdAt DateTime @default(now())
 
@@ -117,6 +118,22 @@ model AccountInvite {
   createdAt DateTime  @default(now())
 
   @@map("account_invites")
+}
+
+// Adicione este model ao seu schema.prisma, junto dos outros
+// (pode ficar perto de AccountInvite, já que é conceito parecido).
+
+model PasswordResetToken {
+  id        String    @id @default(uuid())
+  userId    String
+  user      User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  codeHash  String // hash SHA-256 do código de 6 dígitos, nunca o código puro
+  expiresAt DateTime
+  usedAt    DateTime?
+  attempts  Int       @default(0) // NOVO — conta tentativas erradas de validação
+  createdAt DateTime  @default(now())
+
+  @@map("password_reset_tokens")
 }
 
 model Student {
