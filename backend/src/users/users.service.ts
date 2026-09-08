@@ -2,6 +2,7 @@ import {
   Injectable,
   ConflictException,
   NotFoundException,
+  ForbiddenException,
 } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
 import { AuthService } from '../auth/auth.service';
@@ -11,7 +12,6 @@ import { CreateFullUserDto } from './dto/create-full-user.dto';
 import { Role, Student } from '@prisma/client';
 import { calculateAge } from '../common/utils/age.util';
 import * as bcrypt from 'bcrypt';
-import { UnauthorizedException } from '@nestjs/common';
 
 @Injectable()
 export class UsersService {
@@ -230,7 +230,7 @@ export class UsersService {
       !user.passwordHash ||
       !(await bcrypt.compare(password, user.passwordHash))
     ) {
-      throw new UnauthorizedException('Senha incorreta');
+      throw new ForbiddenException('Senha incorreta');
     }
 
     const anonymizedEmail = `deleted-${user.id}@removed.local`;

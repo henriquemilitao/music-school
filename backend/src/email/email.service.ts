@@ -1,4 +1,3 @@
-// src/email/email.service.ts
 import { Injectable, Logger } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { Resend } from 'resend';
@@ -8,13 +7,19 @@ export class EmailService {
   private readonly logger = new Logger(EmailService.name);
   private readonly resend: Resend;
   private readonly fromAddress: string;
+  private readonly replyToAddress: string;
 
   constructor(private config: ConfigService) {
     this.resend = new Resend(this.config.getOrThrow<string>('RESEND_API_KEY'));
 
     this.fromAddress = this.config.get<string>(
       'EMAIL_FROM',
-      'onboarding@resend.dev',
+      'suporte@pianissima.com.br',
+    );
+
+    this.replyToAddress = this.config.get<string>(
+      'EMAIL_REPLY_TO',
+      'pianissimaem@gmail.com',
     );
   }
 
@@ -27,6 +32,7 @@ export class EmailService {
       await this.resend.emails.send({
         from: `Pianíssima <${this.fromAddress}>`,
         to: params.to,
+        replyTo: this.replyToAddress,
         subject: 'Seu código de redefinição de senha — Pianíssima',
         html: this.buildResetEmailHtml(params.name, params.code),
       });
@@ -37,13 +43,14 @@ export class EmailService {
     }
   }
 
-  // NOVO — aviso de segurança disparado depois que a senha é
+  // aviso de segurança disparado depois que a senha é
   // efetivamente trocada, pra alertar o usuário caso não tenha sido ele.
   async sendPasswordChangedEmail(params: { to: string; name: string }) {
     try {
       await this.resend.emails.send({
         from: `Pianíssima <${this.fromAddress}>`,
         to: params.to,
+        replyTo: this.replyToAddress,
         subject: 'Sua senha foi alterada — Pianíssima',
         html: this.buildPasswordChangedHtml(params.name),
       });
