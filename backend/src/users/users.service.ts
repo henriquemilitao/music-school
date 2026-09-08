@@ -12,6 +12,7 @@ import { CreateFullUserDto } from './dto/create-full-user.dto';
 import { Role, Student } from '@prisma/client';
 import { calculateAge } from '../common/utils/age.util';
 import * as bcrypt from 'bcrypt';
+import { EmailService } from 'src/email/email.service';
 
 @Injectable()
 export class UsersService {
@@ -19,6 +20,7 @@ export class UsersService {
     private prisma: PrismaService,
     private authService: AuthService,
     private enrollmentsService: EnrollmentsService,
+    private emailService: EmailService, // 👈 novo
   ) {}
 
   async create(dto: CreateUserDto, schoolId: string) {
@@ -58,6 +60,12 @@ export class UsersService {
     }
 
     const inviteLink = await this.authService.createInvite(user.id);
+
+    await this.emailService.sendInviteEmail({
+      to: user.email,
+      name: user.name,
+      inviteLink,
+    });
 
     return { ...user, inviteLink };
   }
@@ -204,6 +212,12 @@ export class UsersService {
 
     // 4. gera o link de convite, igual o create() simples já faz
     const inviteLink = await this.authService.createInvite(user.id);
+
+    await this.emailService.sendInviteEmail({
+      to: user.email,
+      name: user.name,
+      inviteLink,
+    });
 
     return {
       user: {

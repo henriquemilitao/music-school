@@ -99,4 +99,45 @@ export class EmailService {
       </div>
     `;
   }
+
+  async sendInviteEmail(params: {
+    to: string;
+    name: string;
+    inviteLink: string;
+  }) {
+    try {
+      await this.resend.emails.send({
+        from: `Pianíssima <${this.fromAddress}>`,
+        to: params.to,
+        replyTo: this.replyToAddress,
+        subject: 'Bem-vindo(a) ao Pianíssima — crie sua senha',
+        html: this.buildInviteEmailHtml(params.name, params.inviteLink),
+      });
+    } catch (error) {
+      // Mesmo padrão dos outros envios — não derruba a requisição
+      // que criou o usuário só porque o e-mail falhou.
+      this.logger.error('Falha ao enviar e-mail de convite', error);
+    }
+  }
+
+  private buildInviteEmailHtml(name: string, inviteLink: string): string {
+    return `
+    <div style="font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; background: #f5f1ea; padding: 32px;">
+      <div style="max-width: 480px; margin: 0 auto; background: white; border-radius: 16px; padding: 32px 24px;">
+        <h1 style="font-size: 20px; color: #1a1a1a; margin-bottom: 8px;">Olá, ${name}!</h1>
+        <p style="font-size: 14px; color: #374151; line-height: 1.6;">
+          Sua conta no Pianíssima foi criada. Toque no botão abaixo para definir sua senha e começar a usar o app.
+        </p>
+        <div style="text-align: center; margin: 28px 0;">
+          <a href="${inviteLink}" style="background: #b08d57; color: white; padding: 14px 28px; border-radius: 12px; font-weight: bold; font-size: 15px; text-decoration: none; display: inline-block;">
+            Criar minha senha
+          </a>
+        </div>
+        <p style="font-size: 13px; color: #9ca3af; line-height: 1.6;">
+          Se você não esperava este e-mail, pode ignorá-lo com segurança.
+        </p>
+      </div>
+    </div>
+  `;
+  }
 }
