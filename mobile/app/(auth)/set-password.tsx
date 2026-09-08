@@ -14,9 +14,9 @@ import {
 } from 'react-native';
 import { useRouter, useLocalSearchParams } from 'expo-router';
 import { Eye, EyeOff } from 'lucide-react-native';
-import { api } from '../lib/api';
+import { api } from '../../lib/api';
 
-const logo = require('../assets/images/logo.png');
+const logo = require('../../assets/images/logo.png');
 
 type InviteState =
   | { status: 'loading' }

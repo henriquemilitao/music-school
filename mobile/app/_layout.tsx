@@ -43,9 +43,6 @@ function PushTokenRegistrar() {
       sendTokenToBackend(pushToken);
     });
 
-    // Escuta mudanças de token em tempo real — cobre o caso de o
-    // token ser invalidado/renovado pelo FCM depois que o app já
-    // está aberto (rebuild anterior, troca de credenciais, etc).
     const unsubscribe = subscribeToPushTokenChanges((newToken) => {
       sendTokenToBackend(newToken);
     });
@@ -60,8 +57,17 @@ function AuthGate({ children }: { children: React.ReactNode }) {
   const { user, isLoading } = useAuth();
   const pathname = usePathname();
 
-  // Rotas acessíveis sem estar logado
-  const PUBLIC_ROUTES = ['/login', '/set-password', '/delete-account'];
+  // Rotas acessíveis sem estar logado — todas dentro do grupo (auth).
+  // usePathname() retorna a URL "resolvida" (sem o nome do grupo entre
+  // parênteses), por isso continua sendo /login, /forgot-password etc.
+  const PUBLIC_ROUTES = [
+    '/login',
+    '/forgot-password',
+    '/verify-code',
+    '/reset-password',
+    '/set-password',
+    '/delete-account',
+  ];
   const isPublicRoute = PUBLIC_ROUTES.includes(pathname);
 
   if (isLoading) {
@@ -73,7 +79,7 @@ function AuthGate({ children }: { children: React.ReactNode }) {
   }
 
   if (!user && !isPublicRoute) {
-    return <Redirect href="/login" />;
+    return <Redirect href="/(auth)/login" />;
   }
 
   if (user && pathname === '/') {

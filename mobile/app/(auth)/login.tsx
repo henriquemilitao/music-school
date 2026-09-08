@@ -13,9 +13,9 @@ import {
 } from 'react-native';
 import { useRouter } from 'expo-router';
 import { Eye, EyeOff } from 'lucide-react-native';
-import { useAuth } from '../context/AuthContext';
+import { useAuth } from '../../context/AuthContext';
 
-const logo = require('../assets/images/logo.png');
+const logo = require('../../assets/images/logo.png');
 
 export default function Login() {
   const [email, setEmail] = useState('');
@@ -172,6 +172,19 @@ export default function Login() {
           </View>
 
           <TouchableOpacity
+            onPress={() => router.push('/(auth)/forgot-password')}
+            className="self-end -mt-2"
+            hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+          >
+            <Text
+              className="text-xs font-semibold"
+              style={{ color: '#B08D57' }}
+            >
+              Esqueci minha senha
+            </Text>
+          </TouchableOpacity>
+
+          <TouchableOpacity
             className="bg-[#B08D57] rounded-xl py-4 items-center mt-1"
             onPress={handleLogin}
             disabled={isSubmitting}
@@ -184,14 +197,9 @@ export default function Login() {
         </View>
 
         {!isKeyboardVisible && (
-          <>
-            <Text className="text-center text-gray-400 text-xs mt-8">
-              Pianíssima · Aqui tem música
-            </Text>
-            {/* <Text style={{ color: 'red', fontWeight: 'bold' }}>
-              VERSÃO COM FIX 1.0.1
-            </Text> */}
-          </>
+          <Text className="text-center text-gray-400 text-xs mt-8">
+            Pianíssima · Aqui tem música
+          </Text>
         )}
       </ScrollView>
     </KeyboardAvoidingView>
