@@ -31,7 +31,7 @@ async function bootstrap() {
     allowList: (req) => req.url.includes('/payments/webhook'), // Isenta a rota de webhook do Mercado Pago
   });
 
-  const publicPath = join(__dirname, '..', '..', 'public');
+  const publicPath = join(__dirname, '..', 'public');
   console.log('📁 Servindo arquivos estáticos de:', publicPath);
 
   await app.register(fastifyStatic, {
