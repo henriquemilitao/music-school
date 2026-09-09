@@ -4,7 +4,6 @@ import {
   Text,
   TextInput,
   TouchableOpacity,
-  Alert,
   Image,
   KeyboardAvoidingView,
   ScrollView,
@@ -14,6 +13,7 @@ import {
 import { useRouter } from 'expo-router';
 import { Eye, EyeOff } from 'lucide-react-native';
 import { useAuth } from '../../context/AuthContext';
+import { InlineFeedback } from '../../components/ui/InlineFeedback';
 
 const logo = require('../../assets/images/logo.png');
 
@@ -25,6 +25,7 @@ export default function Login() {
   const [isEmailFocused, setIsEmailFocused] = useState(false);
   const [isPasswordFocused, setIsPasswordFocused] = useState(false);
   const [showPassword, setShowPassword] = useState(false);
+  const [errorMessage, setErrorMessage] = useState<string | null>(null);
   const passwordInputRef = useRef<TextInput>(null);
 
   useEffect(() => {
@@ -50,8 +51,10 @@ export default function Login() {
   const router = useRouter();
 
   async function handleLogin() {
+    setErrorMessage(null);
+
     if (!email || !password) {
-      Alert.alert('Atenção', 'Preencha email e senha');
+      setErrorMessage('Preencha email e senha');
       return;
     }
 
@@ -59,8 +62,14 @@ export default function Login() {
     try {
       await signIn(email, password);
       router.replace('/');
-    } catch (error) {
-      Alert.alert('Erro', 'Email ou senha inválidos');
+    } catch (error: any) {
+      if (error?.isNetworkError) {
+        setErrorMessage(
+          'Não foi possível fazer login. Verifique sua conexão com a internet.',
+        );
+      } else {
+        setErrorMessage('Email ou senha inválidos');
+      }
     } finally {
       setIsSubmitting(false);
     }
@@ -107,6 +116,8 @@ export default function Login() {
             elevation: 2,
           }}
         >
+          <InlineFeedback type="error" message={errorMessage} />
+
           <View>
             <Text className="text-xs font-bold uppercase tracking-widest text-gray-400 mb-1.5">
               Email
@@ -121,7 +132,10 @@ export default function Login() {
               placeholder="seu@email.com"
               placeholderTextColor="#B0AA9C"
               value={email}
-              onChangeText={setEmail}
+              onChangeText={(text) => {
+                setEmail(text);
+                if (errorMessage) setErrorMessage(null);
+              }}
               onFocus={() => setIsEmailFocused(true)}
               onBlur={() => setIsEmailFocused(false)}
               autoCapitalize="none"
@@ -150,7 +164,10 @@ export default function Login() {
                 placeholder="••••••••"
                 placeholderTextColor="#B0AA9C"
                 value={password}
-                onChangeText={setPassword}
+                onChangeText={(text) => {
+                  setPassword(text);
+                  if (errorMessage) setErrorMessage(null);
+                }}
                 onFocus={() => setIsPasswordFocused(true)}
                 onBlur={() => setIsPasswordFocused(false)}
                 secureTextEntry={!showPassword}

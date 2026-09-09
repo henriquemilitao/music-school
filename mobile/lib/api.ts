@@ -28,20 +28,21 @@ export function registerUnauthorizedHandler(handler: () => void) {
 api.interceptors.response.use(
   (response) => response,
   (error) => {
-    // Mensagem amigável e padronizada — cada tela pode usar
-    // error.friendlyMessage em vez de vasculhar error.response toda vez.
-    const friendlyMessage =
-      error?.response?.data?.message ??
-      'Não foi possível completar a ação. Verifique sua conexão e tente novamente.';
+    // Sem error.response = a requisição não teve retorno do servidor
+    // (sem internet, servidor fora do ar, timeout). Diferente de um
+    // 401/400, onde o servidor respondeu dizendo que algo está errado.
+    const isNetworkError = !error?.response;
+
+    const friendlyMessage = isNetworkError
+      ? 'Não foi possível conectar. Verifique sua internet e tente novamente.'
+      : (error?.response?.data?.message ??
+        'Não foi possível completar a ação. Verifique sua conexão e tente novamente.');
 
     error.friendlyMessage = friendlyMessage;
+    error.isNetworkError = isNetworkError;
 
     const status = error?.response?.status;
 
-    // 401 = token expirado, inválido, ou usuário desativado
-    // (JwtStrategy já barra isActive=false). Em qualquer um desses
-    // casos, não faz sentido deixar o app "preso" mostrando erro —
-    // o correto é deslogar e mandar pra tela de login.
     if (status === 401 && onUnauthorized) {
       onUnauthorized();
     }

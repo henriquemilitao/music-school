@@ -521,9 +521,9 @@ export default function Index() {
           <Text className="text-white font-bold">Obter Expo Push Token</Text>
         </TouchableOpacity> */}
 
-        <Text style={{ color: 'red', fontWeight: 'bold' }}>
+        {/* <Text style={{ color: 'red', fontWeight: 'bold' }}>
           VERSÃO COM FIX 1.0.3
-        </Text>
+        </Text> */}
         <Text className="text-center text-gray-400 text-xs mt-4 mb-8">
           Pianíssima · Aqui tem música
         </Text>

@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import {
   View,
   Text,
@@ -27,6 +27,7 @@ export default function ResetPassword() {
   const [showPassword, setShowPassword] = useState(false);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
   const [successMessage, setSuccessMessage] = useState<string | null>(null);
+  const confirmPasswordInputRef = useRef<TextInput>(null);
   const router = useRouter();
 
   // Guarda contra a tela ser aberta sem email/code (ex: navegação
@@ -163,6 +164,8 @@ export default function ResetPassword() {
                 secureTextEntry={!showPassword}
                 editable={!isSubmitting}
                 returnKeyType="next"
+                onSubmitEditing={() => confirmPasswordInputRef.current?.focus()}
+                blurOnSubmit={false}
               />
               <TouchableOpacity
                 onPress={() => setShowPassword((prev) => !prev)}
