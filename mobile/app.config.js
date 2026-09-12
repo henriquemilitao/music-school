@@ -1,13 +1,21 @@
 const APP_VARIANT = process.env.APP_VARIANT || 'development';
 
-const IS_DEV = APP_VARIANT === 'development';
-
 module.exports = {
   expo: {
-    name: IS_DEV ? 'Pianíssima (Dev)' : 'Pianíssima',
+    name:
+      APP_VARIANT === 'development'
+        ? 'Pianíssima (Dev)'
+        : APP_VARIANT === 'preview'
+          ? 'Pianíssima (Preview)'
+          : 'Pianíssima',
     slug: 'mobile',
     version: '1.0.0',
-    scheme: 'pianissima',
+    scheme:
+      APP_VARIANT === 'development'
+        ? 'pianissimadev'
+        : APP_VARIANT === 'preview'
+          ? 'pianissimapreview'
+          : 'pianissima',
     orientation: 'portrait',
     icon: './assets/icon.png',
     userInterfaceStyle: 'light',
@@ -28,6 +36,12 @@ module.exports = {
     },
     ios: {
       supportsTablet: true,
+      bundleIdentifier:
+        APP_VARIANT === 'development'
+          ? 'com.henrique_militao.pianissima.dev'
+          : APP_VARIANT === 'preview'
+            ? 'com.henrique_militao.pianissima.preview'
+            : 'com.henrique_militao.pianissima',
     },
     android: {
       adaptiveIcon: {
@@ -36,9 +50,12 @@ module.exports = {
       },
       edgeToEdgeEnabled: true,
       predictiveBackGestureEnabled: false,
-      package: IS_DEV
-        ? 'com.henrique_militao.pianissima.dev'
-        : 'com.henrique_militao.pianissima',
+      package:
+        APP_VARIANT === 'development'
+          ? 'com.henrique_militao.pianissima.dev'
+          : APP_VARIANT === 'preview'
+            ? 'com.henrique_militao.pianissima.preview'
+            : 'com.henrique_militao.pianissima',
       googleServicesFile: './google-services.json',
     },
     web: {

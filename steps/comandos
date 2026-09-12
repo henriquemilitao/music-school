@@ -70,6 +70,30 @@ eas build --platform android --profile production
 
 comando pra atualizar o app de preview:
 eas update --channel preview --message "Ajustes na tela"
+eas update --channel preview --message "Primeiro nome apenas aparecendo para os alunos"
+eas update --channel production --message "Primeiro nome apenas aparecendo para os alunos"
+
 
 e o de production:
 eas update --channel production --message "Sua mensagem de ajuste aqui"
+
+
+CONFIGURAR NOTIFICAÇOES:
+1 = No terminal, rode o comando: eas credentials
+2 - Selecione Android > preview.
+3 - Quando perguntar o que fazer, selecione Keystore: Manage everything needed to build your project.
+4 - Escolha Set up a new keystore (ou gere um automaticamente).
+5 - O EAS vai gerar as credenciais. Copie o SHA-1 e o SHA-256 que aparecerão na tela.
+
+depois cadastrar no firebase:
+1 - Vá ao Console do Firebase > Configurações do Projeto (onde você tirou os prints).
+2 - Clique no botão azul Adicionar aplicativo e selecione Android.
+3 - No campo Nome do pacote (Package name), coloque exatamente o que está no seu app.config.js: com.henrique_militao.pianissima.preview
+4 - Preencha o Apelido (ex: Pianíssima Preview).
+5 - Cole o SHA-1 e o SHA-256 que você copiou do passo 1.
+6 - Registre o app.
+
+depois baixa o google-services.json novo e colocar dentro da pasta mobile.
+e por ultimo ir em contas de serviço la no firebase, baixar a key, e colocar em eas credentials, em qual vc quiser, ir em 
+google > Push Notifications > set up > Upload > colocar o caminho parecido com isso: 
+C:\Users\Henrique Militão\Downloads\pianissima-v3-firebase-adminsdk-fbsvc-0e3587c362.json
