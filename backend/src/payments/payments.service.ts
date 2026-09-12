@@ -51,7 +51,7 @@ export class PaymentsService {
         pixQrCode: true,
         paymentBundleId: true,
         student: {
-          select: { name: true },
+          select: { name: true, instrument: true },
         },
       },
     });
@@ -134,7 +134,7 @@ export class PaymentsService {
         pixQrCode: true,
         pixExpiresAt: true,
         paymentBundleId: true,
-        student: { select: { name: true } },
+        student: { select: { name: true, instrument: true } },
       },
     });
 

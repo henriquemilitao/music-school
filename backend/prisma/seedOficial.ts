@@ -3,60 +3,74 @@ import * as bcrypt from 'bcrypt';
 
 const prisma = new PrismaClient();
 
-const now = new Date();
-const year = now.getFullYear();
+// "Hoje" de verdade, pra decidir COMPLETED vs SCHEDULED.
+const TODAY = new Date();
+const TODAY_UTC_MIDNIGHT = new Date(
+  Date.UTC(TODAY.getUTCFullYear(), TODAY.getUTCMonth(), TODAY.getUTCDate()),
+);
+
+// Offset fixo da escola em relação ao UTC (igual ao campo
+// School.timezoneOffsetHours). startTime é sempre hora LOCAL da
+// escola — pra gravar em UTC de verdade no banco, subtraímos esse
+// offset (ex: 15:00 local em UTC-4 vira 19:00 UTC).
+const SCHOOL_TIMEZONE_OFFSET_HOURS = -4;
 
 // ─────────────────────────────────────────────────────────────
 // Helpers de data
 // ─────────────────────────────────────────────────────────────
 
-// Constrói a próxima data (a partir de `from`, exclusive) em que
-// cai o dia-do-mês `dueDay`. Se `from` já passou do dia deste mês,
-// vai pro mês seguinte.
-function nextDueDateOnOrAfter(from: Date, dueDay: number): Date {
-  let candidate = new Date(from.getFullYear(), from.getMonth(), dueDay);
-  if (candidate < from) {
-    candidate = new Date(from.getFullYear(), from.getMonth() + 1, dueDay);
-  }
-  return candidate;
+// Cria uma data em UTC ao meio-dia (evita problemas de fuso ao
+// comparar só o "dia").
+function dateUTCNoon(y: number, m: number, d: number): Date {
+  return new Date(Date.UTC(y, m - 1, d, 12, 0, 0, 0));
 }
 
-// Data de vencimento do ciclo ATUAL (o vencimento deste mês).
-// Se esse vencimento já passou, a fatura desse ciclo fica OVERDUE;
-// se ainda não chegou, fica PENDING — mas em ambos os casos é ESSE
-// vencimento (do mês corrente) que define o ciclo vigente, nunca
-// o do mês anterior. Usado no caso PADRÃO (maioria dos alunos).
-function currentCycleStart(dueDay: number): Date {
-  return new Date(now.getFullYear(), now.getMonth(), dueDay);
+// Parseia "DD/MM" (ou "DD/MM/AAAA") assumindo o ano corrente,
+// quando o ano não vem explícito.
+function parseDayMonth(str: string, referenceYear: number): Date {
+  const parts = str.split('/').map(Number);
+  const [d, m, y] = parts;
+  return dateUTCNoon(y ?? referenceYear, m, d);
 }
 
-// Último vencimento que JÁ OCORREU (<= hoje) — usado só nos casos
-// especiais (Carla, Cauã, Fernanda) onde o texto se refere a um
-// vencimento que já passou, e não ao vencimento deste mês que
-// ainda pode estar no futuro.
-function lastOccurredCycleStart(dueDay: number): Date {
-  const thisMonth = new Date(now.getFullYear(), now.getMonth(), dueDay);
-  return thisMonth <= now
-    ? thisMonth
-    : new Date(now.getFullYear(), now.getMonth() - 1, dueDay);
+function parseBirthDate(str: string): Date {
+  const [d, m, y] = str.split('/').map(Number);
+  return dateUTCNoon(y, m, d);
 }
 
-function addMonths(date: Date, months: number): Date {
-  return new Date(date.getFullYear(), date.getMonth() + months, date.getDate());
+function addMonthsUTC(date: Date, months: number): Date {
+  return new Date(
+    Date.UTC(
+      date.getUTCFullYear(),
+      date.getUTCMonth() + months,
+      date.getUTCDate(),
+      12,
+      0,
+      0,
+      0,
+    ),
+  );
 }
 
-function referenceMonthLabel(date: Date): string {
-  return `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}`;
+function toMonthKeyUTC(date: Date): string {
+  const y = date.getUTCFullYear();
+  const m = String(date.getUTCMonth() + 1).padStart(2, '0');
+  return `${y}-${m}`;
 }
 
-function isPastDue(dueDate: Date): boolean {
-  return now > dueDate;
+function toPeriodKeyUTC(date: Date): string {
+  const y = date.getUTCFullYear();
+  const m = String(date.getUTCMonth() + 1).padStart(2, '0');
+  const d = String(date.getUTCDate()).padStart(2, '0');
+  return `${y}-${m}-${d}`;
 }
 
 // ─────────────────────────────────────────────────────────────
 // Helper: cria lições recorrentes num intervalo [fromDate, toDate),
-// no dia da semana `weekDay`, marcando COMPLETED se já passou e
-// SCHEDULED se ainda não.
+// no dia da semana `weekDay`, no horário local `startTime`. Cada
+// aula individual vira COMPLETED se sua data já passou (<= hoje),
+// senão SCHEDULED. startTime é hora LOCAL da escola; convertemos
+// pra UTC real subtraindo SCHOOL_TIMEZONE_OFFSET_HOURS.
 // ─────────────────────────────────────────────────────────────
 async function createLessonsInRange(p: {
   schoolId: string;
@@ -65,31 +79,47 @@ async function createLessonsInRange(p: {
   enrollmentId: string;
   weekDay: number;
   startTime: string;
+  durationMinutes: number;
   fromDate: Date;
   toDate: Date;
 }) {
   const [h, m] = p.startTime.split(':').map(Number);
-  const cursor = new Date(p.fromDate);
+
+  const cursor = new Date(
+    Date.UTC(
+      p.fromDate.getUTCFullYear(),
+      p.fromDate.getUTCMonth(),
+      p.fromDate.getUTCDate(),
+    ),
+  );
 
   while (cursor < p.toDate) {
-    if (cursor.getDay() === p.weekDay) {
-      const lessonDate = new Date(cursor);
-      lessonDate.setHours(h, m, 0, 0);
-      if (lessonDate >= p.fromDate && lessonDate < p.toDate) {
-        await prisma.lesson.create({
-          data: {
-            schoolId: p.schoolId,
-            studentId: p.studentId,
-            teacherId: p.teacherId,
-            enrollmentId: p.enrollmentId,
-            scheduledAt: lessonDate,
-            durationMinutes: 60,
-            status: lessonDate < now ? 'COMPLETED' : 'SCHEDULED',
-          },
-        });
-      }
+    if (cursor.getUTCDay() === p.weekDay) {
+      const scheduledAt = new Date(
+        Date.UTC(
+          cursor.getUTCFullYear(),
+          cursor.getUTCMonth(),
+          cursor.getUTCDate(),
+          h - SCHOOL_TIMEZONE_OFFSET_HOURS,
+          m,
+          0,
+          0,
+        ),
+      );
+      const status = cursor <= TODAY_UTC_MIDNIGHT ? 'COMPLETED' : 'SCHEDULED';
+      await prisma.lesson.create({
+        data: {
+          schoolId: p.schoolId,
+          studentId: p.studentId,
+          teacherId: p.teacherId,
+          enrollmentId: p.enrollmentId,
+          scheduledAt,
+          durationMinutes: p.durationMinutes,
+          status,
+        },
+      });
     }
-    cursor.setDate(cursor.getDate() + 1);
+    cursor.setUTCDate(cursor.getUTCDate() + 1);
   }
 }
 
@@ -99,17 +129,18 @@ async function createPaymentRecord(p: {
   enrollmentId: string;
   amount: number;
   dueDate: Date;
-  status: 'PAID' | 'OVERDUE' | 'PENDING';
+  status: 'PAID' | 'PENDING';
   paidAt?: Date;
 }) {
-  const label = referenceMonthLabel(p.dueDate);
-  const key = `${p.studentId}-${label}`;
+  const label = toMonthKeyUTC(p.dueDate);
+  const key = `${p.studentId}-${toPeriodKeyUTC(p.dueDate)}`;
   return prisma.payment.create({
     data: {
       schoolId: p.schoolId,
       studentId: p.studentId,
       enrollmentId: p.enrollmentId,
       amount: p.amount,
+      paidAmount: p.status === 'PAID' ? p.amount : null,
       dueDate: p.dueDate,
       paidAt: p.paidAt ?? null,
       status: p.status,
@@ -122,337 +153,494 @@ async function createPaymentRecord(p: {
 }
 
 // ─────────────────────────────────────────────────────────────
-// Config de cada aluno — dados vindos da grade real de aulas.
+// Config de cada aluno — dados vindos da lista consolidada real.
 // ─────────────────────────────────────────────────────────────
+type TeacherKey = 'henrique' | 'mineia' | 'thiago';
+
 type StudentConfig = {
   guardianName: string;
-  guardianEmail: string;
+  guardianEmail: string | null;
+  guardianPhone?: string;
   studentName: string;
-  age: number;
+  birthDateStr: string | null; // "DD/MM/AAAA" ou null se faltando
   instrument: Instrument;
   weekDay: number; // 0=domingo ... 6=sábado
   startTime: string;
-  dueDay: number;
-  teacherKey: 'henrique' | 'mineia' | 'thiago';
+  durationMinutes: number;
   amount: number;
-  // Casos especiais:
-  specialCase?: 'paidAhead' | 'historicoAteVencimento' | 'atrasada';
-  paidAheadUntilCycleStart?: Date; // pra "Daniel": início do ciclo já pago
+  teacherKey: TeacherKey;
+  startDateStr: string; // "DD/MM" — data de início do ciclo atual de aulas
+  situacao: 'PAGO' | 'EM_ABERTO';
+  // Caso especial (ex: Daniel Santos Silva): due date diferente do
+  // início do ciclo de aulas.
+  overrideDueDateStr?: string; // "DD/MM"
 };
 
-const DEFAULT_AMOUNT = 250;
+const YEAR = new Date().getFullYear();
 
 const students: StudentConfig[] = [
-  // ── Segunda ──
+  // 1. Raphaella Cristynne
   {
-    guardianName: 'Raphaella',
-    guardianEmail: 'raphaella@escolademo.com',
-    studentName: 'Daniel',
-    age: 11,
+    guardianName: 'Raphaella Cristynne',
+    guardianEmail: 'raphaellacristynne@hotmail.com',
+    guardianPhone: '98981107513',
+    studentName: 'Daniel Ribeiro Lopes',
+    birthDateStr: '17/07/2014',
     instrument: Instrument.PIANO,
     weekDay: 1,
     startTime: '13:00',
-    dueDay: 5,
+    durationMinutes: 60,
+    amount: 230,
     teacherKey: 'mineia',
-    amount: DEFAULT_AMOUNT,
-    specialCase: 'paidAhead',
+    startDateStr: '26/10',
+    situacao: 'PAGO',
   },
   {
-    guardianName: 'Juliano',
-    guardianEmail: 'juliano@escolademo.com',
-    studentName: 'Guilherme',
-    age: 12,
-    instrument: Instrument.VIOLAO,
+    guardianName: 'Raphaella Cristynne',
+    guardianEmail: 'raphaellacristynne@hotmail.com',
+    guardianPhone: '98981107513',
+    studentName: 'Rafael Ribeiro Lopes',
+    birthDateStr: '14/02/2017',
+    instrument: Instrument.PIANO,
     weekDay: 1,
+    startTime: '14:00',
+    durationMinutes: 30,
+    amount: 115,
+    teacherKey: 'mineia',
+    startDateStr: '14/09',
+    situacao: 'PAGO',
+  },
+  // 2. Karina Morato Rodrigues
+  {
+    guardianName: 'Karina Morato Rodrigues',
+    guardianEmail: 'karinamoratorodrigues@gmail.com',
+    guardianPhone: '67998367530',
+    studentName: 'Lara Morato Rodrigues',
+    birthDateStr: '19/02/2015',
+    instrument: Instrument.PIANO,
+    weekDay: 2,
     startTime: '18:00',
-    dueDay: 8,
-    teacherKey: 'henrique',
-    amount: DEFAULT_AMOUNT,
-  },
-  {
-    guardianName: 'Juliano',
-    guardianEmail: 'juliano@escolademo.com',
-    studentName: 'Juliano',
-    age: 35,
-    instrument: Instrument.VIOLAO,
-    weekDay: 1,
-    startTime: '19:00',
-    dueDay: 8,
-    teacherKey: 'henrique',
-    amount: DEFAULT_AMOUNT,
-  },
-
-  // ── Terça ──
-  {
-    guardianName: 'Luziana',
-    guardianEmail: 'luziana@escolademo.com',
-    studentName: 'Agatha',
-    age: 13,
-    instrument: Instrument.PIANO,
-    weekDay: 2,
-    startTime: '08:00',
-    dueDay: 11,
+    durationMinutes: 60,
+    amount: 250,
     teacherKey: 'mineia',
-    amount: DEFAULT_AMOUNT,
+    startDateStr: '18/09',
+    situacao: 'PAGO',
   },
+  // 3. Igor Ujiie
   {
-    guardianName: 'Levi',
-    guardianEmail: 'levi@escolademo.com',
-    studentName: 'Lívia',
-    age: 12,
-    instrument: Instrument.PIANO,
-    weekDay: 2,
-    startTime: '09:00',
-    dueDay: 12,
-    teacherKey: 'mineia',
-    amount: DEFAULT_AMOUNT,
-  },
-  {
-    guardianName: 'Lilian',
-    guardianEmail: 'lilian@escolademo.com',
-    studentName: 'Heloisa',
-    age: 14,
-    instrument: Instrument.PIANO,
-    weekDay: 2,
-    startTime: '10:00',
-    dueDay: 10,
-    teacherKey: 'mineia',
-    amount: DEFAULT_AMOUNT,
-  },
-  {
-    guardianName: 'Claudiana',
-    guardianEmail: 'claudiana@escolademo.com',
-    studentName: 'Guilherme',
-    age: 12,
-    instrument: Instrument.PIANO,
-    weekDay: 2,
-    startTime: '14:00',
-    dueDay: 11,
-    teacherKey: 'mineia',
-    amount: DEFAULT_AMOUNT,
-  },
-  {
-    guardianName: 'Luisa Maria',
-    guardianEmail: 'luisamaria@escolademo.com',
-    studentName: 'Heloize',
-    age: 9,
-    instrument: Instrument.PIANO,
-    weekDay: 2,
-    startTime: '15:00',
-    dueDay: 19,
-    teacherKey: 'mineia',
-    amount: DEFAULT_AMOUNT,
-  },
-
-  // ── Quarta ──
-  {
-    guardianName: 'Sionara',
-    guardianEmail: 'sionara@escolademo.com',
-    studentName: 'Carla',
-    age: 11,
-    instrument: Instrument.PIANO,
-    weekDay: 3,
-    startTime: '08:00',
-    dueDay: 23,
-    teacherKey: 'thiago',
-    amount: DEFAULT_AMOUNT,
-    specialCase: 'historicoAteVencimento',
-  },
-  {
-    guardianName: 'Igor ou Jaqueline',
-    guardianEmail: 'igor.jaqueline@escolademo.com',
-    studentName: 'Lucas',
-    age: 10,
+    guardianName: 'Igor Ujiie',
+    guardianEmail: 'igorujiie@hotmail.com',
+    guardianPhone: '67981746728',
+    studentName: 'Lucas Yoshimitsu da Silva Ujiie',
+    birthDateStr: '05/04/2016',
     instrument: Instrument.PIANO,
     weekDay: 3,
     startTime: '09:00',
-    dueDay: 9,
-    teacherKey: 'thiago',
-    amount: DEFAULT_AMOUNT,
+    durationMinutes: 60,
+    amount: 250,
+    teacherKey: 'mineia',
+    startDateStr: '09/09',
+    situacao: 'PAGO',
   },
+  // 4. Sionara de Almeida Dias Pereira
   {
-    guardianName: 'Inoã',
-    guardianEmail: 'inoa@escolademo.com',
-    studentName: 'Cauã',
-    age: 8,
+    guardianName: 'Sionara de Almeida Dias Pereira',
+    guardianEmail: 'sionara_almeida@hotmail.com',
+    guardianPhone: '67991446609',
+    studentName: 'Karlla de Almeida Dias Pereira',
+    birthDateStr: '07/01/2016',
     instrument: Instrument.PIANO,
     weekDay: 3,
-    startTime: '10:00',
-    dueDay: 29,
-    teacherKey: 'thiago',
-    amount: DEFAULT_AMOUNT,
-    specialCase: 'historicoAteVencimento',
+    startTime: '08:00',
+    durationMinutes: 60,
+    amount: 230,
+    teacherKey: 'mineia',
+    startDateStr: '23/09',
+    situacao: 'EM_ABERTO',
   },
+  // 5. Cledisnari Centurion
   {
-    guardianName: 'Virgínia',
-    guardianEmail: 'virginia@escolademo.com',
-    studentName: 'João Pedro',
-    age: 12,
+    guardianName: 'Cledisnari Centurion',
+    guardianEmail: 'cledisnari.scenturion@gmail.com',
+    guardianPhone: '67984474559',
+    studentName: 'Jazlín Centurion',
+    birthDateStr: '25/03/2015',
     instrument: Instrument.PIANO,
     weekDay: 3,
-    startTime: '14:00',
-    dueDay: 11,
-    teacherKey: 'thiago',
-    amount: DEFAULT_AMOUNT,
+    startTime: '18:00',
+    durationMinutes: 30,
+    amount: 115,
+    teacherKey: 'mineia',
+    startDateStr: '10/09',
+    situacao: 'PAGO',
   },
+  // 6. Renan Dias Militão
   {
-    guardianName: 'Sidneia',
-    guardianEmail: 'sidneia@escolademo.com',
-    studentName: 'Sara',
-    age: 16,
+    guardianName: 'Mineia Dias Pinto Militão',
+    guardianEmail: 'pianissimaem@gmail.com',
+    guardianPhone: '67992936045',
+    studentName: 'Renan Dias Militão',
+    birthDateStr: '16/11/2012',
     instrument: Instrument.PIANO,
-    weekDay: 3,
-    startTime: '15:00',
-    dueDay: 11,
+    weekDay: 4,
+    startTime: '13:30',
+    durationMinutes: 60,
+    amount: 230,
     teacherKey: 'thiago',
-    amount: DEFAULT_AMOUNT,
+    startDateStr: '12/09',
+    situacao: 'PAGO',
   },
+  // 7. Danielly Medeiros
   {
-    guardianName: 'Rosinéia',
-    guardianEmail: 'rosineia@escolademo.com',
-    studentName: 'Laura',
-    age: 12,
-    instrument: Instrument.PIANO,
-    weekDay: 3,
-    startTime: '16:00',
-    dueDay: 9,
-    teacherKey: 'thiago',
-    amount: DEFAULT_AMOUNT,
-  },
-  {
-    guardianName: 'Danielly',
-    guardianEmail: 'danielly@escolademo.com',
-    studentName: 'Lara',
-    age: 11,
+    guardianName: 'Danielly Medeiros',
+    guardianEmail: 'danny.medeiros89@hotmail.com',
+    guardianPhone: '67981055070',
+    studentName: 'Lara Soares de Medeiros Pereira',
+    birthDateStr: '09/11/2015',
     instrument: Instrument.PIANO,
     weekDay: 3,
     startTime: '17:00',
-    dueDay: 12,
+    durationMinutes: 60,
+    amount: 230,
     teacherKey: 'thiago',
-    amount: DEFAULT_AMOUNT,
+    startDateStr: '09/09',
+    situacao: 'PAGO',
   },
-
-  // ── Quinta ──
+  // 8. Virginia Pereira Rodrigues da Silva
   {
-    guardianName: 'Regiane',
-    guardianEmail: 'regiane@escolademo.com',
-    studentName: 'Isabella',
-    age: 12,
+    guardianName: 'Virginia Pereira Rodrigues da Silva',
+    guardianEmail: 'virginiaprodrodrigues@gmail.com',
+    guardianPhone: '67981321922',
+    studentName: 'João Pedro Rodrigues da Silva',
+    birthDateStr: '13/08/2014',
     instrument: Instrument.PIANO,
-    weekDay: 4,
+    weekDay: 3,
+    startTime: '14:00',
+    durationMinutes: 60,
+    amount: 230,
+    teacherKey: 'thiago',
+    startDateStr: '11/09',
+    situacao: 'PAGO',
+  },
+  // 9. Regiane Pescara
+  {
+    guardianName: 'Regiane Pescara',
+    guardianEmail: 'regianepescara@hotmail.com',
+    guardianPhone: '67981414674',
+    studentName: 'Isabella Pescara',
+    birthDateStr: '22/10/2014',
+    instrument: Instrument.PIANO,
+    weekDay: 3,
     startTime: '12:30',
-    dueDay: 11,
+    durationMinutes: 60,
+    amount: 230,
+    teacherKey: 'thiago',
+    startDateStr: '11/09',
+    situacao: 'PAGO',
+  },
+  // 10. Sidneia Zamboni
+  {
+    guardianName: 'Sidneia Zamboni',
+    guardianEmail: 'sarazamboni619@gmail.com',
+    guardianPhone: '67999536021',
+    studentName: 'Sara Zamboni',
+    birthDateStr: '20/01/2012',
+    instrument: Instrument.PIANO,
+    weekDay: 3,
+    startTime: '15:00',
+    durationMinutes: 60,
+    amount: 250,
     teacherKey: 'mineia',
-    amount: DEFAULT_AMOUNT,
+    startDateStr: '11/09',
+    situacao: 'EM_ABERTO',
   },
+  // 11. Rosineia Jesus Araújo
   {
-    guardianName: 'Mineia Responsável',
-    guardianEmail: 'renan.responsavel@escolademo.com',
-    studentName: 'Renan',
-    age: 13,
+    guardianName: 'Rosineia Jesus Araújo',
+    guardianEmail: 'rosineia25@hotmail.com',
+    guardianPhone: '67984070008',
+    studentName: 'Laura Araújo Damasceno de Almeida',
+    birthDateStr: '11/12/2014',
+    instrument: Instrument.PIANO,
+    weekDay: 3,
+    startTime: '16:00',
+    durationMinutes: 60,
+    amount: 230,
+    teacherKey: 'thiago',
+    startDateStr: '09/09',
+    situacao: 'PAGO',
+  },
+  // 12. Zilma dos Santos Ferreira da Silva — CASO ESPECIAL (Daniel Santos Silva)
+  {
+    guardianName: 'Zilma dos Santos Ferreira da Silva',
+    guardianEmail: 'zilmasantos11@hotmail.com',
+    guardianPhone: '67991186919',
+    studentName: 'Daniel Santos Silva',
+    birthDateStr: '20/03/2015',
     instrument: Instrument.PIANO,
     weekDay: 4,
     startTime: '14:30',
-    dueDay: 13,
+    durationMinutes: 60,
+    amount: 250,
     teacherKey: 'thiago',
-    amount: DEFAULT_AMOUNT,
+    startDateStr: '27/08',
+    situacao: 'PAGO',
+    overrideDueDateStr: '04/09',
   },
+  // 13. Ágatha Malfer dos Santos
   {
-    guardianName: 'Valter e Mayara',
-    guardianEmail: 'valter.mayara@escolademo.com',
-    studentName: 'Felipe',
-    age: 12,
-    instrument: Instrument.VIOLAO,
-    weekDay: 4,
-    startTime: '14:30',
-    dueDay: 11,
-    teacherKey: 'henrique',
-    amount: DEFAULT_AMOUNT,
+    guardianName: 'Luziana Malfer',
+    guardianEmail: 'luziana.malfer7@gmail.com',
+    guardianPhone: '67996572157',
+    studentName: 'Ágatha Malfer dos Santos',
+    birthDateStr: '02/02/2011',
+    instrument: Instrument.PIANO,
+    weekDay: 2,
+    startTime: '08:00',
+    durationMinutes: 60,
+    amount: 230,
+    teacherKey: 'mineia',
+    startDateStr: '11/09',
+    situacao: 'PAGO',
   },
+  // 14. Lívia Maria Pereira Marques
   {
-    guardianName: 'Cláudia',
-    guardianEmail: 'claudia@escolademo.com',
-    studentName: 'Luísa',
-    age: 12,
+    guardianName: 'Marta Pereira Lopes Marques',
+    guardianEmail: 'mp066692@gmail.com',
+    guardianPhone: '67992015392',
+    studentName: 'Lívia Maria Pereira Marques',
+    birthDateStr: '27/11/2012',
+    instrument: Instrument.PIANO,
+    weekDay: 2,
+    startTime: '09:00',
+    durationMinutes: 60,
+    amount: 230,
+    teacherKey: 'mineia',
+    startDateStr: '12/09',
+    situacao: 'PAGO',
+  },
+  // 15. Heloisa Tavares Souza
+  {
+    guardianName: 'Lilian Keli da Silva Tavares Souza',
+    guardianEmail: 'liliantavarescontato@gmail.com',
+    guardianPhone: '67984668776',
+    studentName: 'Heloisa Tavares Souza',
+    birthDateStr: '14/04/2012',
+    instrument: Instrument.PIANO,
+    weekDay: 2,
+    startTime: '10:00',
+    durationMinutes: 60,
+    amount: 230,
+    teacherKey: 'mineia',
+    startDateStr: '10/09',
+    situacao: 'PAGO',
+  },
+  // 16. Guilherme Magalhães de Paula
+  {
+    guardianName: ' Claudiana Moura de Magalhães de Paula',
+    guardianEmail: 'claudianacorumba@hotmail.com',
+    guardianPhone: '94984513574',
+    studentName: 'Guilherme Magalhães de Paula',
+    birthDateStr: '12/07/2013',
+    instrument: Instrument.PIANO,
+    weekDay: 2,
+    startTime: '14:00',
+    durationMinutes: 60,
+    amount: 230,
+    teacherKey: 'mineia',
+    startDateStr: '11/09',
+    situacao: 'PAGO',
+  },
+  // 17. Eloize de Almeida Santos
+  {
+    guardianName: 'Sônia Batista Ferreira Garcia ',
+    guardianEmail: 'lumaria37@hotmail.com',
+    guardianPhone: '67992344196',
+    studentName: 'Eloize de Almeida Santos',
+    birthDateStr: '25/03/2017',
+    instrument: Instrument.PIANO,
+    weekDay: 2,
+    startTime: '15:00',
+    durationMinutes: 60,
+    amount: 230,
+    teacherKey: 'mineia',
+    startDateStr: '19/09',
+    situacao: 'EM_ABERTO',
+  },
+  // 18. Paulo Henrique Higino Batista
+  {
+    guardianName: 'Lucimar Moreira',
+    guardianEmail: 'pauloh.higbat@gmail.com',
+    guardianPhone: '67998239998',
+    studentName: 'Paulo Henrique Higino Batista',
+    birthDateStr: '13/04/2005',
+    instrument: Instrument.PIANO,
+    weekDay: 1,
+    startTime: '09:00',
+    durationMinutes: 60,
+    amount: 250,
+    teacherKey: 'mineia',
+    startDateStr: '31/08',
+    situacao: 'PAGO',
+  },
+  // 19. Camila Ferreira Garcia
+  {
+    guardianName: 'Sônia Batista Ferreira Garcia',
+    guardianEmail: 'camilagarcia27bf@gmail.com',
+    guardianPhone: '67992355769',
+    studentName: 'Camila Ferreira Garcia',
+    birthDateStr: '27/09/2010',
     instrument: Instrument.PIANO,
     weekDay: 4,
     startTime: '15:30',
-    dueDay: 12,
+    durationMinutes: 60,
+    amount: 230,
     teacherKey: 'thiago',
-    amount: 280,
+    startDateStr: '10/09',
+    situacao: 'PAGO',
   },
+  // 20. Claudia Salles Regis de Oliveira — 3 matrículas
   {
-    guardianName: 'Cláudia',
-    guardianEmail: 'claudia@escolademo.com',
-    studentName: 'Matheus',
-    age: 16,
-    instrument: Instrument.BATERIA,
-    weekDay: 4,
-    startTime: '15:30',
-    dueDay: 12,
-    teacherKey: 'henrique',
-    amount: DEFAULT_AMOUNT,
-  },
-  {
-    guardianName: 'Sônia',
-    guardianEmail: 'sonia@escolademo.com',
-    studentName: 'Camila',
-    age: 16,
+    guardianName: 'Claudia Salles Regis de Oliveira',
+    guardianEmail: 'claudiasalles07@gmail.com',
+    guardianPhone: '67996771510',
+    studentName: 'Luísa Salles de Oliveira',
+    birthDateStr: '10/07/2014',
     instrument: Instrument.PIANO,
     weekDay: 4,
     startTime: '16:30',
-    dueDay: 10,
+    durationMinutes: 60,
+    amount: 230,
     teacherKey: 'thiago',
-    amount: DEFAULT_AMOUNT,
+    startDateStr: '12/09',
+    situacao: 'EM_ABERTO',
   },
   {
-    guardianName: 'Cristiane',
-    guardianEmail: 'cristiane@escolademo.com',
-    studentName: 'Fernanda',
-    age: 14,
+    guardianName: 'Claudia Salles Regis de Oliveira',
+    guardianEmail: 'claudiasalles07@gmail.com',
+    guardianPhone: '67996771510',
+    studentName: 'Matheus Lico de Oliveira',
+    birthDateStr: '21/02/2011',
+    instrument: Instrument.BATERIA,
+    weekDay: 4,
+    startTime: '16:30',
+    durationMinutes: 60,
+    amount: 230,
+    teacherKey: 'henrique',
+    startDateStr: '12/09',
+    situacao: 'EM_ABERTO',
+  },
+  {
+    guardianName: 'Claudia Salles Regis de Oliveira',
+    guardianEmail: 'claudiasalles07@gmail.com',
+    guardianPhone: '67996771510',
+    studentName: 'Matheus Lico de Oliveira',
+    birthDateStr: '21/02/2011',
+    instrument: Instrument.CAJON,
+    weekDay: 4,
+    startTime: '17:30',
+    durationMinutes: 30,
+    amount: 125,
+    teacherKey: 'thiago',
+    startDateStr: '03/09',
+    situacao: 'PAGO',
+  },
+  // ── Violão ──
+  // 21. Juliano — SEM E-MAIL → SKIP
+  {
+    guardianName: 'Juliano da Silva Silveira',
+    guardianEmail: 'julianosilvasilveira@gmail.com',
+    guardianPhone: '6781329273',
+    studentName: 'Guilherme Pimenta Nantes',
+    birthDateStr: '26/03/2020',
+    instrument: Instrument.VIOLAO,
+    weekDay: 1,
+    startTime: '18:00',
+    durationMinutes: 60,
+    amount: 250,
+    teacherKey: 'henrique',
+    startDateStr: '08/09',
+    situacao: 'EM_ABERTO',
+  },
+  // 22. Maria Claudia Mayumi Nakasone
+  {
+    guardianName: 'Maria Claudia Mayumi Nakasone',
+    guardianEmail: 'mariaclaudiamayuminakasone@gmail.com',
+    guardianPhone: '67963396639',
+    studentName: 'Maria Claudia Mayumi Nakasone',
+    birthDateStr: '06/04/2000',
+    instrument: Instrument.VIOLAO,
+    weekDay: 2,
+    startTime: '15:00',
+    durationMinutes: 60,
+    amount: 300,
+    teacherKey: 'henrique',
+    startDateStr: '05/09',
+    situacao: 'PAGO',
+  },
+  // 23. Valter Lopes de Faria Junior
+  {
+    guardianName: 'Valter Lopes de Faria Junior',
+    guardianEmail: 'felipecafaro13@gmail.com',
+    guardianPhone: '67815053000',
+    studentName: 'Felipe Cafaro de Faria',
+    birthDateStr: '15/04/2013',
+    instrument: Instrument.VIOLAO,
+    weekDay: 4,
+    startTime: '14:30',
+    durationMinutes: 60,
+    amount: 230,
+    teacherKey: 'henrique',
+    startDateStr: '11/09',
+    situacao: 'PAGO',
+  },
+  // 24. Cristiane Vilela Albino
+  {
+    guardianName: 'Cristiane Vilela Albino',
+    guardianEmail: 'cris_reij@hotmail.com',
+    guardianPhone: '67930019760',
+    studentName: 'Fernanda Vilela Monteiro',
+    birthDateStr: '27/03/2011',
     instrument: Instrument.VIOLAO,
     weekDay: 4,
     startTime: '18:00',
-    dueDay: 12,
+    durationMinutes: 60,
+    amount: 230,
     teacherKey: 'henrique',
-    amount: DEFAULT_AMOUNT,
-    specialCase: 'atrasada',
+    startDateStr: '12/09',
+    situacao: 'EM_ABERTO',
   },
+  // 25. Élder de Sousa Teles
   {
-    guardianName: 'Cledisnari',
-    guardianEmail: 'cledisnari@escolademo.com',
-    studentName: 'Jazlín',
-    age: 11,
-    instrument: Instrument.PIANO,
-    weekDay: 4,
-    startTime: '18:00',
-    dueDay: 6,
-    teacherKey: 'mineia',
-    amount: DEFAULT_AMOUNT,
-  },
-  {
-    guardianName: 'Elder',
-    guardianEmail: 'elder@escolademo.com',
-    studentName: 'Gustavo',
-    age: 16,
+    guardianName: 'Élder de Sousa Teles',
+    guardianEmail: 'gustavoht.fama@gmail.com',
+    guardianPhone: '67912944390',
+    studentName: 'Gustavo Henrique Fama da Silva',
+    birthDateStr: '13/12/2008',
     instrument: Instrument.VIOLAO,
     weekDay: 4,
     startTime: '19:00',
-    dueDay: 12,
+    durationMinutes: 60,
+    amount: 230,
     teacherKey: 'henrique',
-    amount: DEFAULT_AMOUNT,
+    startDateStr: '12/09',
+    situacao: 'EM_ABERTO',
   },
+  // 26. Rafael da Silva Arruda
   {
-    guardianName: 'Rafael',
-    guardianEmail: 'rafael@escolademo.com',
-    studentName: 'Rafael',
-    age: 33,
+    guardianName: 'Rafael da Silva Arruda',
+    guardianEmail: 'rafael_vap18@hotmail.com',
+    guardianPhone: '67925097280',
+    studentName: 'Rafael da Silva Arruda',
+    birthDateStr: '20/08/1993',
     instrument: Instrument.VIOLAO,
     weekDay: 4,
     startTime: '20:00',
-    dueDay: 7,
+    durationMinutes: 60,
+    amount: 230,
     teacherKey: 'henrique',
-    amount: DEFAULT_AMOUNT,
+    startDateStr: '07/09',
+    situacao: 'EM_ABERTO',
   },
 ];
 
@@ -504,24 +692,28 @@ async function main() {
 
   const henrique = await createTeacher(
     'Henrique',
-    'henrique.professor@escolademo.com',
+    'henriquemilitao35@gmail.com',
     'Professor de violão e bateria.',
   );
   const mineia = await createTeacher(
     'Mineia',
-    'mineia.professora@escolademo.com',
+    'mineiamil01@gmail.com',
     'Professora de piano.',
   );
   const thiago = await createTeacher(
     'Thiago',
     'thiago.professor@escolademo.com',
-    'Professor de piano.',
+    'Professor de piano e cajon.',
   );
 
-  const teacherMap = { henrique, mineia, thiago };
+  const teacherMap: Record<TeacherKey, typeof henrique> = {
+    henrique,
+    mineia,
+    thiago,
+  };
 
   // Cache de usuários (responsáveis) já criados — pra não duplicar
-  // quando 2 alunos compartilham o mesmo responsável (Cláudia, Juliano).
+  // quando vários alunos compartilham o mesmo responsável.
   const guardianUserCache = new Map<string, string>(); // email -> userId
 
   async function getOrCreateGuardianUser(name: string, email: string) {
@@ -539,9 +731,32 @@ async function main() {
     return user.id;
   }
 
+  const skipped: { studentName: string; reason: string }[] = [];
+  const createdLog: {
+    studentName: string;
+    guardianName: string;
+    info: string;
+  }[] = [];
+
   console.log('👨‍👩‍👧 Criando responsáveis, alunos, matrículas e faturas...\n');
 
   for (const cfg of students) {
+    // ── validação: pula quem não tem dados essenciais ──
+    if (!cfg.guardianEmail) {
+      skipped.push({
+        studentName: cfg.studentName,
+        reason: 'responsável sem e-mail cadastrado',
+      });
+      continue;
+    }
+    if (!cfg.birthDateStr) {
+      skipped.push({
+        studentName: cfg.studentName,
+        reason: 'sem data de nascimento cadastrada',
+      });
+      continue;
+    }
+
     const userId = await getOrCreateGuardianUser(
       cfg.guardianName,
       cfg.guardianEmail,
@@ -552,20 +767,23 @@ async function main() {
         userId,
         name: cfg.studentName,
         instrument: cfg.instrument,
-        birthDate: new Date(year - cfg.age, 0, 1),
+        birthDate: parseBirthDate(cfg.birthDateStr),
       },
     });
 
     const teacher = teacherMap[cfg.teacherKey];
 
-    // Casos especiais (Carla, Cauã, Fernanda, Daniel) se referem a
-    // um vencimento que já ocorreu; o caso padrão usa o vencimento
-    // deste mês mesmo que ainda esteja por vir (fatura PENDING).
-    const isSpecial = cfg.specialCase !== undefined;
-    const cycleStart = isSpecial
-      ? lastOccurredCycleStart(cfg.dueDay)
-      : currentCycleStart(cfg.dueDay);
-    const nextCycleStart = addMonths(cycleStart, 1);
+    // Início do ciclo de aulas (dia-âncora tanto de aulas quanto,
+    // por padrão, de vencimento).
+    const cycleStart = parseDayMonth(cfg.startDateStr, YEAR);
+    // Fim do ciclo = +1 mês a partir do início (exclusive).
+    const cycleEnd = addMonthsUTC(cycleStart, 1);
+
+    // Vencimento da fatura: por padrão = início do ciclo, exceto
+    // caso especial (ex: Daniel Santos Silva → sempre dia 04).
+    const dueDate = cfg.overrideDueDateStr
+      ? parseDayMonth(cfg.overrideDueDateStr, YEAR)
+      : cycleStart;
 
     const enrollment = await prisma.enrollment.create({
       data: {
@@ -574,125 +792,45 @@ async function main() {
         teacherId: teacher.id,
         weekDay: cfg.weekDay,
         startTime: cfg.startTime,
-        durationMinutes: 60,
+        durationMinutes: cfg.durationMinutes,
         monthlyAmount: cfg.amount,
-        startDate: cycleStart,
+        firstLessonDate: cycleStart,
+        firstPaymentDueDate: dueDate,
+        lastLessonPeriodStart: cycleStart,
+        lastPaymentDueDate: dueDate,
+        lastGeneratedPeriodKey: toPeriodKeyUTC(cycleStart),
       },
     });
 
-    if (cfg.specialCase === 'paidAhead') {
-      // Daniel: pago até setembro. Cria os ciclos de mês corrente
-      // e o de setembro como PAID, e aulas SCHEDULED cobrindo os
-      // dois ciclos (o vigente + o de set/05 a out/04).
-      const currentDue = cycleStart;
-      const nextDue = nextCycleStart;
+    await createPaymentRecord({
+      schoolId: school.id,
+      studentId: student.id,
+      enrollmentId: enrollment.id,
+      amount: cfg.amount,
+      dueDate,
+      status: cfg.situacao === 'PAGO' ? 'PAID' : 'PENDING',
+      paidAt: cfg.situacao === 'PAGO' ? dueDate : undefined,
+    });
 
-      await createPaymentRecord({
-        schoolId: school.id,
-        studentId: student.id,
-        enrollmentId: enrollment.id,
-        amount: cfg.amount,
-        dueDate: currentDue,
-        status: 'PAID',
-        paidAt: new Date(currentDue.getTime() - 3 * 24 * 60 * 60 * 1000),
-      });
-      await createPaymentRecord({
-        schoolId: school.id,
-        studentId: student.id,
-        enrollmentId: enrollment.id,
-        amount: cfg.amount,
-        dueDate: nextDue,
-        status: 'PAID',
-        paidAt: new Date(currentDue.getTime() + 2 * 24 * 60 * 60 * 1000),
-      });
+    await createLessonsInRange({
+      schoolId: school.id,
+      studentId: student.id,
+      teacherId: teacher.id,
+      enrollmentId: enrollment.id,
+      weekDay: cfg.weekDay,
+      startTime: cfg.startTime,
+      durationMinutes: cfg.durationMinutes,
+      fromDate: cycleStart,
+      toDate: cycleEnd,
+    });
 
-      // Aulas cobrindo os dois ciclos (do vencimento atual até o
-      // início do ciclo seguinte ao de setembro) — tudo SCHEDULED,
-      // já que não há histórico de aulas passadas pra ele.
-      const coverageEnd = addMonths(nextDue, 1);
-      await createLessonsInRange({
-        schoolId: school.id,
-        studentId: student.id,
-        teacherId: teacher.id,
-        enrollmentId: enrollment.id,
-        weekDay: cfg.weekDay,
-        startTime: cfg.startTime,
-        fromDate: now > currentDue ? now : currentDue,
-        toDate: coverageEnd,
-      });
-    } else if (cfg.specialCase === 'historicoAteVencimento') {
-      // Carla / Cauã: ciclo atual já PAID, aulas do ciclo inteiro
-      // (passadas = COMPLETED, futuras = SCHEDULED).
-      await createPaymentRecord({
-        schoolId: school.id,
-        studentId: student.id,
-        enrollmentId: enrollment.id,
-        amount: cfg.amount,
-        dueDate: cycleStart,
-        status: 'PAID',
-        paidAt: new Date(cycleStart.getTime() - 2 * 24 * 60 * 60 * 1000),
-      });
-
-      await createLessonsInRange({
-        schoolId: school.id,
-        studentId: student.id,
-        teacherId: teacher.id,
-        enrollmentId: enrollment.id,
-        weekDay: cfg.weekDay,
-        startTime: cfg.startTime,
-        fromDate: cycleStart,
-        toDate: nextCycleStart,
-      });
-    } else if (cfg.specialCase === 'atrasada') {
-      // Fernanda: ciclo atual (venceu, não pagou) fica OVERDUE, SEM
-      // aulas nesse ciclo. Aulas só no próximo ciclo (SCHEDULED).
-      await createPaymentRecord({
-        schoolId: school.id,
-        studentId: student.id,
-        enrollmentId: enrollment.id,
-        amount: cfg.amount,
-        dueDate: cycleStart,
-        status: 'OVERDUE',
-      });
-
-      const afterNextCycleStart = addMonths(nextCycleStart, 1);
-      await createLessonsInRange({
-        schoolId: school.id,
-        studentId: student.id,
-        teacherId: teacher.id,
-        enrollmentId: enrollment.id,
-        weekDay: cfg.weekDay,
-        startTime: cfg.startTime,
-        fromDate: nextCycleStart,
-        toDate: afterNextCycleStart,
-      });
-    } else {
-      // Caso padrão: fatura do ciclo atual PENDING ou OVERDUE
-      // (dependendo se o vencimento já passou), sem histórico, e
-      // aulas SCHEDULED cobrindo exatamente o ciclo vigente.
-      await createPaymentRecord({
-        schoolId: school.id,
-        studentId: student.id,
-        enrollmentId: enrollment.id,
-        amount: cfg.amount,
-        dueDate: cycleStart,
-        status: isPastDue(cycleStart) ? 'OVERDUE' : 'PENDING',
-      });
-
-      await createLessonsInRange({
-        schoolId: school.id,
-        studentId: student.id,
-        teacherId: teacher.id,
-        enrollmentId: enrollment.id,
-        weekDay: cfg.weekDay,
-        startTime: cfg.startTime,
-        fromDate: cycleStart,
-        toDate: nextCycleStart,
-      });
-    }
-
+    createdLog.push({
+      studentName: cfg.studentName,
+      guardianName: cfg.guardianName,
+      info: `${cfg.instrument} · ${cfg.teacherKey} · R$${cfg.amount} · ${cfg.situacao}`,
+    });
     console.log(
-      `  ✓ ${cfg.studentName} (${cfg.guardianName}) — ${cfg.instrument} · ${cfg.teacherKey}`,
+      `  ✓ ${cfg.studentName} (${cfg.guardianName}) — ${cfg.instrument} · ${cfg.teacherKey} · R$${cfg.amount} · ${cfg.situacao}`,
     );
   }
 
@@ -713,14 +851,21 @@ async function main() {
   }
   console.log('');
   console.log('  ADMIN');
-  console.log('  admin@escolademo.com         / admin123');
-  console.log('');
-  console.log('  CASOS ESPECIAIS');
-  console.log('  Daniel   — pago até setembro, aulas já criadas até 04/10');
-  console.log('  Carla    — vence dia 23, tem histórico (COMPLETED) + futuras');
-  console.log('  Cauã     — vence dia 29, tem histórico (COMPLETED) + futuras');
+  console.log('  admin@escolademo.com    / admin123');
+
+  if (skipped.length > 0) {
+    console.log('\n⚠️  ALUNOS/RESPONSÁVEIS NÃO CRIADOS (dados incompletos):');
+    for (const s of skipped) {
+      console.log(`  ✗ ${s.studentName} — motivo: ${s.reason}`);
+    }
+  } else {
+    console.log(
+      '\n✅ Nenhum aluno foi pulado — todos os dados estavam completos.',
+    );
+  }
+
   console.log(
-    '  Fernanda — venceu 12/07, OVERDUE, aulas só a partir do próximo ciclo (12/08)',
+    `\n📊 Resumo: ${createdLog.length} aluno(s) criado(s), ${skipped.length} pulado(s).`,
   );
 }
 

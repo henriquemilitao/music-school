@@ -22,6 +22,9 @@ enum Instrument {
   PIANO
   VIOLAO
   GUITARRA
+  CAJON
+  TECLADO
+  BAIXO
 }
 
 enum LessonStatus {
