@@ -11,7 +11,7 @@ export type Payment = {
   pixExpiresAt: string | null;
   paymentBundleId: string | null;
   studentId: string;
-  student: { name: string };
+  student: { name: string; instrument: string | null };
   isEligibleForPayment: boolean | null;
   blockingPaymentId: string | null;
 };

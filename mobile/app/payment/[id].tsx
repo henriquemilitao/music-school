@@ -33,6 +33,7 @@ import {
 } from '../../lib/paymentFormat';
 import { paymentStatusConfig } from '../../lib/status';
 import { StatusPill } from '../../components/ui/StatusPill';
+import { firstName } from '../../lib/name';
 
 // "válido até 14:47" — horário absoluto de expiração, exibido junto
 // com o countdown decrescente. O countdown sozinho cria urgência mas
@@ -353,7 +354,8 @@ export default function PaymentCheckout() {
               </Text>
             </View>
             <Text className="text-xs text-gray-500">
-              Pague a fatura mais antiga de {payment.student.name} antes desta.
+              Pague a fatura mais antiga de {firstName(payment.student.name)}{' '}
+              antes desta.
               {payment.blockingPaymentId
                 ? ' Toque aqui para ver os detalhes dela.'
                 : ''}

@@ -33,6 +33,8 @@ import {
 } from '../../lib/paymentFormat';
 import { paymentStatusConfig } from '../../lib/status';
 import { StatusPill } from '../../components/ui/StatusPill';
+import { firstName } from '../../lib/name';
+import { studentLabel } from '../../lib/studentLabel';
 
 type BundlePayment = {
   id: string;
@@ -132,6 +134,7 @@ export default function PaymentBundleDetail() {
   // pagamento, tratando 'PENDING' do bundle como o "Aguardando"
   const bundleConfig = paymentStatusConfig(isPaid ? 'PAID' : 'PENDING');
 
+  const studentCount = bundle.payments.length; // segue o padrão: sempre mostra instrumento com >1 fatura/aluno no bundle
   return (
     <ScrollView className="flex-1 bg-[#F5F1EA]">
       <Stack.Screen options={{ headerShown: false }} />
@@ -201,7 +204,7 @@ export default function PaymentBundleDetail() {
               <View className="flex-1">
                 <View className="flex-row items-center gap-2 mb-0.5">
                   <Text className="text-sm font-semibold">
-                    {payment.student.name}
+                    {studentLabel(payment.student, studentCount)}
                   </Text>
                   <StatusPill
                     {...paymentStatusConfig(payment.status)}

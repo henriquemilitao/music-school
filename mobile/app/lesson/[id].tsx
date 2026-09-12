@@ -19,6 +19,7 @@ import { formatInstrument } from '../../lib/instrument';
 import { lessonStatusConfig, getEffectiveLessonStatus } from '../../lib/status';
 import { StatusPill } from '../../components/ui/StatusPill';
 import { useLessonStatus } from '../../lib/useLessonStatus';
+import { firstName } from '../../lib/name';
 
 type Lesson = {
   id: string;
@@ -196,7 +197,7 @@ export default function LessonDetail() {
             <InfoRow
               icon={User}
               label="Professor"
-              value={lesson.teacher.user.name}
+              value={firstName(lesson.teacher.user.name)}
             />
           )}
           {lesson.student.instrument && (

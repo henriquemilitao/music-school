@@ -26,6 +26,7 @@ import { useCallback, useEffect } from 'react';
 import { formatCurrency } from '../../lib/paymentFormat';
 import * as Notifications from 'expo-notifications';
 import { registerForPushNotificationsAsync } from '../../lib/notifications';
+import { firstName } from '../../lib/name';
 
 // Configura para exibir o alerta mesmo com o app aberto na tela
 Notifications.setNotificationHandler({
@@ -247,7 +248,7 @@ function OtherStudentsPendingNote({
 
   const label =
     otherStudents.length === 1
-      ? `${otherStudents[0].student.name} ${verb} fatura em aberto`
+      ? `${firstName(otherStudents[0].student.name)} ${verb} fatura em aberto`
       : `${otherStudents.length} outros alunos ${
           currentStudentHasOpenPayments ? 'também têm' : 'têm'
         } faturas em aberto`;
@@ -376,7 +377,7 @@ export default function Index() {
           className="text-3xl text-[#1A1A1A] mb-1"
           style={{ fontFamily: 'PlayfairDisplay_700Bold' }}
         >
-          {student.name}
+          {firstName(student.name)}
         </Text>
         <Text className="text-gray-500 mb-5">
           {formatInstrument(student.instrument)} · Acompanhe suas aulas
@@ -399,7 +400,9 @@ export default function Index() {
               </Text>
               <Text className="text-[13px] text-gray-500 mt-0.5">
                 {formatTime(nextLesson.scheduledAt)}
-                {nextLesson.teacher ? ` · ${nextLesson.teacher.user.name}` : ''}
+                {nextLesson.teacher
+                  ? ` · ${firstName(nextLesson.teacher.user.name)}`
+                  : ''}
               </Text>
             </>
           ) : (
@@ -431,7 +434,9 @@ export default function Index() {
                 {capitalize(formatFullDate(lastLesson.scheduledAt))}
               </Text>
               <Text className="text-[13px] text-gray-500 mt-0.5">
-                {lastLesson.teacher ? `${lastLesson.teacher.user.name} · ` : ''}
+                {lastLesson.teacher
+                  ? `${firstName(lastLesson.teacher.user.name)} · `
+                  : ''}
                 {formatInstrument(student.instrument)}
               </Text>
             </>

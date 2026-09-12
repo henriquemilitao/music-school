@@ -32,6 +32,8 @@ import {
 import { StatusPill } from '../../components/ui/StatusPill';
 import { paymentStatusConfig } from '../../lib/status';
 import * as Notifications from 'expo-notifications';
+import { firstName } from '../../lib/name';
+import { studentLabel } from '../../lib/studentLabel';
 
 // Novo componente — pode ficar no topo do próprio payments.tsx,
 // ou em components/PaymentsStatusSection.tsx se preferir separar
@@ -45,6 +47,7 @@ function PaymentsStatusSection({
   allSelected,
   selectAll,
   clearSelection,
+  distinctStudentsCount,
   router,
 }: {
   openPayments: Payment[];
@@ -60,6 +63,7 @@ function PaymentsStatusSection({
   allSelected: boolean;
   selectAll: () => void;
   clearSelection: () => void;
+  distinctStudentsCount: number;
   router: ReturnType<typeof useRouter>;
 }) {
   // Estado 1: tudo em dia
@@ -99,6 +103,7 @@ function PaymentsStatusSection({
           selected={false}
           eligible
           showStudentName={false}
+          studentCount={1}
           onToggle={() => {}}
           onViewDetails={() => router.push(`/payment-detail/${payment.id}`)}
           isSingleOpen
@@ -161,7 +166,7 @@ function PaymentsStatusSection({
                   className="text-xs font-bold uppercase tracking-widest text-gray-500 flex-1"
                   numberOfLines={1}
                 >
-                  {name}
+                  {firstName(name)}
                 </Text>
               </View>
               {payments.map((payment) => (
@@ -171,6 +176,7 @@ function PaymentsStatusSection({
                   selected={selectedIds.has(payment.id)}
                   eligible={eligibilityMap.get(payment.id) ?? true}
                   showStudentName={false}
+                  studentCount={distinctStudentsCount}
                   onToggle={() => toggleSelection(payment.id)}
                   onViewDetails={() =>
                     router.push(`/payment-detail/${payment.id}`)
@@ -186,6 +192,7 @@ function PaymentsStatusSection({
               selected={selectedIds.has(payment.id)}
               eligible={eligibilityMap.get(payment.id) ?? true}
               showStudentName={false}
+              studentCount={distinctStudentsCount}
               onToggle={() => toggleSelection(payment.id)}
               onViewDetails={() => router.push(`/payment-detail/${payment.id}`)}
             />
@@ -202,6 +209,7 @@ function OpenPaymentCard({
   selected,
   eligible,
   showStudentName,
+  studentCount,
   onToggle,
   onViewDetails,
   isSingleOpen,
@@ -211,6 +219,7 @@ function OpenPaymentCard({
   selected: boolean;
   eligible: boolean;
   showStudentName: boolean;
+  studentCount: number;
   onToggle: () => void;
   onViewDetails: () => void;
   isSingleOpen?: boolean;
@@ -272,7 +281,7 @@ function OpenPaymentCard({
               numberOfLines={1}
             >
               {showStudentName
-                ? payment.student.name
+                ? studentLabel(payment.student, studentCount)
                 : `Fatura de ${formatMonthNameOnly(payment.referenceMonth)}`}
             </Text>
             <StatusPill {...pillConfig} />
@@ -292,7 +301,8 @@ function OpenPaymentCard({
 
           {!eligible && (
             <Text className="text-[11px] text-gray-400 mt-2 italic">
-              Pague as faturas mais antigas de {payment.student.name} primeiro
+              Pague as faturas mais antigas de{' '}
+              {studentLabel(payment.student, studentCount)} primeiro
             </Text>
           )}
 
@@ -396,10 +406,12 @@ function HistoryFilterPill({
 function HistoryRow({
   payment,
   showStudentName,
+  studentCount,
   onPress,
 }: {
   payment: Payment;
   showStudentName: boolean;
+  studentCount: number;
   onPress: () => void;
 }) {
   return (
@@ -415,7 +427,9 @@ function HistoryRow({
     >
       <View className="flex-1">
         <Text className="text-sm font-semibold">
-          {showStudentName ? `${payment.student.name} · ` : ''}
+          {showStudentName
+            ? `${studentLabel(payment.student, studentCount)} · `
+            : ''}
           {formatMonthLabel(payment.referenceMonth)}
         </Text>
         <Text className="text-xs text-gray-500 mt-0.5">
@@ -442,10 +456,12 @@ function HistoryRow({
 function HistoryMonthGroup({
   monthKey,
   payments,
+  studentCount,
   onViewDetails,
 }: {
   monthKey: string;
   payments: Payment[];
+  studentCount: number;
   onViewDetails: (id: string) => void;
 }) {
   const [open, setOpen] = useState(true);
@@ -497,7 +513,7 @@ function HistoryMonthGroup({
             >
               <View style={{ flex: 1, marginRight: 8 }}>
                 <Text className="text-sm font-medium" numberOfLines={1}>
-                  {payment.student.name}
+                  {studentLabel(payment.student, studentCount)}
                 </Text>
                 <Text
                   className="text-xs text-gray-500 mt-0.5"
@@ -614,11 +630,16 @@ export default function Payments() {
   // aqui do que em openPayments, ex: aluno que já pagou tudo).
   const historyStudents = useMemo(() => {
     if (!data) return [];
-    const map = new Map<string, string>();
+    const map = new Map<string, { name: string; instrument: string | null }>();
     for (const p of data) {
-      if (!map.has(p.studentId)) map.set(p.studentId, p.student.name);
+      if (!map.has(p.studentId)) {
+        map.set(p.studentId, {
+          name: p.student.name,
+          instrument: p.student.instrument,
+        });
+      }
     }
-    return Array.from(map.entries()).map(([id, name]) => ({ id, name }));
+    return Array.from(map.entries()).map(([id, s]) => ({ id, ...s }));
   }, [data]);
 
   const showHistoryFilter = historyStudents.length > 1; // <-- NOVO
@@ -763,6 +784,7 @@ export default function Payments() {
           allSelected={allSelected}
           selectAll={selectAll}
           clearSelection={clearSelection}
+          distinctStudentsCount={distinctStudents.size}
           router={router}
         />
 
@@ -800,7 +822,7 @@ export default function Payments() {
               {historyStudents.map((s) => (
                 <HistoryFilterPill
                   key={s.id}
-                  label={s.name}
+                  label={studentLabel(s, historyStudents.length)}
                   active={historyFilter === s.id}
                   onPress={() => setHistoryFilter(s.id)}
                 />
@@ -823,6 +845,7 @@ export default function Payments() {
                 key={monthKey}
                 monthKey={monthKey}
                 payments={payments}
+                studentCount={historyStudents.length}
                 onViewDetails={(id) => router.push(`/payment-detail/${id}`)}
               />
             ))
@@ -836,6 +859,7 @@ export default function Payments() {
                   key={payment.id}
                   payment={payment}
                   showStudentName={false}
+                  studentCount={historyStudents.length}
                   onPress={() => router.push(`/payment-detail/${payment.id}`)}
                 />
               ))}

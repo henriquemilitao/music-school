@@ -28,6 +28,7 @@ import {
 } from '../../lib/paymentFormat';
 import { paymentStatusConfig } from '../../lib/status';
 import { StatusPill } from '../../components/ui/StatusPill';
+import { firstName } from '../../lib/name';
 
 export default function PaymentDetail() {
   const { id } = useLocalSearchParams<{ id: string }>();
@@ -118,7 +119,8 @@ export default function PaymentDetail() {
 
       <View className="px-5 pt-5 pb-2">
         <Text className="text-xs font-bold uppercase tracking-widest text-gray-400 mb-1">
-          {payment.student.name} · {formatMonthLabel(payment.referenceMonth)}
+          {firstName(payment.student.name)} ·{' '}
+          {formatMonthLabel(payment.referenceMonth)}
         </Text>
         <View className="flex-row items-end justify-between">
           <Text
@@ -213,8 +215,8 @@ export default function PaymentDetail() {
                 </Text>
               </View>
               <Text className="text-xs text-gray-500">
-                Pague a fatura mais antiga de {payment.student.name} antes
-                desta. Toque aqui para ver os detalhes dela.
+                Pague a fatura mais antiga de {firstName(payment.student.name)}{' '}
+                antes desta. Toque aqui para ver os detalhes dela.
               </Text>
             </TouchableOpacity>
           )}

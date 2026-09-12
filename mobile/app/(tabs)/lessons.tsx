@@ -15,6 +15,7 @@ import { useStudent } from '../../context/StudentContext';
 import { lessonStatusConfig, getEffectiveLessonStatus } from '../../lib/status';
 import { StatusPill } from '../../components/ui/StatusPill';
 import { useLessonStatus } from '../../lib/useLessonStatus';
+import { firstName } from '../../lib/name';
 
 const RECENTLY_FINISHED_GRACE_MINUTES = 30; // precisa bater com backend e useLessonStatus
 
@@ -131,7 +132,7 @@ function UpcomingLesson({ lesson }: { lesson: Lesson }) {
         </Text>
         <Text className="text-[13px] text-gray-500 mt-0.5">
           {formatTime(lesson.scheduledAt)}
-          {lesson.teacher ? ` · ${lesson.teacher.user.name}` : ''}
+          {lesson.teacher ? ` · ${firstName(lesson.teacher.user.name)}` : ''}
         </Text>
         {showLivePill && (
           <View style={{ marginTop: 4, alignSelf: 'flex-start' }}>
@@ -170,7 +171,7 @@ function HistoryRow({ lesson }: { lesson: Lesson }) {
         </Text>
         <Text className="text-[13px] text-gray-500 mt-0.5">
           {formatTime(lesson.scheduledAt)}
-          {lesson.teacher ? ` · ${lesson.teacher.user.name}` : ''}
+          {lesson.teacher ? ` · ${firstName(lesson.teacher.user.name)}` : ''}
         </Text>
       </View>
       <View style={{ flexShrink: 0 }}>
@@ -333,7 +334,7 @@ export default function Lessons() {
       </Text>
       {selectedStudent && (
         <Text className="text-gray-500 text-sm mb-4">
-          {selectedStudent.name} ·{' '}
+          {firstName(selectedStudent.name)} ·{' '}
           {formatInstrument(selectedStudent.instrument)}
         </Text>
       )}
