@@ -70,7 +70,7 @@ eas build --platform android --profile production
 
 comando pra atualizar o app de preview:
 eas update --channel preview --message "Ajustes na tela"
-eas update --channel preview --message "Primeiro nome apenas aparecendo para os alunos"
+eas update --channel preview --message "Ajustes de admin e novo banco e back para preview"
 eas update --channel production --message "Primeiro nome apenas aparecendo para os alunos"
 
 

@@ -38,10 +38,10 @@ module.exports = {
       supportsTablet: true,
       bundleIdentifier:
         APP_VARIANT === 'development'
-          ? 'com.henrique_militao.pianissima.dev'
+          ? 'com.henriquemilitao.pianissima.dev'
           : APP_VARIANT === 'preview'
-            ? 'com.henrique_militao.pianissima.preview'
-            : 'com.henrique_militao.pianissima',
+            ? 'com.henriquemilitao.pianissima.preview'
+            : 'com.henriquemilitao.pianissima',
     },
     android: {
       adaptiveIcon: {
