@@ -245,7 +245,6 @@ export class PaymentsService {
 
   // ─── Admin ──────────────────────────────────────────────────
 
-  // payments.service.ts
   async findByStudent(studentId: string, schoolId: string) {
     const student = await this.prisma.student.findFirst({
       where: { id: studentId, user: { schoolId } },
@@ -256,6 +255,29 @@ export class PaymentsService {
       where: { studentId },
       orderBy: { dueDate: 'desc' },
     });
+  }
+
+  async getStudentPaymentStatus(
+    studentId: string,
+    schoolId: string,
+  ): Promise<{ status: 'OK' | 'PENDING' | 'OVERDUE' }> {
+    const student = await this.prisma.student.findFirst({
+      where: { id: studentId, user: { schoolId } },
+    });
+    if (!student) throw new NotFoundException('Aluno não encontrado');
+
+    const [overdueCount, pendingCount] = await Promise.all([
+      this.prisma.payment.count({
+        where: { studentId, status: 'OVERDUE' },
+      }),
+      this.prisma.payment.count({
+        where: { studentId, status: 'PENDING' },
+      }),
+    ]);
+
+    if (overdueCount > 0) return { status: 'OVERDUE' };
+    if (pendingCount > 0) return { status: 'PENDING' };
+    return { status: 'OK' };
   }
 
   async findByMonth(month: string, schoolId: string) {

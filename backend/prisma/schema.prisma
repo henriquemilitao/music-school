@@ -108,6 +108,7 @@ model User {
   teacher        Teacher?
   paymentBundles PaymentBundle[]
 
+  @@index([schoolId])
   @@map("users")
 }
 
@@ -154,6 +155,7 @@ model Student {
   payments    Payment[]
   enrollments Enrollment[]
 
+  @@index([userId])
   @@map("students")
 }
 
@@ -242,6 +244,8 @@ model Enrollment {
   lessons  Lesson[]
   payments Payment[]
 
+  @@index([studentId])
+  @@index([isActive])
   @@map("enrollments")
 }
 
@@ -266,6 +270,9 @@ model Lesson {
 
   createdAt DateTime @default(now())
 
+  @@index([studentId, status])
+  @@index([schoolId, scheduledAt])
+  @@index([status, scheduledAt])
   @@map("lessons")
 }
 
@@ -305,6 +312,7 @@ model Payment {
   paymentBundle   PaymentBundle? @relation(fields: [paymentBundleId], references: [id])
   paymentBundleId String?
 
+  @@index([studentId, status])
   @@map("payments")
 }
 

@@ -81,6 +81,18 @@ export class PaymentsController {
   }
 
   // ─── Rotas do admin ───────────────────────────────────────────────────
+  @Get('student/:id/status')
+  @Roles(Role.ADMIN)
+  @ApiOperation({
+    summary:
+      'Status agregado de pagamento de um aluno (admin) — em dia/pendente/atrasado',
+  })
+  getStudentPaymentStatus(
+    @Param('id') id: string,
+    @CurrentUser() user: AuthUser,
+  ) {
+    return this.paymentsService.getStudentPaymentStatus(id, user.schoolId);
+  }
 
   // payments.controller.ts — dentro das rotas admin
   @Get('student/:id')
