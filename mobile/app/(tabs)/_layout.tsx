@@ -10,10 +10,10 @@ import { useNavigationState } from '@react-navigation/native';
 import { useQueryClient } from '@tanstack/react-query';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Home, CalendarDays, Wallet } from 'lucide-react-native';
-import { TopBar } from '../../components/TopBar';
 import { StudentProvider } from '../../context/StudentContext';
 import { StudentSwitcher } from '../../components/StudentSwitcher';
 import { dashboardKeys } from '../../lib/queryKeys';
+import { StudentTopBar } from '../../components/StudentTopBar';
 
 const { Navigator } = createMaterialTopTabNavigator();
 
@@ -98,7 +98,7 @@ function TabsLayoutInner() {
       <TabFocusInvalidator />
 
       <View>
-        <TopBar />
+        <StudentTopBar />
         <StudentSwitcher />
       </View>
 

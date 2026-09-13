@@ -21,6 +21,7 @@ import {
 } from 'lucide-react-native';
 import { api } from '../../lib/api';
 import { formatInstrument } from '../../lib/instrument';
+import { firstName } from '../../lib/name';
 
 // ─── Tipos ────────────────────────────────────────────────────────────
 
@@ -180,7 +181,7 @@ function StudentRow({
         <Text className="text-xs font-medium text-gray-400">{index}</Text>
       </View>
       <View className="flex-1">
-        <Text className="text-sm font-medium">{student.name}</Text>
+        <Text className="text-sm font-medium">{firstName(student.name)}</Text>
         <Text className="text-[13px] text-gray-500 mt-0.5">
           {formatInstrument(student.instrument)}
           {student.teacherName ? ` · ${student.teacherName}` : ''}
@@ -281,7 +282,7 @@ export default function AdminStudents() {
   const teacherByStudentId = new Map<string, string>();
   enrollments?.forEach((e) => {
     if (e.teacher?.user.name) {
-      teacherByStudentId.set(e.student.id, e.teacher.user.name);
+      teacherByStudentId.set(e.student.id, firstName(e.teacher.user.name));
     }
   });
 

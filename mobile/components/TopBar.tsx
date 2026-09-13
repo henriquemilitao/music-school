@@ -1,16 +1,7 @@
 import { useState } from 'react';
 import { View, Text, TouchableOpacity, Modal } from 'react-native';
 import { useRouter, usePathname } from 'expo-router';
-import {
-  Music,
-  Menu,
-  X,
-  Home,
-  CalendarDays,
-  CreditCard,
-  LogOut,
-  Trash2,
-} from 'lucide-react-native';
+import { Music, Menu, X, LogOut, Trash2 } from 'lucide-react-native';
 import { useAuth } from '../context/AuthContext';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
@@ -21,13 +12,32 @@ function getInitials(name: string) {
   return (first + last).toUpperCase();
 }
 
-const menuLinks = [
-  { path: '/', label: 'Início', icon: Home },
-  { path: '/lessons', label: 'Aulas', icon: CalendarDays },
-  { path: '/payments', label: 'Pagamentos', icon: CreditCard },
-];
+export type TopBarMenuLink = {
+  path: string;
+  label: string;
+  icon: React.ComponentType<{ size?: number; color?: string }>;
+};
 
-export function TopBar() {
+type TopBarProps = {
+  menuLinks: TopBarMenuLink[];
+  /** Se true, mostra o botão "Excluir conta" no menu (padrão: aluno). */
+  showDeleteAccount?: boolean;
+  /**
+   * Função de match de rota ativa. Recebe o pathname atual e o link.
+   * Se não for passada, usa startsWith/igualdade simples (comportamento do aluno).
+   */
+  isActive?: (pathname: string, link: TopBarMenuLink) => boolean;
+};
+
+function defaultIsActive(pathname: string, link: TopBarMenuLink) {
+  return link.path === '/' ? pathname === '/' : pathname.startsWith(link.path);
+}
+
+export function TopBar({
+  menuLinks,
+  showDeleteAccount = false,
+  isActive = defaultIsActive,
+}: TopBarProps) {
   const { user, signOut } = useAuth();
   const router = useRouter();
   const pathname = usePathname();
@@ -61,11 +71,7 @@ export function TopBar() {
           </Text>
         </View>
 
-        <TouchableOpacity
-          // className="w-10 h-10 rounded-full bg-white items-center justify-center"
-          // style={{ borderWidth: 1, borderColor: 'rgba(0,0,0,0.05)' }}
-          onPress={() => setMenuOpen(true)}
-        >
+        <TouchableOpacity onPress={() => setMenuOpen(true)}>
           <Menu size={25} color="#1A1A1A" />
         </TouchableOpacity>
       </View>
@@ -127,10 +133,7 @@ export function TopBar() {
 
             <View className="flex-1 p-3">
               {menuLinks.map((item) => {
-                const active =
-                  item.path === '/'
-                    ? pathname === '/'
-                    : pathname.startsWith(item.path);
+                const active = isActive(pathname, item);
                 const Icon = item.icon;
                 return (
                   <TouchableOpacity
@@ -155,18 +158,20 @@ export function TopBar() {
               className="p-3 border-t border-gray-100"
               style={{ paddingBottom: Math.max(12, insets.bottom + 12) }}
             >
-              <TouchableOpacity
-                className="flex-row items-center gap-3 px-3 py-3 rounded-xl"
-                onPress={() => {
-                  setMenuOpen(false);
-                  router.push('/delete-account');
-                }}
-              >
-                <Trash2 size={18} color="#9CA3AF" />
-                <Text className="text-sm font-medium text-gray-500">
-                  Excluir conta
-                </Text>
-              </TouchableOpacity>
+              {showDeleteAccount && (
+                <TouchableOpacity
+                  className="flex-row items-center gap-3 px-3 py-3 rounded-xl"
+                  onPress={() => {
+                    setMenuOpen(false);
+                    router.push('/delete-account');
+                  }}
+                >
+                  <Trash2 size={18} color="#9CA3AF" />
+                  <Text className="text-sm font-medium text-gray-500">
+                    Excluir conta
+                  </Text>
+                </TouchableOpacity>
+              )}
               <TouchableOpacity
                 className="flex-row items-center gap-3 px-3 py-3 rounded-xl"
                 onPress={async () => {

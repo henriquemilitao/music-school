@@ -17,10 +17,20 @@ import {
   Check,
   X,
   ChevronDown,
+  Cake,
+  Phone,
+  Mail,
+  UserRound,
+  Music,
+  Clock,
+  Wallet,
+  CalendarCheck2,
+  IdCard,
 } from 'lucide-react-native';
 import { api } from '../../lib/api';
 import { formatInstrument } from '../../lib/instrument';
 import { formatCurrency } from '../../lib/paymentFormat';
+import { firstName } from '../../lib/name';
 
 // ─── Tipos ────────────────────────────────────────────────────────────
 
@@ -39,6 +49,7 @@ type Enrollment = {
   weekDay: number;
   startTime: string;
   monthlyAmount: string;
+  firstPaymentDueDate: string;
   teacher: { user: { name: string } } | null;
 } | null;
 
@@ -55,6 +66,11 @@ type Payment = {
   dueDate: string;
   status: 'PENDING' | 'PAID' | 'OVERDUE';
   referenceMonth: string;
+};
+
+// Status agregado — vem de um endpoint leve, não da lista completa de faturas
+type PaymentStatusSummary = {
+  status: 'OK' | 'PENDING' | 'OVERDUE';
 };
 
 type TabKey = 'geral' | 'aulas' | 'faturas';
@@ -94,6 +110,35 @@ function formatWeekdayDate(iso: string) {
   );
 }
 
+// Ex: "12 de março de 2015"
+function formatFullDate(iso: string) {
+  const date = new Date(iso);
+  return capitalize(
+    date.toLocaleDateString('pt-BR', {
+      day: 'numeric',
+      month: 'long',
+      year: 'numeric',
+    }),
+  );
+}
+
+// Ex: "10 de julho de 2014 (12 anos)" — data de nascimento + idade juntos
+function formatBirthDateWithAge(birthDate: string | null, age: number | null) {
+  if (!birthDate) return '—';
+  const dateLabel = formatFullDate(birthDate);
+  return age != null ? `${dateLabel} (${age} anos)` : dateLabel;
+}
+
+// Garante o "R$" na frente independente de como formatCurrency formata
+// o número — evita depender de detalhe de implementação daquele helper.
+function formatCurrencyBRL(value: string | number) {
+  const num = typeof value === 'string' ? Number(value) : value;
+  return new Intl.NumberFormat('pt-BR', {
+    style: 'currency',
+    currency: 'BRL',
+  }).format(num);
+}
+
 function formatMonthKey(iso: string) {
   const date = new Date(iso);
   return `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}`;
@@ -123,6 +168,15 @@ function paymentStatusConfig(status: Payment['status']) {
   return { label: 'Pendente', bg: '#FFFBEB', text: '#D97706' };
 }
 
+// Status agregado da matrícula (Em dia / Pendente / Atrasado)
+function matriculaStatusConfig(status: PaymentStatusSummary['status']) {
+  if (status === 'OVERDUE')
+    return { label: 'Atrasado', bg: '#FEF2F2', text: '#DC2626' };
+  if (status === 'PENDING')
+    return { label: 'Pendente', bg: '#FFFBEB', text: '#D97706' };
+  return { label: 'Em dia', bg: '#ECFDF5', text: '#059669' };
+}
+
 // ─── Componentes pequenos ─────────────────────────────────────────────
 
 function Badge({
@@ -143,11 +197,33 @@ function Badge({
   );
 }
 
-function InfoBloco({ label, valor }: { label: string; valor: string }) {
+// InfoBloco aceita um ícone opcional e a opção `full` (ocupa a linha
+// inteira do card, usado sempre que o valor pode ser longo — nome,
+// e-mail, data de nascimento — pra não quebrar de forma estranha).
+function InfoBloco({
+  label,
+  valor,
+  icon: Icon,
+  full,
+}: {
+  label: string;
+  valor: string;
+  icon?: React.ComponentType<{ size?: number; color?: string }>;
+  full?: boolean;
+}) {
   return (
-    <View className="w-1/2 mb-3 pr-2">
-      <Text className="text-xs text-gray-400">{label}</Text>
-      <Text className="text-sm font-medium mt-0.5">{valor}</Text>
+    <View className={full ? 'w-full mb-3' : 'w-1/2 mb-3 pr-2'}>
+      <View className="flex-row items-center gap-1.5">
+        {Icon && <Icon size={12} color="#B08D57" />}
+        <Text className="text-xs text-gray-400">{label}</Text>
+      </View>
+      <Text
+        className="text-sm font-medium mt-0.5"
+        numberOfLines={1}
+        ellipsizeMode="tail"
+      >
+        {valor}
+      </Text>
     </View>
   );
 }
@@ -164,6 +240,25 @@ function Card({ children }: { children: React.ReactNode }) {
       }}
     >
       {children}
+    </View>
+  );
+}
+
+function CardHeader({
+  title,
+  status,
+}: {
+  title: string;
+  status?: { label: string; bg: string; text: string };
+}) {
+  return (
+    <View className="flex-row items-center justify-between mb-3">
+      <Text className="text-xs font-bold uppercase tracking-widest text-[#B08D57]">
+        {title}
+      </Text>
+      {status && (
+        <Badge label={status.label} bg={status.bg} color={status.text} />
+      )}
     </View>
   );
 }
@@ -326,6 +421,20 @@ export default function AdminStudentDetail() {
     enabled: !!id,
   });
 
+  // Status agregado de pagamento — endpoint leve (não traz a lista de
+  // faturas inteira, só o status já calculado no backend). Roda sempre
+  // que a tela abre, porque é barato e alimenta o badge da Visão Geral.
+  const { data: paymentStatus, isLoading: loadingPaymentStatus } = useQuery({
+    queryKey: ['admin-student-payment-status', id],
+    queryFn: async () => {
+      const response = await api.get<PaymentStatusSummary>(
+        `/payments/student/${id}/status`,
+      );
+      return response.data;
+    },
+    enabled: !!id,
+  });
+
   const { data: lessons, isLoading: loadingLessons } = useQuery({
     queryKey: ['admin-student-lessons', id],
     queryFn: async () => {
@@ -335,6 +444,9 @@ export default function AdminStudentDetail() {
     enabled: !!id && tab === 'aulas',
   });
 
+  // Lista completa de faturas — só carregada quando o admin realmente
+  // abre a aba "Faturas" (lazy), evitando trazer N faturas por aluno
+  // toda vez que a tela de detalhe é aberta.
   const { data: payments, isLoading: loadingPayments } = useQuery({
     queryKey: ['admin-student-payments', id],
     queryFn: async () => {
@@ -374,6 +486,9 @@ export default function AdminStudentDetail() {
       queryClient.invalidateQueries({
         queryKey: ['admin-student-payments', id],
       });
+      queryClient.invalidateQueries({
+        queryKey: ['admin-student-payment-status', id],
+      });
     },
     onError: () => {
       Alert.alert('Erro', 'Não foi possível confirmar o pagamento.');
@@ -410,6 +525,10 @@ export default function AdminStudentDetail() {
     });
   const lessonMonthKeys = Object.keys(lessonGroups).sort().reverse();
 
+  const matriculaStatus = paymentStatus
+    ? matriculaStatusConfig(paymentStatus.status)
+    : undefined;
+
   return (
     <ScrollView className="flex-1 bg-[#F5F1EA]">
       <Stack.Screen options={{ headerShown: false }} />
@@ -440,7 +559,7 @@ export default function AdminStudentDetail() {
               className="text-2xl"
               style={{ fontFamily: 'PlayfairDisplay_700Bold' }}
             >
-              {student.name}
+              {firstName(student.name)}
             </Text>
             <Text className="text-sm text-gray-500 mt-0.5">
               {formatInstrument(student.instrument)}
@@ -485,48 +604,121 @@ export default function AdminStudentDetail() {
       <View className="px-5 pb-10">
         {tab === 'geral' && (
           <>
+            {/* ── Dados cadastrais: aluno + responsável ── */}
             <Card>
-              <Text className="text-xs font-bold uppercase tracking-widest text-[#B08D57] mb-3">
-                Dados cadastrais
+              <CardHeader title="Dados cadastrais" />
+
+              <Text className="text-[11px] font-semibold text-gray-400 uppercase tracking-wide mb-2">
+                Aluno
+              </Text>
+              <View className="flex-row flex-wrap mb-1">
+                <InfoBloco
+                  label="Nome completo"
+                  valor={student.name}
+                  icon={IdCard}
+                  full
+                />
+                <InfoBloco
+                  label="Data de nascimento"
+                  valor={formatBirthDateWithAge(student.birthDate, student.age)}
+                  icon={Cake}
+                  full
+                />
+              </View>
+
+              <View
+                className="my-3"
+                style={{
+                  borderTopWidth: 1,
+                  borderTopColor: 'rgba(0,0,0,0.06)',
+                }}
+              />
+
+              <Text className="text-[11px] font-semibold text-gray-400 uppercase tracking-wide mb-2">
+                Responsável
               </Text>
               <View className="flex-row flex-wrap">
                 <InfoBloco
-                  label="Instrumento"
-                  valor={formatInstrument(student.instrument)}
-                />
-                <InfoBloco
-                  label="Idade"
-                  valor={student.age ? `${student.age} anos` : '—'}
-                />
-                <InfoBloco
-                  label="Usuário Responsável"
+                  label="Nome"
                   valor={student.user.name}
+                  icon={UserRound}
+                  full
                 />
-                <InfoBloco label="Telefone" valor={student.user.phone ?? '—'} />
-                <InfoBloco label="E-mail" valor={student.user.email} />
+                <InfoBloco
+                  label="Telefone"
+                  valor={student.user.phone ?? '—'}
+                  icon={Phone}
+                  full
+                />
+                <InfoBloco
+                  label="E-mail"
+                  valor={student.user.email}
+                  icon={Mail}
+                  full
+                />
               </View>
             </Card>
 
+            {/* ── Matrícula: instrumento, aula, valor e status de pagamento ── */}
             <Card>
-              <Text className="text-xs font-bold uppercase tracking-widest text-[#B08D57] mb-3">
-                Matrícula
-              </Text>
+              <CardHeader title="Matrícula" status={matriculaStatus} />
+
               {enrollment ? (
-                <View className="flex-row flex-wrap">
-                  <InfoBloco
-                    label="Professor"
-                    valor={enrollment.teacher?.user.name ?? '—'}
+                <>
+                  <View className="flex-row flex-wrap mb-1">
+                    <InfoBloco
+                      label="Instrumento"
+                      valor={formatInstrument(student.instrument)}
+                      icon={Music}
+                    />
+                    <InfoBloco
+                      label="Professor"
+                      valor={enrollment.teacher?.user.name ?? '—'}
+                      icon={UserRound}
+                    />
+                    <InfoBloco
+                      label="Dia da aula"
+                      valor={WEEKDAYS[enrollment.weekDay]}
+                      icon={CalendarClock}
+                    />
+                    <InfoBloco
+                      label="Horário"
+                      valor={enrollment.startTime}
+                      icon={Clock}
+                    />
+                  </View>
+
+                  <View
+                    className="my-3"
+                    style={{
+                      borderTopWidth: 1,
+                      borderTopColor: 'rgba(0,0,0,0.06)',
+                    }}
                   />
-                  <InfoBloco
-                    label="Dia da aula"
-                    valor={WEEKDAYS[enrollment.weekDay]}
-                  />
-                  <InfoBloco label="Horário" valor={enrollment.startTime} />
-                  <InfoBloco
-                    label="Valor mensal"
-                    valor={formatCurrency(enrollment.monthlyAmount)}
-                  />
-                </View>
+
+                  <View className="flex-row flex-wrap">
+                    <InfoBloco
+                      label="Valor mensal"
+                      valor={formatCurrencyBRL(enrollment.monthlyAmount)}
+                      icon={Wallet}
+                    />
+                    <InfoBloco
+                      label="Vencimento"
+                      valor={`Todo dia ${new Date(
+                        enrollment.firstPaymentDueDate,
+                      ).getDate()}`}
+                      icon={CalendarCheck2}
+                    />
+                  </View>
+
+                  {loadingPaymentStatus && (
+                    <ActivityIndicator
+                      size="small"
+                      color="#B08D57"
+                      style={{ marginTop: 4 }}
+                    />
+                  )}
+                </>
               ) : (
                 <EmptyState text="Nenhuma matrícula ativa" />
               )}
@@ -594,7 +786,7 @@ export default function AdminStudentDetail() {
                           </View>
                           <View>
                             <Text className="text-sm font-medium">
-                              {formatCurrency(payment.amount)}
+                              {formatCurrencyBRL(payment.amount)}
                             </Text>
                             <Text className="text-[13px] text-gray-500 mt-0.5">
                               Venc. {formatDate(payment.dueDate)}
