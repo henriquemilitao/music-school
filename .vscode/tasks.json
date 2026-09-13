@@ -6,7 +6,11 @@
       "type": "shell",
       "command": "docker compose up",
       "options": {
-        "cwd": "${workspaceFolder}"
+        "cwd": "${workspaceFolder}",
+        "shell": {
+          "executable": "bash",
+          "args": ["-i", "-c"]
+        }
       },
       "presentation": {
         "reveal": "always",
@@ -21,7 +25,11 @@
       "type": "shell",
       "command": "npm run start:dev",
       "options": {
-        "cwd": "${workspaceFolder}/backend"
+        "cwd": "${workspaceFolder}/backend",
+        "shell": {
+          "executable": "bash",
+          "args": ["-i", "-c"]
+        }
       },
       "presentation": {
         "reveal": "always",
@@ -36,7 +44,11 @@
       "type": "shell",
       "command": "ngrok http 3000",
       "options": {
-        "cwd": "${workspaceFolder}"
+        "cwd": "${workspaceFolder}",
+        "shell": {
+          "executable": "bash",
+          "args": ["-i", "-c"]
+        }
       },
       "presentation": {
         "reveal": "always",
@@ -51,7 +63,11 @@
       "type": "shell",
       "command": "npx prisma studio",
       "options": {
-        "cwd": "${workspaceFolder}/backend"
+        "cwd": "${workspaceFolder}/backend",
+        "shell": {
+          "executable": "bash",
+          "args": ["-i", "-c"]
+        }
       },
       "presentation": {
         "reveal": "always",
