@@ -1,5 +1,7 @@
 import { PrismaClient, Role, Instrument } from '@prisma/client';
 import * as bcrypt from 'bcrypt';
+import { randomBytes, createHash } from 'crypto'; // mesmas funções do AuthService
+import { Resend } from 'resend';
 
 const prisma = new PrismaClient();
 
@@ -658,6 +660,88 @@ async function main() {
   await prisma.user.deleteMany();
   await prisma.school.deleteMany();
 
+  // ── Convite (Renan) ──────────────────────────────────────────
+  // E-mails que devem nascer SEM senha, recebendo convite por e-mail
+  // em vez de senha fixa — hoje só o Renan.
+  const GUARDIAN_EMAILS_WITHOUT_PASSWORD = new Set<string>([
+    'renanmilitao44@gmail.com',
+  ]);
+
+  // Idêntico a AuthService: 7 dias.
+  const INVITE_EXPIRATION_MS = 1000 * 60 * 60 * 24 * 7;
+
+  // AuthService usa this.config.getOrThrow<string>('APP_URL') — aqui,
+  // fora do Nest, lemos direto de process.env. Precisa estar no seu
+  // .env (mesma variável que o backend já usa em produção/dev).
+  const APP_URL = process.env.APP_URL;
+  if (!APP_URL) {
+    throw new Error(
+      'APP_URL não definida no .env — necessária para gerar o convite do seed',
+    );
+  }
+
+  // Mesma lógica exata de AuthService.createInvite, só que chamando
+  // prisma direto (o seed não tem acesso ao AuthService via DI).
+  async function createInviteForUser(userId: string): Promise<string> {
+    const rawToken = randomBytes(32).toString('hex');
+    const tokenHash = createHash('sha256').update(rawToken).digest('hex');
+
+    await prisma.accountInvite.create({
+      data: {
+        userId,
+        tokenHash,
+        expiresAt: new Date(Date.now() + INVITE_EXPIRATION_MS),
+      },
+    });
+
+    return `${APP_URL}/set-password.html?token=${rawToken}`;
+  }
+
+  // Envio do e-mail — HTML copiado literalmente de
+  // EmailService.buildInviteEmailHtml, já que o seed roda fora do
+  // contexto do Nest (sem DI pra usar o EmailService real).
+  const resend = new Resend(process.env.RESEND_API_KEY);
+
+  async function sendInviteEmail(params: {
+    to: string;
+    name: string;
+    inviteLink: string;
+  }) {
+    const fromAddress = process.env.EMAIL_FROM ?? 'suporte@pianissima.com.br';
+    const replyToAddress =
+      process.env.EMAIL_REPLY_TO ?? 'pianissimaem@gmail.com';
+
+    try {
+      await resend.emails.send({
+        from: `Pianíssima <${fromAddress}>`,
+        to: params.to,
+        replyTo: replyToAddress,
+        subject: 'Bem-vindo(a) ao Pianíssima — crie sua senha',
+        html: `
+    <div style="font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; background: #f5f1ea; padding: 32px;">
+      <div style="max-width: 480px; margin: 0 auto; background: white; border-radius: 16px; padding: 32px 24px;">
+        <h1 style="font-size: 20px; color: #1a1a1a; margin-bottom: 8px;">Olá, ${params.name}!</h1>
+        <p style="font-size: 14px; color: #374151; line-height: 1.6;">
+          Sua conta no Pianíssima foi criada. Toque no botão abaixo para definir sua senha e começar a usar o app.
+        </p>
+        <div style="text-align: center; margin: 28px 0;">
+          <a href="${params.inviteLink}" style="background: #b08d57; color: white; padding: 14px 28px; border-radius: 12px; font-weight: bold; font-size: 15px; text-decoration: none; display: inline-block;">
+            Criar minha senha
+          </a>
+        </div>
+        <p style="font-size: 13px; color: #9ca3af; line-height: 1.6;">
+          Se você não esperava este e-mail, pode ignorá-lo com segurança.
+        </p>
+      </div>
+    </div>
+  `,
+      });
+      console.log(`  ✉️  Convite enviado para ${params.to}`);
+    } catch (error) {
+      console.error(`  ⚠️  Falha ao enviar convite pra ${params.to}:`, error);
+    }
+  }
+
   const school = await prisma.school.create({
     data: {
       name: 'Pianíssima - Aqui tem Música',
@@ -722,17 +806,31 @@ async function main() {
     phone: string | undefined,
   ) {
     if (guardianUserCache.has(email)) return guardianUserCache.get(email)!;
+
+    const withoutPassword = GUARDIAN_EMAILS_WITHOUT_PASSWORD.has(email);
+
     const user = await prisma.user.create({
       data: {
         schoolId: school.id,
         name,
         email,
-        passwordHash: await bcrypt.hash('senha123', 10),
+        // Renan → null (define depois, via convite). Todo o resto →
+        // 'senha123' fixa, exatamente como já era antes.
+        passwordHash: withoutPassword
+          ? null
+          : await bcrypt.hash('senha123', 10),
         role: Role.STUDENT,
         phone,
       },
     });
+
     guardianUserCache.set(email, user.id);
+
+    if (withoutPassword) {
+      const inviteLink = await createInviteForUser(user.id);
+      await sendInviteEmail({ to: email, name, inviteLink });
+    }
+
     return user.id;
   }
 

@@ -728,7 +728,9 @@ export class PaymentsService {
     const bundle = await this.prisma.paymentBundle.findUniqueOrThrow({
       where: { id: bundleId },
       include: {
-        payments: { include: { student: { select: { name: true } } } },
+        payments: {
+          include: { student: { select: { name: true, instrument: true } } },
+        },
       },
     });
 

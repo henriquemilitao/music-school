@@ -129,7 +129,7 @@ async function createPaymentRecord(p: {
   enrollmentId: string;
   amount: number;
   dueDate: Date;
-  status: 'PAID' | 'PENDING';
+  status: 'PAID' | 'PENDING' | 'OVERDUE';
   paidAt?: Date;
 }) {
   const label = toMonthKeyUTC(p.dueDate);
@@ -145,7 +145,7 @@ async function createPaymentRecord(p: {
       paidAt: p.paidAt ?? null,
       status: p.status,
       paymentMethod: 'GATEWAY',
-      provider: p.status === 'PAID' ? 'abacatepay' : undefined,
+      provider: p.status === 'PAID' ? 'mercadolivre' : undefined,
       referenceMonth: label,
       idempotencyKey: key,
     },
@@ -170,7 +170,7 @@ type StudentConfig = {
   amount: number;
   teacherKey: TeacherKey;
   startDateStr: string; // "DD/MM" — data de início do ciclo atual de aulas
-  situacao: 'PAGO' | 'EM_ABERTO';
+  situacao: 'PAGO' | 'EM_ABERTO' | 'ATRASADO';
   // Caso especial (ex: Daniel Santos Silva): due date diferente do
   // início do ciclo de aulas.
   overrideDueDateStr?: string; // "DD/MM"
@@ -277,7 +277,7 @@ const students: StudentConfig[] = [
   // 6. Renan Dias Militão
   {
     guardianName: 'Mineia Dias Pinto Militão',
-    guardianEmail: 'pianissimaem@gmail.com',
+    guardianEmail: 'renanmilitao44@gmail.com',
     guardianPhone: '67992936045',
     studentName: 'Renan Dias Militão',
     birthDateStr: '16/11/2012',
@@ -352,7 +352,7 @@ const students: StudentConfig[] = [
     amount: 250,
     teacherKey: 'mineia',
     startDateStr: '11/09',
-    situacao: 'EM_ABERTO',
+    situacao: 'ATRASADO',
   },
   // 11. Rosineia Jesus Araújo
   {
@@ -513,7 +513,7 @@ const students: StudentConfig[] = [
     amount: 230,
     teacherKey: 'thiago',
     startDateStr: '12/09',
-    situacao: 'EM_ABERTO',
+    situacao: 'ATRASADO',
   },
   {
     guardianName: 'Claudia Salles Regis de Oliveira',
@@ -528,7 +528,7 @@ const students: StudentConfig[] = [
     amount: 230,
     teacherKey: 'henrique',
     startDateStr: '12/09',
-    situacao: 'EM_ABERTO',
+    situacao: 'ATRASADO',
   },
   {
     guardianName: 'Claudia Salles Regis de Oliveira',
@@ -560,7 +560,7 @@ const students: StudentConfig[] = [
     amount: 250,
     teacherKey: 'henrique',
     startDateStr: '08/09',
-    situacao: 'EM_ABERTO',
+    situacao: 'PAGO',
   },
   // 22. Maria Claudia Mayumi Nakasone
   {
@@ -608,7 +608,7 @@ const students: StudentConfig[] = [
     amount: 230,
     teacherKey: 'henrique',
     startDateStr: '12/09',
-    situacao: 'EM_ABERTO',
+    situacao: 'ATRASADO',
   },
   // 25. Élder de Sousa Teles
   {
@@ -624,7 +624,7 @@ const students: StudentConfig[] = [
     amount: 230,
     teacherKey: 'henrique',
     startDateStr: '12/09',
-    situacao: 'EM_ABERTO',
+    situacao: 'ATRASADO',
   },
   // 26. Rafael da Silva Arruda
   {
@@ -640,7 +640,7 @@ const students: StudentConfig[] = [
     amount: 230,
     teacherKey: 'henrique',
     startDateStr: '07/09',
-    situacao: 'EM_ABERTO',
+    situacao: 'PAGO',
   },
 ];
 
@@ -660,19 +660,19 @@ async function main() {
 
   const school = await prisma.school.create({
     data: {
-      name: 'Escola de Música Demo',
-      slug: 'escola-demo',
-      email: 'contato@escolademo.com',
-      phone: '11999999999',
+      name: 'Pianíssima - Aqui tem Música',
+      slug: 'pianissima-aqui-tem-musica',
+      email: 'pianissimaem@gmail.com',
+      phone: '67981047995',
     },
   });
 
   await prisma.user.create({
     data: {
       schoolId: school.id,
-      name: 'Admin',
-      email: 'admin@escolademo.com',
-      passwordHash: await bcrypt.hash('admin123', 10),
+      name: 'Mineia Dias Pinto Militão',
+      email: 'pianissimaem@gmail.com',
+      passwordHash: await bcrypt.hash('pianissima123@', 10),
       role: Role.ADMIN,
     },
   });
@@ -691,18 +691,18 @@ async function main() {
   }
 
   const henrique = await createTeacher(
-    'Henrique',
+    'Henrique Dias Militão',
     'henriquemilitao35@gmail.com',
     'Professor de violão e bateria.',
   );
   const mineia = await createTeacher(
-    'Mineia',
+    'Mineia Dias Pinto Militão',
     'mineiamil01@gmail.com',
     'Professora de piano.',
   );
   const thiago = await createTeacher(
-    'Thiago',
-    'thiago.professor@escolademo.com',
+    'Thiago Guimarães',
+    'thiago.professor@gmail.com',
     'Professor de piano e cajon.',
   );
 
@@ -716,7 +716,11 @@ async function main() {
   // quando vários alunos compartilham o mesmo responsável.
   const guardianUserCache = new Map<string, string>(); // email -> userId
 
-  async function getOrCreateGuardianUser(name: string, email: string) {
+  async function getOrCreateGuardianUser(
+    name: string,
+    email: string,
+    phone: string | undefined,
+  ) {
     if (guardianUserCache.has(email)) return guardianUserCache.get(email)!;
     const user = await prisma.user.create({
       data: {
@@ -725,6 +729,7 @@ async function main() {
         email,
         passwordHash: await bcrypt.hash('senha123', 10),
         role: Role.STUDENT,
+        phone,
       },
     });
     guardianUserCache.set(email, user.id);
@@ -760,6 +765,7 @@ async function main() {
     const userId = await getOrCreateGuardianUser(
       cfg.guardianName,
       cfg.guardianEmail,
+      cfg.guardianPhone,
     );
 
     const student = await prisma.student.create({
@@ -808,7 +814,12 @@ async function main() {
       enrollmentId: enrollment.id,
       amount: cfg.amount,
       dueDate,
-      status: cfg.situacao === 'PAGO' ? 'PAID' : 'PENDING',
+      status:
+        cfg.situacao === 'PAGO'
+          ? 'PAID'
+          : cfg.situacao === 'EM_ABERTO'
+            ? 'PENDING'
+            : 'OVERDUE',
       paidAt: cfg.situacao === 'PAGO' ? dueDate : undefined,
     });
 

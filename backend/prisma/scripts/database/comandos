@@ -8,6 +8,10 @@ npx prisma db seed
 comandos para PROD
 DATABASE_URL="postgresql://postgres:QwtuSqJPzREcaigzUIPwIguFtTEGAlAG@caboose.proxy.rlwy.net:35169/railway" npx prisma migrate reset
 
+comandos para PREVIEW
+DATABASE_URL="postgresql://postgres:tpUXEMzKLvJoRhJByyYKhnCmdUfTlxEf@altaria.proxy.rlwy.net:48421/railway" npx prisma migrate deploy
+
+DATABASE_URL="postgresql://postgres:tpUXEMzKLvJoRhJByyYKhnCmdUfTlxEf@altaria.proxy.rlwy.net:48421/railway" npx prisma migrate reset
 
 
 pra criar arquivos typescript na nodemodules
