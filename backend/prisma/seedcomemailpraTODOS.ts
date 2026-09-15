@@ -25,6 +25,7 @@ const TODAY_UTC_MIDNIGHT = new Date(
     NOW_SCHOOL_LOCAL.getUTCDate(),
   ),
 );
+
 // ─────────────────────────────────────────────────────────────
 // Helpers de data
 // ─────────────────────────────────────────────────────────────
@@ -691,12 +692,12 @@ async function main() {
   await prisma.user.deleteMany();
   await prisma.school.deleteMany();
 
-  // ── Convite (Renan) ──────────────────────────────────────────
-  // E-mails que devem nascer SEM senha, recebendo convite por e-mail
-  // em vez de senha fixa — hoje só o Renan.
-  const GUARDIAN_EMAILS_WITHOUT_PASSWORD = new Set<string>([
-    'renanmilitao44@gmail.com',
-  ]);
+  // ── Convite ──────────────────────────────────────────────
+  // Agora TODOS os responsáveis recebem convite por e-mail em vez de
+  // senha fixa (antes, só o e-mail listado em
+  // GUARDIAN_EMAILS_WITHOUT_PASSWORD recebia convite; o resto ganhava
+  // 'senha123'). Removido o Set — o comportamento passou a ser padrão
+  // pra qualquer guardião criado no seed.
 
   // Idêntico a AuthService: 7 dias.
   const INVITE_EXPIRATION_MS = 1000 * 60 * 60 * 24 * 7;
@@ -773,6 +774,12 @@ async function main() {
     }
   }
 
+  // Pequeno delay entre envios pra não estourar rate limit do Resend
+  // (planos free costumam limitar poucos e-mails por segundo).
+  function sleep(ms: number) {
+    return new Promise((resolve) => setTimeout(resolve, ms));
+  }
+
   const school = await prisma.school.create({
     data: {
       name: 'Pianíssima - Aqui tem Música',
@@ -838,18 +845,12 @@ async function main() {
   ) {
     if (guardianUserCache.has(email)) return guardianUserCache.get(email)!;
 
-    const withoutPassword = GUARDIAN_EMAILS_WITHOUT_PASSWORD.has(email);
-
     const user = await prisma.user.create({
       data: {
         schoolId: school.id,
         name,
         email,
-        // Renan → null (define depois, via convite). Todo o resto →
-        // 'senha123' fixa, exatamente como já era antes.
-        passwordHash: withoutPassword
-          ? null
-          : await bcrypt.hash('senha123', 10),
+        passwordHash: null,
         role: Role.STUDENT,
         phone,
       },
@@ -857,10 +858,9 @@ async function main() {
 
     guardianUserCache.set(email, user.id);
 
-    if (withoutPassword) {
-      const inviteLink = await createInviteForUser(user.id);
-      await sendInviteEmail({ to: email, name, inviteLink });
-    }
+    const inviteLink = await createInviteForUser(user.id);
+    await sendInviteEmail({ to: email, name, inviteLink });
+    await sleep(600); // ← adicionado
 
     return user.id;
   }
@@ -985,7 +985,10 @@ async function main() {
   console.log('  mineia.professora@escolademo.com    / prof123  (piano)');
   console.log('  thiago.professor@escolademo.com     / prof123  (piano)');
   console.log('');
-  console.log('  RESPONSÁVEIS (senha123 pra todos)');
+  console.log('  RESPONSÁVEIS');
+  console.log(
+    '  Todos receberam convite por e-mail para definir a própria senha.',
+  );
   for (const [email] of guardianUserCache) {
     const owned = students.filter((s) => s.guardianEmail === email);
     console.log(

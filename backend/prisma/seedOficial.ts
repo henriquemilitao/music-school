@@ -3,17 +3,26 @@ import * as bcrypt from 'bcrypt';
 
 const prisma = new PrismaClient();
 
-// "Hoje" de verdade, pra decidir COMPLETED vs SCHEDULED.
-const TODAY = new Date();
-const TODAY_UTC_MIDNIGHT = new Date(
-  Date.UTC(TODAY.getUTCFullYear(), TODAY.getUTCMonth(), TODAY.getUTCDate()),
-);
-
 // Offset fixo da escola em relação ao UTC (igual ao campo
 // School.timezoneOffsetHours). startTime é sempre hora LOCAL da
 // escola — pra gravar em UTC de verdade no banco, subtraímos esse
 // offset (ex: 15:00 local em UTC-4 vira 19:00 UTC).
 const SCHOOL_TIMEZONE_OFFSET_HOURS = -4;
+
+// "Agora" ajustado pro fuso da escola (UTC-4), não UTC puro — evita
+// que rodar o seed à noite (quando UTC já virou o dia seguinte)
+// marque erroneamente aulas de "hoje local" como já concluídas.
+const NOW_UTC = new Date();
+const NOW_SCHOOL_LOCAL = new Date(
+  NOW_UTC.getTime() + SCHOOL_TIMEZONE_OFFSET_HOURS * 60 * 60 * 1000,
+);
+const TODAY_UTC_MIDNIGHT = new Date(
+  Date.UTC(
+    NOW_SCHOOL_LOCAL.getUTCFullYear(),
+    NOW_SCHOOL_LOCAL.getUTCMonth(),
+    NOW_SCHOOL_LOCAL.getUTCDate(),
+  ),
+);
 
 // ─────────────────────────────────────────────────────────────
 // Helpers de data
@@ -82,6 +91,7 @@ async function createLessonsInRange(p: {
   durationMinutes: number;
   fromDate: Date;
   toDate: Date;
+  firstLessonOverride?: Date; // NOVO
 }) {
   const [h, m] = p.startTime.split(':').map(Number);
 
@@ -93,20 +103,33 @@ async function createLessonsInRange(p: {
     ),
   );
 
+  let isFirstOccurrence = true;
+
   while (cursor < p.toDate) {
     if (cursor.getUTCDay() === p.weekDay) {
+      // Se houver override e essa for a primeira ocorrência do
+      // weekDay no ciclo, usa a data de override em vez do cursor.
+      const lessonDate =
+        isFirstOccurrence && p.firstLessonOverride
+          ? p.firstLessonOverride
+          : cursor;
+
       const scheduledAt = new Date(
         Date.UTC(
-          cursor.getUTCFullYear(),
-          cursor.getUTCMonth(),
-          cursor.getUTCDate(),
+          lessonDate.getUTCFullYear(),
+          lessonDate.getUTCMonth(),
+          lessonDate.getUTCDate(),
           h - SCHOOL_TIMEZONE_OFFSET_HOURS,
           m,
           0,
           0,
         ),
       );
-      const status = cursor <= TODAY_UTC_MIDNIGHT ? 'COMPLETED' : 'SCHEDULED';
+      const status = scheduledAt <= NOW_UTC ? 'COMPLETED' : 'SCHEDULED';
+      // ^ nota: comparar scheduledAt com NOW_UTC (não mais cursor com
+      // TODAY_UTC_MIDNIGHT) evita inconsistência quando a data efetiva
+      // da aula (lessonDate) diverge do cursor por causa do override.
+
       await prisma.lesson.create({
         data: {
           schoolId: p.schoolId,
@@ -118,6 +141,8 @@ async function createLessonsInRange(p: {
           status,
         },
       });
+
+      isFirstOccurrence = false;
     }
     cursor.setUTCDate(cursor.getUTCDate() + 1);
   }
@@ -174,6 +199,12 @@ type StudentConfig = {
   // Caso especial (ex: Daniel Santos Silva): due date diferente do
   // início do ciclo de aulas.
   overrideDueDateStr?: string; // "DD/MM"
+
+  // Override pontual: quando informado, a PRIMEIRA aula gerada no
+  // ciclo usa essa data em vez do primeiro weekDay encontrado a
+  // partir de startDateStr. As aulas seguintes continuam normais,
+  // recorrendo no mesmo weekDay.
+  firstLessonOverrideStr?: string; // "DD/MM"
 };
 
 const YEAR = new Date().getFullYear();
@@ -190,7 +221,7 @@ const students: StudentConfig[] = [
     weekDay: 1,
     startTime: '13:00',
     durationMinutes: 60,
-    amount: 230,
+    amount: 250,
     teacherKey: 'mineia',
     startDateStr: '26/10',
     situacao: 'PAGO',
@@ -205,7 +236,7 @@ const students: StudentConfig[] = [
     weekDay: 1,
     startTime: '14:00',
     durationMinutes: 30,
-    amount: 115,
+    amount: 135,
     teacherKey: 'mineia',
     startDateStr: '14/09',
     situacao: 'PAGO',
@@ -221,7 +252,7 @@ const students: StudentConfig[] = [
     weekDay: 2,
     startTime: '18:00',
     durationMinutes: 60,
-    amount: 250,
+    amount: 270,
     teacherKey: 'mineia',
     startDateStr: '18/09',
     situacao: 'PAGO',
@@ -237,7 +268,7 @@ const students: StudentConfig[] = [
     weekDay: 3,
     startTime: '09:00',
     durationMinutes: 60,
-    amount: 250,
+    amount: 270,
     teacherKey: 'mineia',
     startDateStr: '09/09',
     situacao: 'PAGO',
@@ -253,7 +284,7 @@ const students: StudentConfig[] = [
     weekDay: 3,
     startTime: '08:00',
     durationMinutes: 60,
-    amount: 230,
+    amount: 250,
     teacherKey: 'mineia',
     startDateStr: '23/09',
     situacao: 'EM_ABERTO',
@@ -269,7 +300,7 @@ const students: StudentConfig[] = [
     weekDay: 3,
     startTime: '18:00',
     durationMinutes: 30,
-    amount: 115,
+    amount: 135,
     teacherKey: 'mineia',
     startDateStr: '10/09',
     situacao: 'PAGO',
@@ -285,7 +316,7 @@ const students: StudentConfig[] = [
     weekDay: 4,
     startTime: '13:30',
     durationMinutes: 60,
-    amount: 230,
+    amount: 250,
     teacherKey: 'thiago',
     startDateStr: '12/09',
     situacao: 'PAGO',
@@ -301,7 +332,7 @@ const students: StudentConfig[] = [
     weekDay: 3,
     startTime: '17:00',
     durationMinutes: 60,
-    amount: 230,
+    amount: 250,
     teacherKey: 'thiago',
     startDateStr: '09/09',
     situacao: 'PAGO',
@@ -317,7 +348,7 @@ const students: StudentConfig[] = [
     weekDay: 3,
     startTime: '14:00',
     durationMinutes: 60,
-    amount: 230,
+    amount: 250,
     teacherKey: 'thiago',
     startDateStr: '11/09',
     situacao: 'PAGO',
@@ -333,7 +364,7 @@ const students: StudentConfig[] = [
     weekDay: 3,
     startTime: '12:30',
     durationMinutes: 60,
-    amount: 230,
+    amount: 250,
     teacherKey: 'thiago',
     startDateStr: '11/09',
     situacao: 'PAGO',
@@ -349,7 +380,7 @@ const students: StudentConfig[] = [
     weekDay: 3,
     startTime: '15:00',
     durationMinutes: 60,
-    amount: 250,
+    amount: 270,
     teacherKey: 'mineia',
     startDateStr: '11/09',
     situacao: 'ATRASADO',
@@ -365,7 +396,7 @@ const students: StudentConfig[] = [
     weekDay: 3,
     startTime: '16:00',
     durationMinutes: 60,
-    amount: 230,
+    amount: 250,
     teacherKey: 'thiago',
     startDateStr: '09/09',
     situacao: 'PAGO',
@@ -381,7 +412,7 @@ const students: StudentConfig[] = [
     weekDay: 4,
     startTime: '14:30',
     durationMinutes: 60,
-    amount: 250,
+    amount: 270,
     teacherKey: 'thiago',
     startDateStr: '27/08',
     situacao: 'PAGO',
@@ -398,7 +429,7 @@ const students: StudentConfig[] = [
     weekDay: 2,
     startTime: '08:00',
     durationMinutes: 60,
-    amount: 230,
+    amount: 250,
     teacherKey: 'mineia',
     startDateStr: '11/09',
     situacao: 'PAGO',
@@ -414,7 +445,7 @@ const students: StudentConfig[] = [
     weekDay: 2,
     startTime: '09:00',
     durationMinutes: 60,
-    amount: 230,
+    amount: 250,
     teacherKey: 'mineia',
     startDateStr: '12/09',
     situacao: 'PAGO',
@@ -430,7 +461,7 @@ const students: StudentConfig[] = [
     weekDay: 2,
     startTime: '10:00',
     durationMinutes: 60,
-    amount: 230,
+    amount: 250,
     teacherKey: 'mineia',
     startDateStr: '10/09',
     situacao: 'PAGO',
@@ -446,7 +477,7 @@ const students: StudentConfig[] = [
     weekDay: 2,
     startTime: '14:00',
     durationMinutes: 60,
-    amount: 230,
+    amount: 250,
     teacherKey: 'mineia',
     startDateStr: '11/09',
     situacao: 'PAGO',
@@ -462,7 +493,7 @@ const students: StudentConfig[] = [
     weekDay: 2,
     startTime: '15:00',
     durationMinutes: 60,
-    amount: 230,
+    amount: 250,
     teacherKey: 'mineia',
     startDateStr: '19/09',
     situacao: 'EM_ABERTO',
@@ -478,7 +509,7 @@ const students: StudentConfig[] = [
     weekDay: 1,
     startTime: '09:00',
     durationMinutes: 60,
-    amount: 250,
+    amount: 270,
     teacherKey: 'mineia',
     startDateStr: '31/08',
     situacao: 'PAGO',
@@ -494,7 +525,7 @@ const students: StudentConfig[] = [
     weekDay: 4,
     startTime: '15:30',
     durationMinutes: 60,
-    amount: 230,
+    amount: 250,
     teacherKey: 'thiago',
     startDateStr: '10/09',
     situacao: 'PAGO',
@@ -510,7 +541,7 @@ const students: StudentConfig[] = [
     weekDay: 4,
     startTime: '16:30',
     durationMinutes: 60,
-    amount: 230,
+    amount: 250,
     teacherKey: 'thiago',
     startDateStr: '12/09',
     situacao: 'ATRASADO',
@@ -525,7 +556,7 @@ const students: StudentConfig[] = [
     weekDay: 4,
     startTime: '16:30',
     durationMinutes: 60,
-    amount: 230,
+    amount: 250,
     teacherKey: 'henrique',
     startDateStr: '12/09',
     situacao: 'ATRASADO',
@@ -540,7 +571,7 @@ const students: StudentConfig[] = [
     weekDay: 4,
     startTime: '17:30',
     durationMinutes: 30,
-    amount: 125,
+    amount: 145,
     teacherKey: 'thiago',
     startDateStr: '03/09',
     situacao: 'PAGO',
@@ -557,10 +588,11 @@ const students: StudentConfig[] = [
     weekDay: 1,
     startTime: '18:00',
     durationMinutes: 60,
-    amount: 250,
+    amount: 270,
     teacherKey: 'henrique',
     startDateStr: '08/09',
     situacao: 'PAGO',
+    firstLessonOverrideStr: '16/09', // 1ª aula excepcionalmente numa quarta
   },
   // 22. Maria Claudia Mayumi Nakasone
   {
@@ -573,7 +605,7 @@ const students: StudentConfig[] = [
     weekDay: 2,
     startTime: '15:00',
     durationMinutes: 60,
-    amount: 300,
+    amount: 320,
     teacherKey: 'henrique',
     startDateStr: '05/09',
     situacao: 'PAGO',
@@ -589,7 +621,7 @@ const students: StudentConfig[] = [
     weekDay: 4,
     startTime: '14:30',
     durationMinutes: 60,
-    amount: 230,
+    amount: 250,
     teacherKey: 'henrique',
     startDateStr: '11/09',
     situacao: 'PAGO',
@@ -605,7 +637,7 @@ const students: StudentConfig[] = [
     weekDay: 4,
     startTime: '18:00',
     durationMinutes: 60,
-    amount: 230,
+    amount: 250,
     teacherKey: 'henrique',
     startDateStr: '12/09',
     situacao: 'ATRASADO',
@@ -621,7 +653,7 @@ const students: StudentConfig[] = [
     weekDay: 4,
     startTime: '19:00',
     durationMinutes: 60,
-    amount: 230,
+    amount: 250,
     teacherKey: 'henrique',
     startDateStr: '12/09',
     situacao: 'ATRASADO',
@@ -637,7 +669,7 @@ const students: StudentConfig[] = [
     weekDay: 4,
     startTime: '20:00',
     durationMinutes: 60,
-    amount: 230,
+    amount: 250,
     teacherKey: 'henrique',
     startDateStr: '07/09',
     situacao: 'PAGO',
@@ -833,6 +865,9 @@ async function main() {
       durationMinutes: cfg.durationMinutes,
       fromDate: cycleStart,
       toDate: cycleEnd,
+      firstLessonOverride: cfg.firstLessonOverrideStr
+        ? parseDayMonth(cfg.firstLessonOverrideStr, YEAR)
+        : undefined,
     });
 
     createdLog.push({
