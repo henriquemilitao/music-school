@@ -170,13 +170,25 @@ export default function AdminSchedule() {
   const [selectedDate, setSelectedDate] = useState(new Date());
   const [pickerOpen, setPickerOpen] = useState(false);
 
-  const dateKey = toDateKey(selectedDate);
+  // Início/fim do dia selecionado NO FUSO LOCAL DO APARELHO, convertidos
+  // pro instante UTC correspondente — o backend só compara UTC.
+  function getDayBoundsIso(date: Date) {
+    const start = new Date(date);
+    start.setHours(0, 0, 0, 0);
+
+    const end = new Date(start);
+    end.setDate(end.getDate() + 1);
+
+    return { start: start.toISOString(), end: end.toISOString() };
+  }
+
+  const { start, end } = getDayBoundsIso(selectedDate);
 
   const { data: lessons, isLoading } = useQuery({
-    queryKey: ['admin-schedule', dateKey],
+    queryKey: ['admin-schedule', start, end],
     queryFn: async () => {
       const response = await api.get<LessonOfDay[]>('/lessons/day', {
-        params: { date: dateKey },
+        params: { start, end },
       });
       return response.data;
     },
