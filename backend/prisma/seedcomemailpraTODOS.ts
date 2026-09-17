@@ -207,6 +207,13 @@ type StudentConfig = {
   // partir de startDateStr. As aulas seguintes continuam normais,
   // recorrendo no mesmo weekDay.
   firstLessonOverrideStr?: string; // "DD/MM"
+
+  // Quando true, gera TAMBÉM um ciclo retroativo de 1 mês antes de
+  // startDateStr (aulas + fatura paga), além do ciclo normal a
+  // partir de startDateStr. Usado quando o aluno já vinha tendo aula
+  // antes da data que temos registrada, e queremos refletir isso no
+  // histórico.
+  extraPastCycle?: boolean;
 };
 
 const YEAR = new Date().getFullYear();
@@ -225,8 +232,9 @@ const students: StudentConfig[] = [
     durationMinutes: 60,
     amount: 250,
     teacherKey: 'mineia',
-    startDateStr: '26/10',
+    startDateStr: '26/09',
     situacao: 'PAGO',
+    extraPastCycle: true,
   },
   {
     guardianName: 'Raphaella Cristynne',
@@ -258,6 +266,7 @@ const students: StudentConfig[] = [
     teacherKey: 'mineia',
     startDateStr: '18/09',
     situacao: 'PAGO',
+    extraPastCycle: true,
   },
   // 3. Igor Ujiie
   {
@@ -289,7 +298,8 @@ const students: StudentConfig[] = [
     amount: 250,
     teacherKey: 'mineia',
     startDateStr: '23/09',
-    situacao: 'EM_ABERTO',
+    situacao: 'PAGO',
+    extraPastCycle: true,
   },
   // 5. Cledisnari Centurion
   {
@@ -385,7 +395,7 @@ const students: StudentConfig[] = [
     amount: 270,
     teacherKey: 'mineia',
     startDateStr: '11/09',
-    situacao: 'ATRASADO',
+    situacao: 'PAGO',
   },
   // 11. Rosineia Jesus Araújo
   {
@@ -419,6 +429,7 @@ const students: StudentConfig[] = [
     startDateStr: '27/08',
     situacao: 'PAGO',
     overrideDueDateStr: '04/09',
+    extraPastCycle: true,
   },
   // 13. Ágatha Malfer dos Santos
   {
@@ -546,7 +557,7 @@ const students: StudentConfig[] = [
     amount: 250,
     teacherKey: 'thiago',
     startDateStr: '12/09',
-    situacao: 'ATRASADO',
+    situacao: 'PAGO',
   },
   {
     guardianName: 'Claudia Salles Regis de Oliveira',
@@ -561,7 +572,7 @@ const students: StudentConfig[] = [
     amount: 250,
     teacherKey: 'henrique',
     startDateStr: '12/09',
-    situacao: 'ATRASADO',
+    situacao: 'PAGO',
   },
   {
     guardianName: 'Claudia Salles Regis de Oliveira',
@@ -668,13 +679,31 @@ const students: StudentConfig[] = [
     studentName: 'Rafael da Silva Arruda',
     birthDateStr: '20/08/1993',
     instrument: Instrument.VIOLAO,
-    weekDay: 4,
+    weekDay: 3,
     startTime: '20:00',
     durationMinutes: 60,
     amount: 250,
     teacherKey: 'henrique',
     startDateStr: '07/09',
     situacao: 'PAGO',
+  },
+
+  // 27. Jéssica Medina Wenz
+  {
+    guardianName: 'Jéssica Medina Wenz Ajala',
+    guardianEmail: 'jessicamedinawenz@gmail.com',
+    guardianPhone: '67993235703',
+    studentName: 'Jéssica Medina Wenz Ajala',
+    birthDateStr: '03/11/1994',
+    instrument: Instrument.PIANO,
+    weekDay: 1,
+    startTime: '15:30',
+    durationMinutes: 60,
+    amount: 270,
+    teacherKey: 'mineia',
+    startDateStr: '17/09',
+    situacao: 'EM_ABERTO',
+    extraPastCycle: true,
   },
 ];
 
@@ -692,12 +721,7 @@ async function main() {
   await prisma.user.deleteMany();
   await prisma.school.deleteMany();
 
-  // ── Convite ──────────────────────────────────────────────
-  // Agora TODOS os responsáveis recebem convite por e-mail em vez de
-  // senha fixa (antes, só o e-mail listado em
-  // GUARDIAN_EMAILS_WITHOUT_PASSWORD recebia convite; o resto ganhava
-  // 'senha123'). Removido o Set — o comportamento passou a ser padrão
-  // pra qualquer guardião criado no seed.
+  // ── Convite ──────────────────────────────────────────
 
   // Idêntico a AuthService: 7 dias.
   const INVITE_EXPIRATION_MS = 1000 * 60 * 60 * 24 * 7;
@@ -774,8 +798,6 @@ async function main() {
     }
   }
 
-  // Pequeno delay entre envios pra não estourar rate limit do Resend
-  // (planos free costumam limitar poucos e-mails por segundo).
   function sleep(ms: number) {
     return new Promise((resolve) => setTimeout(resolve, ms));
   }
@@ -860,7 +882,7 @@ async function main() {
 
     const inviteLink = await createInviteForUser(user.id);
     await sendInviteEmail({ to: email, name, inviteLink });
-    await sleep(600); // ← adicionado
+    await sleep(600);
 
     return user.id;
   }
@@ -883,13 +905,13 @@ async function main() {
       });
       continue;
     }
-    if (!cfg.birthDateStr) {
-      skipped.push({
-        studentName: cfg.studentName,
-        reason: 'sem data de nascimento cadastrada',
-      });
-      continue;
-    }
+    // if (!cfg.birthDateStr) {
+    //   skipped.push({
+    //     studentName: cfg.studentName,
+    //     reason: 'sem data de nascimento cadastrada',
+    //   });
+    //   continue;
+    // }
 
     const userId = await getOrCreateGuardianUser(
       cfg.guardianName,
@@ -902,23 +924,27 @@ async function main() {
         userId,
         name: cfg.studentName,
         instrument: cfg.instrument,
-        birthDate: parseBirthDate(cfg.birthDateStr),
+        birthDate: cfg.birthDateStr ? parseBirthDate(cfg.birthDateStr) : null,
       },
     });
 
     const teacher = teacherMap[cfg.teacherKey];
 
-    // Início do ciclo de aulas (dia-âncora tanto de aulas quanto,
-    // por padrão, de vencimento).
     const cycleStart = parseDayMonth(cfg.startDateStr, YEAR);
-    // Fim do ciclo = +1 mês a partir do início (exclusive).
     const cycleEnd = addMonthsUTC(cycleStart, 1);
 
-    // Vencimento da fatura: por padrão = início do ciclo, exceto
-    // caso especial (ex: Daniel Santos Silva → sempre dia 04).
     const dueDate = cfg.overrideDueDateStr
       ? parseDayMonth(cfg.overrideDueDateStr, YEAR)
       : cycleStart;
+
+    // Se extraPastCycle, a matrícula "nasce" 1 mês antes — isso afeta
+    // firstLessonDate/firstPaymentDueDate do enrollment (histórico real),
+    // mas lastLessonPeriodStart/lastPaymentDueDate ficam no ciclo atual
+    // (é dali que o cron vai continuar gerando os próximos).
+    const pastCycleStart = cfg.extraPastCycle
+      ? addMonthsUTC(cycleStart, -1)
+      : null;
+    const pastDueDate = cfg.extraPastCycle ? addMonthsUTC(dueDate, -1) : null;
 
     const enrollment = await prisma.enrollment.create({
       data: {
@@ -929,14 +955,40 @@ async function main() {
         startTime: cfg.startTime,
         durationMinutes: cfg.durationMinutes,
         monthlyAmount: cfg.amount,
-        firstLessonDate: cycleStart,
-        firstPaymentDueDate: dueDate,
+        firstLessonDate: pastCycleStart ?? cycleStart,
+        firstPaymentDueDate: pastDueDate ?? dueDate,
         lastLessonPeriodStart: cycleStart,
         lastPaymentDueDate: dueDate,
         lastGeneratedPeriodKey: toPeriodKeyUTC(cycleStart),
       },
     });
 
+    // ── Ciclo retroativo (opcional) ──────────────────────────────
+    if (pastCycleStart && pastDueDate) {
+      await createPaymentRecord({
+        schoolId: school.id,
+        studentId: student.id,
+        enrollmentId: enrollment.id,
+        amount: cfg.amount,
+        dueDate: pastDueDate,
+        status: 'PAID', // ciclo retroativo sempre nasce pago
+        paidAt: pastDueDate,
+      });
+
+      await createLessonsInRange({
+        schoolId: school.id,
+        studentId: student.id,
+        teacherId: teacher.id,
+        enrollmentId: enrollment.id,
+        weekDay: cfg.weekDay,
+        startTime: cfg.startTime,
+        durationMinutes: cfg.durationMinutes,
+        fromDate: pastCycleStart,
+        toDate: cycleStart, // exclusive — termina justo onde o ciclo atual começa
+      });
+    }
+
+    // ── Ciclo atual (como já era) ────────────────────────────────
     await createPaymentRecord({
       schoolId: school.id,
       studentId: student.id,

@@ -75,15 +75,16 @@ export class LessonsService {
   }
 
   // ─── Admin: lista aulas da escola em um dia específico ────────────────
-  async findByDay(day: string, schoolId: string) {
-    // day no formato "2026-08-03"
-    const [year, month, date] = day.split('-').map(Number) as [
-      number,
-      number,
-      number,
-    ];
-    const start = new Date(year, month - 1, date);
-    const end = new Date(year, month - 1, date + 1);
+  // Recebe os limites já em UTC/ISO, calculados pelo cliente no seu
+  // próprio fuso local — o backend não sabe (nem precisa saber) de
+  // fuso horário, só compara instantes UTC contra o scheduledAt.
+  async findByDay(startIso: string, endIso: string, schoolId: string) {
+    const start = new Date(startIso);
+    const end = new Date(endIso);
+
+    if (isNaN(start.getTime()) || isNaN(end.getTime())) {
+      throw new BadRequestException('Parâmetros de data inválidos');
+    }
 
     return this.prisma.lesson.findMany({
       where: {

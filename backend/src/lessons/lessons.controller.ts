@@ -80,15 +80,23 @@ export class LessonsController {
     return this.lessonsService.findByMonth(month, user.schoolId);
   }
 
-  // GET /lessons/day?date=2026-08-03 — lista aulas da escola em um dia (admin)
+  // GET /lessons/day?start=2026-09-18T04:00:00.000Z&end=2026-09-19T04:00:00.000Z
+  // — lista aulas da escola em um dia (admin). start/end vêm prontos em
+  // ISO/UTC, já calculados pelo cliente no seu próprio fuso local — o
+  // backend não decide o que é "meia-noite do dia X", só compara.
   @Get('day')
   @Roles(Role.ADMIN)
   @ApiOperation({
     summary: 'Listar aulas da escola em um dia específico (admin)',
   })
-  @ApiQuery({ name: 'date', example: '2026-08-03' })
-  findByDay(@CurrentUser() user: AuthUser, @Query('date') date: string) {
-    return this.lessonsService.findByDay(date, user.schoolId);
+  @ApiQuery({ name: 'start', example: '2026-09-18T04:00:00.000Z' })
+  @ApiQuery({ name: 'end', example: '2026-09-19T04:00:00.000Z' })
+  findByDay(
+    @CurrentUser() user: AuthUser,
+    @Query('start') start: string,
+    @Query('end') end: string,
+  ) {
+    return this.lessonsService.findByDay(start, end, user.schoolId);
   }
 
   // GET /lessons/:id — busca aula por id

@@ -1,5 +1,7 @@
 import { PrismaClient, Role, Instrument } from '@prisma/client';
 import * as bcrypt from 'bcrypt';
+import { randomBytes, createHash } from 'crypto'; // mesmas funções do AuthService
+import { Resend } from 'resend';
 
 const prisma = new PrismaClient();
 
@@ -205,6 +207,13 @@ type StudentConfig = {
   // partir de startDateStr. As aulas seguintes continuam normais,
   // recorrendo no mesmo weekDay.
   firstLessonOverrideStr?: string; // "DD/MM"
+
+  // Quando true, gera TAMBÉM um ciclo retroativo de 1 mês antes de
+  // startDateStr (aulas + fatura paga), além do ciclo normal a
+  // partir de startDateStr. Usado quando o aluno já vinha tendo aula
+  // antes da data que temos registrada, e queremos refletir isso no
+  // histórico.
+  extraPastCycle?: boolean;
 };
 
 const YEAR = new Date().getFullYear();
@@ -223,8 +232,9 @@ const students: StudentConfig[] = [
     durationMinutes: 60,
     amount: 250,
     teacherKey: 'mineia',
-    startDateStr: '26/10',
+    startDateStr: '26/09',
     situacao: 'PAGO',
+    extraPastCycle: true,
   },
   {
     guardianName: 'Raphaella Cristynne',
@@ -256,6 +266,7 @@ const students: StudentConfig[] = [
     teacherKey: 'mineia',
     startDateStr: '18/09',
     situacao: 'PAGO',
+    extraPastCycle: true,
   },
   // 3. Igor Ujiie
   {
@@ -287,7 +298,8 @@ const students: StudentConfig[] = [
     amount: 250,
     teacherKey: 'mineia',
     startDateStr: '23/09',
-    situacao: 'EM_ABERTO',
+    situacao: 'PAGO',
+    extraPastCycle: true,
   },
   // 5. Cledisnari Centurion
   {
@@ -383,7 +395,7 @@ const students: StudentConfig[] = [
     amount: 270,
     teacherKey: 'mineia',
     startDateStr: '11/09',
-    situacao: 'ATRASADO',
+    situacao: 'PAGO',
   },
   // 11. Rosineia Jesus Araújo
   {
@@ -417,6 +429,7 @@ const students: StudentConfig[] = [
     startDateStr: '27/08',
     situacao: 'PAGO',
     overrideDueDateStr: '04/09',
+    extraPastCycle: true,
   },
   // 13. Ágatha Malfer dos Santos
   {
@@ -544,7 +557,7 @@ const students: StudentConfig[] = [
     amount: 250,
     teacherKey: 'thiago',
     startDateStr: '12/09',
-    situacao: 'ATRASADO',
+    situacao: 'PAGO',
   },
   {
     guardianName: 'Claudia Salles Regis de Oliveira',
@@ -559,7 +572,7 @@ const students: StudentConfig[] = [
     amount: 250,
     teacherKey: 'henrique',
     startDateStr: '12/09',
-    situacao: 'ATRASADO',
+    situacao: 'PAGO',
   },
   {
     guardianName: 'Claudia Salles Regis de Oliveira',
@@ -674,6 +687,24 @@ const students: StudentConfig[] = [
     startDateStr: '07/09',
     situacao: 'PAGO',
   },
+
+  // 27. Jéssica Medina Wenz
+  {
+    guardianName: 'Jéssica Medina Wenz Ajala',
+    guardianEmail: 'jessicamedinawenz@gmail.com',
+    guardianPhone: '67993235703',
+    studentName: 'Jéssica Medina Wenz Ajala',
+    birthDateStr: '03/11/1994',
+    instrument: Instrument.PIANO,
+    weekDay: 1,
+    startTime: '15:30',
+    durationMinutes: 60,
+    amount: 270,
+    teacherKey: 'mineia',
+    startDateStr: '17/09',
+    situacao: 'EM_ABERTO',
+    extraPastCycle: true,
+  },
 ];
 
 // ─────────────────────────────────────────────────────────────
@@ -689,6 +720,88 @@ async function main() {
   await prisma.teacher.deleteMany();
   await prisma.user.deleteMany();
   await prisma.school.deleteMany();
+
+  // ── Convite (Renan) ──────────────────────────────────────────
+  // E-mails que devem nascer SEM senha, recebendo convite por e-mail
+  // em vez de senha fixa — hoje só o Renan.
+  const GUARDIAN_EMAILS_WITHOUT_PASSWORD = new Set<string>([
+    'renanmilitao44@gmail.com',
+  ]);
+
+  // Idêntico a AuthService: 7 dias.
+  const INVITE_EXPIRATION_MS = 1000 * 60 * 60 * 24 * 7;
+
+  // AuthService usa this.config.getOrThrow<string>('APP_URL') — aqui,
+  // fora do Nest, lemos direto de process.env. Precisa estar no seu
+  // .env (mesma variável que o backend já usa em produção/dev).
+  const APP_URL = process.env.APP_URL;
+  if (!APP_URL) {
+    throw new Error(
+      'APP_URL não definida no .env — necessária para gerar o convite do seed',
+    );
+  }
+
+  // Mesma lógica exata de AuthService.createInvite, só que chamando
+  // prisma direto (o seed não tem acesso ao AuthService via DI).
+  async function createInviteForUser(userId: string): Promise<string> {
+    const rawToken = randomBytes(32).toString('hex');
+    const tokenHash = createHash('sha256').update(rawToken).digest('hex');
+
+    await prisma.accountInvite.create({
+      data: {
+        userId,
+        tokenHash,
+        expiresAt: new Date(Date.now() + INVITE_EXPIRATION_MS),
+      },
+    });
+
+    return `${APP_URL}/set-password.html?token=${rawToken}`;
+  }
+
+  // Envio do e-mail — HTML copiado literalmente de
+  // EmailService.buildInviteEmailHtml, já que o seed roda fora do
+  // contexto do Nest (sem DI pra usar o EmailService real).
+  const resend = new Resend(process.env.RESEND_API_KEY);
+
+  async function sendInviteEmail(params: {
+    to: string;
+    name: string;
+    inviteLink: string;
+  }) {
+    const fromAddress = process.env.EMAIL_FROM ?? 'suporte@pianissima.com.br';
+    const replyToAddress =
+      process.env.EMAIL_REPLY_TO ?? 'pianissimaem@gmail.com';
+
+    try {
+      await resend.emails.send({
+        from: `Pianíssima <${fromAddress}>`,
+        to: params.to,
+        replyTo: replyToAddress,
+        subject: 'Bem-vindo(a) ao Pianíssima — crie sua senha',
+        html: `
+    <div style="font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; background: #f5f1ea; padding: 32px;">
+      <div style="max-width: 480px; margin: 0 auto; background: white; border-radius: 16px; padding: 32px 24px;">
+        <h1 style="font-size: 20px; color: #1a1a1a; margin-bottom: 8px;">Olá, ${params.name}!</h1>
+        <p style="font-size: 14px; color: #374151; line-height: 1.6;">
+          Sua conta no Pianíssima foi criada. Toque no botão abaixo para definir sua senha e começar a usar o app.
+        </p>
+        <div style="text-align: center; margin: 28px 0;">
+          <a href="${params.inviteLink}" style="background: #b08d57; color: white; padding: 14px 28px; border-radius: 12px; font-weight: bold; font-size: 15px; text-decoration: none; display: inline-block;">
+            Criar minha senha
+          </a>
+        </div>
+        <p style="font-size: 13px; color: #9ca3af; line-height: 1.6;">
+          Se você não esperava este e-mail, pode ignorá-lo com segurança.
+        </p>
+      </div>
+    </div>
+  `,
+      });
+      console.log(`  ✉️  Convite enviado para ${params.to}`);
+    } catch (error) {
+      console.error(`  ⚠️  Falha ao enviar convite pra ${params.to}:`, error);
+    }
+  }
 
   const school = await prisma.school.create({
     data: {
@@ -754,17 +867,31 @@ async function main() {
     phone: string | undefined,
   ) {
     if (guardianUserCache.has(email)) return guardianUserCache.get(email)!;
+
+    const withoutPassword = GUARDIAN_EMAILS_WITHOUT_PASSWORD.has(email);
+
     const user = await prisma.user.create({
       data: {
         schoolId: school.id,
         name,
         email,
-        passwordHash: await bcrypt.hash('senha123', 10),
+        // Renan → null (define depois, via convite). Todo o resto →
+        // 'senha123' fixa, exatamente como já era antes.
+        passwordHash: withoutPassword
+          ? null
+          : await bcrypt.hash('senha123', 10),
         role: Role.STUDENT,
         phone,
       },
     });
+
     guardianUserCache.set(email, user.id);
+
+    if (withoutPassword) {
+      const inviteLink = await createInviteForUser(user.id);
+      await sendInviteEmail({ to: email, name, inviteLink });
+    }
+
     return user.id;
   }
 
@@ -786,13 +913,13 @@ async function main() {
       });
       continue;
     }
-    if (!cfg.birthDateStr) {
-      skipped.push({
-        studentName: cfg.studentName,
-        reason: 'sem data de nascimento cadastrada',
-      });
-      continue;
-    }
+    // if (!cfg.birthDateStr) {
+    //   skipped.push({
+    //     studentName: cfg.studentName,
+    //     reason: 'sem data de nascimento cadastrada',
+    //   });
+    //   continue;
+    // }
 
     const userId = await getOrCreateGuardianUser(
       cfg.guardianName,
@@ -805,23 +932,27 @@ async function main() {
         userId,
         name: cfg.studentName,
         instrument: cfg.instrument,
-        birthDate: parseBirthDate(cfg.birthDateStr),
+        birthDate: cfg.birthDateStr ? parseBirthDate(cfg.birthDateStr) : null,
       },
     });
 
     const teacher = teacherMap[cfg.teacherKey];
 
-    // Início do ciclo de aulas (dia-âncora tanto de aulas quanto,
-    // por padrão, de vencimento).
     const cycleStart = parseDayMonth(cfg.startDateStr, YEAR);
-    // Fim do ciclo = +1 mês a partir do início (exclusive).
     const cycleEnd = addMonthsUTC(cycleStart, 1);
 
-    // Vencimento da fatura: por padrão = início do ciclo, exceto
-    // caso especial (ex: Daniel Santos Silva → sempre dia 04).
     const dueDate = cfg.overrideDueDateStr
       ? parseDayMonth(cfg.overrideDueDateStr, YEAR)
       : cycleStart;
+
+    // Se extraPastCycle, a matrícula "nasce" 1 mês antes — isso afeta
+    // firstLessonDate/firstPaymentDueDate do enrollment (histórico real),
+    // mas lastLessonPeriodStart/lastPaymentDueDate ficam no ciclo atual
+    // (é dali que o cron vai continuar gerando os próximos).
+    const pastCycleStart = cfg.extraPastCycle
+      ? addMonthsUTC(cycleStart, -1)
+      : null;
+    const pastDueDate = cfg.extraPastCycle ? addMonthsUTC(dueDate, -1) : null;
 
     const enrollment = await prisma.enrollment.create({
       data: {
@@ -832,14 +963,40 @@ async function main() {
         startTime: cfg.startTime,
         durationMinutes: cfg.durationMinutes,
         monthlyAmount: cfg.amount,
-        firstLessonDate: cycleStart,
-        firstPaymentDueDate: dueDate,
+        firstLessonDate: pastCycleStart ?? cycleStart,
+        firstPaymentDueDate: pastDueDate ?? dueDate,
         lastLessonPeriodStart: cycleStart,
         lastPaymentDueDate: dueDate,
         lastGeneratedPeriodKey: toPeriodKeyUTC(cycleStart),
       },
     });
 
+    // ── Ciclo retroativo (opcional) ──────────────────────────────
+    if (pastCycleStart && pastDueDate) {
+      await createPaymentRecord({
+        schoolId: school.id,
+        studentId: student.id,
+        enrollmentId: enrollment.id,
+        amount: cfg.amount,
+        dueDate: pastDueDate,
+        status: 'PAID', // ciclo retroativo sempre nasce pago
+        paidAt: pastDueDate,
+      });
+
+      await createLessonsInRange({
+        schoolId: school.id,
+        studentId: student.id,
+        teacherId: teacher.id,
+        enrollmentId: enrollment.id,
+        weekDay: cfg.weekDay,
+        startTime: cfg.startTime,
+        durationMinutes: cfg.durationMinutes,
+        fromDate: pastCycleStart,
+        toDate: cycleStart, // exclusive — termina justo onde o ciclo atual começa
+      });
+    }
+
+    // ── Ciclo atual (como já era) ────────────────────────────────
     await createPaymentRecord({
       schoolId: school.id,
       studentId: student.id,
@@ -888,7 +1045,8 @@ async function main() {
   console.log('  mineia.professora@escolademo.com    / prof123  (piano)');
   console.log('  thiago.professor@escolademo.com     / prof123  (piano)');
   console.log('');
-  console.log('  RESPONSÁVEIS (senha123 pra todos)');
+  console.log('  RESPONSÁVEIS');
+  console.log('  Todos senha123, exceto Renan (recebeu convite por e-mail).');
   for (const [email] of guardianUserCache) {
     const owned = students.filter((s) => s.guardianEmail === email);
     console.log(
