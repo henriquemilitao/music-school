@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useCallback, useState } from 'react';
 import {
   View,
   Text,
@@ -8,8 +8,8 @@ import {
   Platform,
   Modal,
 } from 'react-native';
-import { useQuery } from '@tanstack/react-query';
-import { useRouter } from 'expo-router';
+import { useQuery, useQueryClient } from '@tanstack/react-query';
+import { useFocusEffect, useRouter } from 'expo-router';
 import { ChevronLeft, ChevronRight, CalendarDays } from 'lucide-react-native';
 import DateTimePicker from '@react-native-community/datetimepicker';
 import { api } from '../../lib/api';
@@ -169,6 +169,7 @@ export default function AdminSchedule() {
   const router = useRouter();
   const [selectedDate, setSelectedDate] = useState(new Date());
   const [pickerOpen, setPickerOpen] = useState(false);
+  const queryClient = useQueryClient();
 
   // Início/fim do dia selecionado NO FUSO LOCAL DO APARELHO, convertidos
   // pro instante UTC correspondente — o backend só compara UTC.
@@ -193,6 +194,15 @@ export default function AdminSchedule() {
       return response.data;
     },
   });
+
+  useFocusEffect(
+    useCallback(() => {
+      queryClient.invalidateQueries({
+        predicate: (q) =>
+          Array.isArray(q.queryKey) && q.queryKey[0] === 'admin-schedule',
+      });
+    }, [queryClient]),
+  );
 
   const sortedLessons = (lessons ?? [])
     .slice()

@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useCallback, useState } from 'react';
 import {
   View,
   Text,
@@ -8,7 +8,12 @@ import {
   Alert,
 } from 'react-native';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
-import { useLocalSearchParams, useRouter, Stack } from 'expo-router';
+import {
+  useLocalSearchParams,
+  useRouter,
+  Stack,
+  useFocusEffect,
+} from 'expo-router';
 import {
   ArrowLeft,
   Music2,
@@ -455,6 +460,20 @@ export default function AdminStudentDetail() {
     },
     enabled: !!id && tab === 'faturas',
   });
+
+  useFocusEffect(
+    useCallback(() => {
+      queryClient.invalidateQueries({
+        queryKey: ['admin-student-payments', id],
+      });
+      queryClient.invalidateQueries({
+        queryKey: ['admin-student-payment-status', id],
+      });
+      queryClient.invalidateQueries({
+        queryKey: ['admin-student-lessons', id],
+      });
+    }, [queryClient, id]),
+  );
 
   const updateLesson = useMutation({
     mutationFn: async ({

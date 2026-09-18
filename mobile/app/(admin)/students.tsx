@@ -1,4 +1,4 @@
-import { useState, useMemo } from 'react';
+import { useState, useMemo, useCallback } from 'react';
 import {
   View,
   Text,
@@ -7,8 +7,8 @@ import {
   ActivityIndicator,
   TouchableOpacity,
 } from 'react-native';
-import { useQuery } from '@tanstack/react-query';
-import { useRouter } from 'expo-router';
+import { useQuery, useQueryClient } from '@tanstack/react-query';
+import { useFocusEffect, useRouter } from 'expo-router';
 import {
   Search,
   ChevronRight,
@@ -234,6 +234,7 @@ function FamilyGroup({
 export default function AdminStudents() {
   const router = useRouter();
   const [search, setSearch] = useState('');
+  const queryClient = useQueryClient();
   const [statusFilter, setStatusFilter] = useState<StatusFilter>('ALL');
   const [instrumentFilter, setInstrumentFilter] = useState<string | null>(null);
   const [teacherFilter, setTeacherFilter] = useState<string | null>(null);
@@ -263,6 +264,12 @@ export default function AdminStudents() {
       return response.data;
     },
   });
+
+  useFocusEffect(
+    useCallback(() => {
+      queryClient.invalidateQueries({ queryKey: ['admin-pending-payments'] });
+    }, [queryClient]),
+  );
 
   if (loadingStudents || loadingPending || loadingEnrollments) {
     return (
