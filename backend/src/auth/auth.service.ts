@@ -97,7 +97,15 @@ export class AuthService {
       data: { usedAt: new Date() },
     });
 
-    return this.createInvite(userId);
+    const inviteLink = await this.createInvite(userId);
+
+    await this.emailService.sendInviteEmail({
+      to: user.email,
+      name: user.name,
+      inviteLink,
+    });
+
+    return { status: 'ok', inviteLink };
   }
 
   async validateInviteToken(rawToken: string) {
