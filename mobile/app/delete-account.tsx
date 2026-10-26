@@ -87,7 +87,7 @@ export default function DeleteAccountScreen() {
 
       <ScrollView
         className="flex-1 px-5"
-        contentContainerStyle={{ paddingBottom: 32 }}
+        contentContainerStyle={{ paddingBottom: 32 + insets.bottom }}
         keyboardShouldPersistTaps="handled"
       >
         {step === 'warning' && (

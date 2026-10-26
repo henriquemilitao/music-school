@@ -45,7 +45,11 @@ export function LessonNotesEditor({
           placeholderTextColor="#B0AA9C"
           textAlignVertical="top"
           className="flex-1 text-[15px] leading-6 text-[#1A1A1A]"
-          style={{ minHeight: 160 }}
+          // paddingBottom: sobra de espaço abaixo da última linha — o campo
+          // rola sozinho pra manter o cursor sempre acima do fim da área visível
+          // (como o app Notas do celular).
+          style={{ minHeight: 120, paddingBottom: 28 }}
+          scrollEnabled
           accessibilityLabel="Anotações da aula"
         />
       </View>

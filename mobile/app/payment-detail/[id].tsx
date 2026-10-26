@@ -6,6 +6,7 @@ import {
   ActivityIndicator,
   TouchableOpacity,
 } from 'react-native';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { useLocalSearchParams, useRouter, Stack } from 'expo-router';
 import {
@@ -31,6 +32,7 @@ import { StatusPill } from '../../components/ui/StatusPill';
 import { firstName } from '../../lib/name';
 
 export default function PaymentDetail() {
+  const insets = useSafeAreaInsets();
   const { id } = useLocalSearchParams<{ id: string }>();
   const router = useRouter();
   const queryClient = useQueryClient();
@@ -100,7 +102,10 @@ export default function PaymentDetail() {
       : paymentStatusConfig(payment!.status);
 
   return (
-    <ScrollView className="flex-1 bg-[#F5F1EA]">
+    <ScrollView
+      className="flex-1 bg-[#F5F1EA]"
+      contentContainerStyle={{ paddingBottom: insets.bottom }}
+    >
       <Stack.Screen options={{ headerShown: false }} />
 
       <View
