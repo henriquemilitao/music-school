@@ -5,3 +5,6 @@ dist/
 .DS_Store
 coverage/
 .expo/
+
+# logs do "npm run dev"
+.logs/

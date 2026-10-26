@@ -2,90 +2,41 @@
   "version": "2.0.0",
   "tasks": [
     {
-      "label": "1. Docker (Postgres)",
+      "label": "Pianíssima: Tudo",
       "type": "shell",
-      "command": "docker compose up",
-      "options": {
-        "cwd": "${workspaceFolder}",
-        "shell": {
-          "executable": "bash",
-          "args": ["-i", "-c"]
-        }
-      },
-      "presentation": {
-        "reveal": "always",
-        "panel": "dedicated",
-        "group": "dev-stack"
-      },
+      "command": "source ~/.nvm/nvm.sh && nvm use >/dev/null && npm run dev",
+      "isBackground": true,
       "problemMatcher": [],
-      "isBackground": true
+      "presentation": { "panel": "dedicated" }
     },
     {
-      "label": "2. Backend (NestJS)",
+      "label": "Pianíssima: Back",
       "type": "shell",
-      "command": "npm run start:dev",
-      "options": {
-        "cwd": "${workspaceFolder}/backend",
-        "shell": {
-          "executable": "bash",
-          "args": ["-i", "-c"]
-        }
-      },
-      "presentation": {
-        "reveal": "always",
-        "panel": "dedicated",
-        "group": "dev-stack"
-      },
+      "command": "source ~/.nvm/nvm.sh && nvm use >/dev/null && npm run dev:back",
+      "isBackground": true,
       "problemMatcher": [],
-      "isBackground": true
+      "presentation": { "panel": "dedicated" }
     },
     {
-      "label": "3. Ngrok",
+      "label": "Pianíssima: Mobile",
+      "type": "shell",
+      "command": "source ~/.nvm/nvm.sh && nvm use >/dev/null && npm run dev:mobile",
+      "isBackground": true,
+      "problemMatcher": [],
+      "presentation": { "panel": "dedicated" }
+    },
+    {
+      "label": "Pianíssima: Ngrok (webhooks)",
       "type": "shell",
       "command": "ngrok http 3000",
-      "options": {
-        "cwd": "${workspaceFolder}",
-        "shell": {
-          "executable": "bash",
-          "args": ["-i", "-c"]
-        }
-      },
-      "presentation": {
-        "reveal": "always",
-        "panel": "dedicated",
-        "group": "dev-stack"
-      },
+      "isBackground": true,
       "problemMatcher": [],
-      "isBackground": true
+      "presentation": { "panel": "dedicated" }
     },
     {
-      "label": "4. Prisma Studio",
+      "label": "Pianíssima: Parar tudo",
       "type": "shell",
-      "command": "npx prisma studio",
-      "options": {
-        "cwd": "${workspaceFolder}/backend",
-        "shell": {
-          "executable": "bash",
-          "args": ["-i", "-c"]
-        }
-      },
-      "presentation": {
-        "reveal": "always",
-        "panel": "dedicated",
-        "group": "dev-stack"
-      },
-      "problemMatcher": [],
-      "isBackground": true
-    },
-    {
-      "label": "🚀 Iniciar tudo (Docker + Backend + Ngrok + Prisma Studio)",
-      "dependsOn": [
-        "1. Docker (Postgres)",
-        "2. Backend (NestJS)",
-        "3. Ngrok",
-        "4. Prisma Studio"
-      ],
-      "dependsOrder": "parallel",
+      "command": "source ~/.nvm/nvm.sh && nvm use >/dev/null && npm run stop",
       "problemMatcher": []
     }
   ]

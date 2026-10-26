@@ -1,48 +1,56 @@
-# Rodar tudo local + Expo Go (dev)
+# Rodar tudo local (WSL + Expo Go) com um comando
 
-## 1. Banco (Docker)
-Na raiz, com o `.env` preenchido (veja `.env.example`):
+Mesmo fluxo do Enfermaria: tudo roda DENTRO do WSL (banco, back e Expo) e o
+celular acessa pelo IP do Windows.
 
-    docker compose up -d
+## Uso
 
-Se o Enfermaria (ou outro projeto) já usa a porta 5432, coloque `DB_PORT=5433`
-no `.env` da raiz e use `5433` no `DATABASE_URL` do `backend/.env`.
+No VS Code: `Ctrl+Shift+P` -> `Tasks: Run Task` -> **Pianíssima: Tudo**
+Ou no terminal (WSL), na raiz do projeto:
 
-## 2. Backend
-Em `backend/` (com `backend/.env` preenchido, veja `backend/.env.example`):
+    npm run dev
 
-    npm install
-    npx prisma migrate deploy      # cria/atualiza as tabelas
-    npm run start:dev
+Isso faz, em ordem: sobe o Postgres (Docker) -> gera o Prisma Client -> aplica
+as migrations -> sobe a API (logs em `.logs/back.log`) e o Prisma Studio ->
+espera a API responder -> sobe o Expo em modo Expo Go e mostra o QR code.
 
-Se o Enfermaria já usa a porta 3000, coloque `PORT=3001` no `backend/.env`.
+| Comando                  | O que faz                                              |
+| ------------------------ | ------------------------------------------------------ |
+| `npm run dev`            | banco + back + Studio + app                            |
+| `npm run dev:back`       | banco + back + Studio (logs na tela)                   |
+| `npm run dev:mobile`     | só o app (back já rodando)                             |
+| `npm run dev:mobile -- --clear` | app limpando o cache do Metro                   |
+| `npm run logs`           | acompanha o log do back (`.logs/back.log`)             |
+| `npm run stop`           | derruba portas 3000/5555/8081 e o banco                |
+| `npm run setup`          | instala dependências do backend e do mobile            |
 
-## 3. App no celular (Expo Go)
-Em `mobile/`, com celular e PC no MESMO Wi-Fi:
+URLs: API `http://IP:3000`, Swagger `http://IP:3000/api`, Studio `http://localhost:5555`.
 
-    npm install
-    npm run start:phone
+## Primeira vez
+1. `nvm use` (usa o Node do `.nvmrc`, 24 — o mesmo do Enfermaria).
+2. Copie e preencha `.env` (raiz) e `backend/.env` a partir dos `.env.example`.
+3. Docker rodando. Celular e PC no mesmo Wi-Fi.
+4. Se o Windows pedir permissão de administrador (UAC), aceite: é o port proxy
+   Windows -> WSL (só pede quando o IP do WSL muda; as portas 3000/8081 e a
+   regra de firewall são as mesmas do Enfermaria).
 
-O script detecta o IP do Wi-Fi, aponta a API pra ele e sobe o Expo em modo
-Expo Go. Escaneie o QR code com o Expo Go.
+## Enfermaria e Pianíssima juntos?
+Os dois usam as portas 3000 (API) e 8081 (Expo) — rode um de cada vez
+(`npm run stop` no que estiver rodando). O banco não conflita (5432 aqui,
+5433 lá). Pra rodar os dois ao mesmo tempo, troque as portas deste:
 
-Variações:
+    API_PORT=3001 METRO_PORT=8082 npm run dev
 
-    npm run start:phone -- --clear                 # limpa o cache do Metro
-    npm run start:phone -- --port 8082             # Metro do Enfermaria em 8081
-    EXPO_PUBLIC_API_PORT=3001 npm run start:phone  # backend na porta 3001
-    EXPO_PUBLIC_API_URL=http://IP:PORTA npm run start:phone  # força a URL
+## Expo Go: limitações
+- Push notification NÃO funciona no Expo Go (removido no SDK 53); o app
+  detecta isso e pula o registro. Pra testar push, só com build.
+- O Expo Go precisa ser o de SDK 54. Se der "incompatível", instale em
+  https://expo.dev/go.
 
-`npm run start:devclient` sobe no modo Development Build (APK de dev).
-
-## Limitações do Expo Go
-- Push notification NÃO funciona (removido do Expo Go no SDK 53). Pra testar
-  push, só com build (preview ou development).
-- O Expo Go da loja precisa ser compatível com SDK 54. No Android, se der
-  "incompatible", instale o Expo Go de SDK 54 em https://expo.dev/go.
-
-## Se o celular não conectar
-- Windows: liberar no firewall as portas do backend (3000) e do Metro (8081).
-- WSL: use `networkingMode=mirrored` no `.wslconfig` (ver `steps/comandos`).
-- Confira o IP que o script imprimiu; se estiver errado, force com
-  `EXPO_PUBLIC_API_URL`.
+## Problemas comuns
+- "Porta em uso": veja acima (`npm run stop`).
+- Celular não conecta: confira o IP impresso (`📶 IP da rede`); force com
+  `LAN_IP=192.168.x.x npm run dev`. Firewall do Windows precisa liberar 3000 e 8081.
+- Erro estranho de módulo nativo no Metro: o `mobile/node_modules` pode ter
+  sido instalado pelo Windows. No WSL: `rm -rf mobile/node_modules && npm install --prefix mobile`.
+- WSL em modo `mirrored`: funciona (o script detecta e pula o port proxy).
