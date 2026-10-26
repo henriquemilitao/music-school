@@ -3,7 +3,10 @@ services:
     image: postgres:15-alpine
     container_name: music-school-db
     ports:
-      - '5432:5432'
+      # Porta do host configurável via DB_PORT no .env (padrão 5432).
+      # Se o Postgres de outro projeto (ex: Enfermaria) já usa 5432,
+      # defina DB_PORT=5433 e use 5433 no DATABASE_URL do backend.
+      - '${DB_PORT:-5432}:5432'
     environment:
       POSTGRES_USER: ${POSTGRES_USER}
       POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
