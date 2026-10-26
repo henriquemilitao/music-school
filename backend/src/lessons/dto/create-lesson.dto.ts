@@ -6,8 +6,11 @@ import {
   IsString,
   IsBoolean,
   Min,
+  MaxLength,
 } from 'class-validator';
+import { Transform } from 'class-transformer';
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
+import { LESSON_NOTES_MAX_LENGTH } from '../lessons.constants';
 
 export class CreateLessonDto {
   @ApiProperty({ description: 'ID do Student' })
@@ -45,8 +48,17 @@ export class CreateLessonDto {
   @IsBoolean()
   isMakeup?: boolean;
 
-  @ApiPropertyOptional()
+  @ApiPropertyOptional({
+    description: 'Anotações da aula (visíveis pro aluno)',
+    maxLength: LESSON_NOTES_MAX_LENGTH,
+  })
   @IsOptional()
+  @Transform(({ value }: { value: unknown }) =>
+    typeof value === 'string' ? value.trim() : value,
+  )
   @IsString()
+  @MaxLength(LESSON_NOTES_MAX_LENGTH, {
+    message: `As anotações podem ter no máximo ${LESSON_NOTES_MAX_LENGTH} caracteres`,
+  })
   notes?: string;
 }

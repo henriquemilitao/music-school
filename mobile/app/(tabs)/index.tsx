@@ -13,6 +13,7 @@ import {
   History,
   Receipt,
   ChevronRight,
+  NotebookPen,
 } from 'lucide-react-native';
 import { api } from '../../lib/api';
 import { formatInstrument } from '../../lib/instrument';
@@ -56,7 +57,9 @@ type DashboardItem = {
     teacher: { user: { name: string } } | null;
   } | null;
   lastLesson: {
+    id: string;
     scheduledAt: string;
+    notes: string | null;
     teacher: { user: { name: string } } | null;
   } | null;
   openPayments: PaymentSummary[];
@@ -422,7 +425,9 @@ export default function Index() {
           accentBg="#ECFDF5"
           accentColor="#059669"
           label="Última aula"
-          onPress={() => router.push('/lessons')}
+          onPress={() =>
+            router.push(lastLesson ? `/lesson/${lastLesson.id}` : '/lessons')
+          }
           topRight={lastLesson ? <StatusPill {...lastLessonConfig} /> : null}
         >
           {lastLesson ? (
@@ -439,6 +444,22 @@ export default function Index() {
                   : ''}
                 {formatInstrument(student.instrument)}
               </Text>
+              {/* prévia das anotações do professor — toque abre a aula */}
+              {lastLesson.notes && (
+                <View className="flex-row items-start gap-1.5 mt-2">
+                  <NotebookPen
+                    size={12}
+                    color="#B08D57"
+                    style={{ marginTop: 2 }}
+                  />
+                  <Text
+                    className="flex-1 text-xs leading-[18px] text-gray-500"
+                    numberOfLines={2}
+                  >
+                    {lastLesson.notes}
+                  </Text>
+                </View>
+              )}
             </>
           ) : (
             <Text className="text-[13px] text-gray-400">

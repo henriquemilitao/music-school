@@ -284,6 +284,15 @@ export class UsersService {
         });
       }
 
+      //    As anotações das aulas são texto livre do professor sobre o
+      //    aluno (podem citar nome, dificuldades etc.) — saem junto.
+      if (user.students.length > 0) {
+        await tx.lesson.updateMany({
+          where: { studentId: { in: user.students.map((s) => s.id) } },
+          data: { notes: null, notesUpdatedAt: null },
+        });
+      }
+
       // 4. Se for TEACHER — anonimiza o perfil de professor e
       //    DESVINCULA (null) das aulas e matrículas futuras, sem
       //    apagar nada. As aulas continuam existindo, só sem professor

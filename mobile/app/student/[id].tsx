@@ -31,11 +31,14 @@ import {
   Wallet,
   CalendarCheck2,
   IdCard,
+  ChevronRight,
 } from 'lucide-react-native';
 import { api } from '../../lib/api';
 import { formatInstrument } from '../../lib/instrument';
 import { formatCurrency, formatDate } from '../../lib/paymentFormat';
 import { firstName } from '../../lib/name';
+import { adminLessonKeys } from '../../lib/queryKeys';
+import { NotesIndicator } from '../../components/lesson/NotesIndicator';
 
 // ─── Tipos ────────────────────────────────────────────────────────────
 
@@ -63,6 +66,7 @@ type Lesson = {
   scheduledAt: string;
   status: 'SCHEDULED' | 'COMPLETED' | 'CANCELLED';
   isMakeup: boolean;
+  notes: string | null;
 };
 
 type Payment = {
@@ -269,19 +273,22 @@ function EmptyState({ text }: { text: string }) {
   );
 }
 
-// Uma linha de aula dentro do grupo do mês
+// Uma linha de aula dentro do grupo do mês — toque abre o detalhe da aula
 function LessonRow({
   lesson,
   isFirst,
+  onOpen,
   onCancel,
 }: {
   lesson: Lesson;
   isFirst: boolean;
+  onOpen: () => void;
   onCancel: () => void;
 }) {
   const cfg = lessonStatusConfig(lesson.status);
   return (
-    <View
+    <TouchableOpacity
+      onPress={onOpen}
       className="flex-row items-center justify-between py-2.5"
       style={
         !isFirst
@@ -300,6 +307,7 @@ function LessonRow({
           {lesson.isMakeup && (
             <Text className="text-[11px] text-[#B08D57] mt-0.5">Reposição</Text>
           )}
+          {lesson.notes && <NotesIndicator />}
         </View>
       </View>
       <View className="flex-row items-center gap-2">
@@ -312,8 +320,9 @@ function LessonRow({
             <X size={14} color="#DC2626" />
           </TouchableOpacity>
         )}
+        <ChevronRight size={16} color="#D4CFC4" />
       </View>
-    </View>
+    </TouchableOpacity>
   );
 }
 
@@ -322,11 +331,13 @@ function LessonMonthGroup({
   monthKey,
   lessons,
   defaultOpen,
+  onOpenLesson,
   onCancelLesson,
 }: {
   monthKey: string;
   lessons: Lesson[];
   defaultOpen: boolean;
+  onOpenLesson: (lessonId: string) => void;
   onCancelLesson: (lessonId: string) => void;
 }) {
   const [open, setOpen] = useState(defaultOpen);
@@ -371,6 +382,7 @@ function LessonMonthGroup({
               key={lesson.id}
               lesson={lesson}
               isFirst={i === 0}
+              onOpen={() => onOpenLesson(lesson.id)}
               onCancel={() =>
                 Alert.alert(
                   'Cancelar aula',
@@ -434,7 +446,7 @@ export default function AdminStudentDetail() {
   });
 
   const { data: lessons, isLoading: loadingLessons } = useQuery({
-    queryKey: ['admin-student-lessons', id],
+    queryKey: adminLessonKeys.byStudent(id),
     queryFn: async () => {
       const response = await api.get<Lesson[]>(`/lessons/student/${id}`);
       return response.data;
@@ -480,9 +492,13 @@ export default function AdminStudentDetail() {
     }) => {
       return api.patch(`/lessons/${lessonId}`, { status, cancelReason });
     },
-    onSuccess: () => {
+    onSuccess: (_, { lessonId }) => {
       queryClient.invalidateQueries({
-        queryKey: ['admin-student-lessons', id],
+        queryKey: adminLessonKeys.byStudent(id),
+      });
+      queryClient.invalidateQueries({ queryKey: adminLessonKeys.schedule() });
+      queryClient.invalidateQueries({
+        queryKey: adminLessonKeys.detail(lessonId),
       });
     },
     onError: () => {
@@ -755,6 +771,9 @@ export default function AdminStudentDetail() {
                   monthKey={monthKey}
                   lessons={lessonGroups[monthKey]}
                   defaultOpen={i === 0}
+                  onOpenLesson={(lessonId) =>
+                    router.push(`/admin-lesson/${lessonId}`)
+                  }
                   onCancelLesson={(lessonId) =>
                     updateLesson.mutate({
                       lessonId,

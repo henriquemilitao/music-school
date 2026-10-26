@@ -61,6 +61,21 @@ export function lessonStatusConfig(
   }
 }
 
+// Visão do admin: mostra só o status da aula (reposição vira uma tag
+// separada, ver makeupLessonVisual) e chama a aula cancelada de
+// "Cancelada" — "Falta" é a linguagem do app do aluno.
+export function adminLessonStatusConfig(
+  status: EffectiveLessonStatus,
+): StatusVisual {
+  if (status === 'CANCELLED') return { label: 'Cancelada', ...COLORS.red };
+  return lessonStatusConfig(status, false);
+}
+
+export const makeupLessonVisual: StatusVisual = {
+  label: 'Reposição',
+  ...COLORS.purple,
+};
+
 // Combina o status do banco com a fase ao vivo calculada por
 // useLessonStatus. Use isso em qualquer tela que precise mostrar o
 // status "real" de uma aula (lista, detalhe, dashboard) — assim as
