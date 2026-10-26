@@ -6,6 +6,8 @@
 // pelo start-web-with-ip.js (modo --web).
 
 const os = require('os');
+const fs = require('fs');
+const path = require('path');
 
 const DEFAULT_PORT = '3000';
 
@@ -76,6 +78,13 @@ function syncApiIp() {
   const apiUrl = `http://${ip}:${port}`;
 
   process.env.EXPO_PUBLIC_API_URL = apiUrl;
+
+  // O Expo dá prioridade a arquivos .env* sobre a variável de ambiente; este
+  // arquivo (ignorado pelo Git) vence qualquer mobile/.env antigo.
+  fs.writeFileSync(
+    path.join(__dirname, '..', '.env.development.local'),
+    `EXPO_PUBLIC_API_URL=${apiUrl}\n`,
+  );
 
   // Faz o Metro anunciar o mesmo IP no QR code do Expo Go. Sem isso, com
   // WSL/Docker/VPN o Metro pode anunciar um IP que o celular não alcança.

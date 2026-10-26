@@ -232,10 +232,40 @@ async function waitForApi(timeoutMs = 90_000) {
   return false;
 }
 
+/**
+ * Garante que o app use a URL da API calculada agora.
+ *
+ * O Expo monta o ambiente do app juntando process.env e DEPOIS os arquivos
+ * .env, .env.development, .env.local e .env.development.local (o último
+ * vence). Ou seja: um mobile/.env antigo (ex: com localhost) ganha da
+ * variável de ambiente deste script, e no celular "localhost" é o próprio
+ * celular. Por isso geramos o .env.development.local (ignorado pelo Git),
+ * que tem a maior prioridade.
+ */
+function pinApiUrl(apiUrl) {
+  writeFileSync(
+    resolve(MOBILE, '.env.development.local'),
+    `# GERADO por "npm run dev" a cada execução — não edite (está no .gitignore)\nEXPO_PUBLIC_API_URL=${apiUrl}\n`,
+  );
+
+  for (const name of ['.env', '.env.local', '.env.development']) {
+    const file = resolve(MOBILE, name);
+    if (!existsSync(file)) continue;
+    const found = readEnv(file).EXPO_PUBLIC_API_URL;
+    if (found && found !== apiUrl) {
+      console.log(
+        `⚠ mobile/${name} define EXPO_PUBLIC_API_URL=${found}.\n` +
+          '  Está sendo sobrescrito pelo .env.development.local (gerado). Pode apagar essa linha.',
+      );
+    }
+  }
+}
+
 function startMobile() {
   const lanIp = getLanIp();
   const changed = ensurePortProxy();
   const apiUrl = `http://${lanIp}:${API_PORT}`;
+  pinApiUrl(apiUrl);
 
   const lastIpFile = resolve(LOG_DIR, 'last-ip');
   const ipChanged =

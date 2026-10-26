@@ -92,3 +92,12 @@ Aviso: se o `mobile/` rodar SEM `EXPO_PUBLIC_API_URL`, o `lib/api.ts` cai na
 URL de PRODUÇÃO do Railway. Por isso use sempre `npm run dev` / `dev:mobile`
 (eles definem a URL local). O `npm run start:railway` (em `mobile/`) existe
 justamente pra conectar o dev build na API do Railway.
+
+## "Verifique sua conexão" no celular, mas funciona no PC
+Causa clássica: um `mobile/.env` antigo com `EXPO_PUBLIC_API_URL=http://localhost:3000`.
+O Expo junta `process.env` e DEPOIS os arquivos `.env`, `.env.development`,
+`.env.local`, `.env.development.local` (o último vence) — então o `.env` ganhava
+da URL calculada pelo script, e `localhost` no celular é o próprio celular.
+Agora `npm run dev` gera `mobile/.env.development.local` (ignorado pelo Git)
+com a URL certa a cada execução e avisa se achar `.env` conflitante. Pode
+apagar a linha `EXPO_PUBLIC_API_URL` do `mobile/.env`.
