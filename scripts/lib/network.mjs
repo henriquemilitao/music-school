@@ -8,9 +8,9 @@
 //
 // Fora do WSL (Linux/macOS puros) nada disso é necessário: usamos o IP da
 // própria máquina.
-import { execFileSync } from "node:child_process";
-import net from "node:net";
-import os from "node:os";
+import { execFileSync } from 'node:child_process';
+import net from 'node:net';
+import os from 'node:os';
 
 // Mesmas portas padrão do Enfermaria — assim o port proxy e a regra do
 // firewall que já existem no Windows continuam valendo. Dá pra trocar:
@@ -22,17 +22,17 @@ const PROXY_PORTS = [API_PORT, METRO_PORT];
 
 const DEFAULT_PORTS = API_PORT === 3000 && METRO_PORT === 8081;
 const RULE_NAME = DEFAULT_PORTS
-  ? "WSL Expo e API"
-  : `WSL Expo e API (${PROXY_PORTS.join(",")})`;
+  ? 'WSL Expo e API'
+  : `WSL Expo e API (${PROXY_PORTS.join(',')})`;
 
 export const isWsl = () =>
-  process.platform === "linux" && /microsoft/i.test(os.release());
+  process.platform === 'linux' && /microsoft/i.test(os.release());
 
 const powershell = (script) =>
   execFileSync(
-    "powershell.exe",
-    ["-NoProfile", "-NonInteractive", "-Command", script],
-    { encoding: "utf8", stdio: ["ignore", "pipe", "pipe"] },
+    'powershell.exe',
+    ['-NoProfile', '-NonInteractive', '-Command', script],
+    { encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'] },
   ).trim();
 
 /** IP do Windows na rede com rota de internet ativa (Wi-Fi, cabo ou hotspot). */
@@ -65,9 +65,9 @@ function getLocalLanIp() {
     if (virtual.test(name)) continue;
     const a = addrs?.find(
       (x) =>
-        (x.family === "IPv4" || x.family === 4) &&
+        (x.family === 'IPv4' || x.family === 4) &&
         !x.internal &&
-        !x.address.startsWith("169.254."),
+        !x.address.startsWith('169.254.'),
     );
     if (a) return a.address;
   }
@@ -81,7 +81,7 @@ export function getLanIp() {
   const ip = isWsl() ? getWindowsLanIp() : getLocalLanIp();
   if (!ip || !/^\d+\.\d+\.\d+\.\d+$/.test(ip)) {
     throw new Error(
-      "Não consegui detectar o IP da rede. Informe manualmente: LAN_IP=192.168.x.x npm run dev",
+      'Não consegui detectar o IP da rede. Informe manualmente: LAN_IP=192.168.x.x npm run dev',
     );
   }
   return ip;
@@ -91,18 +91,18 @@ export function getLanIp() {
 function getWslIp() {
   const addr = os
     .networkInterfaces()
-    .eth0?.find((a) => a.family === "IPv4" || a.family === 4);
+    .eth0?.find((a) => a.family === 'IPv4' || a.family === 4);
   return addr?.address ?? null;
 }
 
 function portProxyOk(wslIp) {
   try {
     const out = execFileSync(
-      "netsh.exe",
-      ["interface", "portproxy", "show", "v4tov4"],
-      { encoding: "utf8" },
+      'netsh.exe',
+      ['interface', 'portproxy', 'show', 'v4tov4'],
+      { encoding: 'utf8' },
     );
-    const ip = wslIp.replaceAll(".", "\\.");
+    const ip = wslIp.replaceAll('.', '\\.');
     return PROXY_PORTS.every((p) =>
       new RegExp(`0\\.0\\.0\\.0\\s+${p}\\s+${ip}\\s+${p}`).test(out),
     );
@@ -123,18 +123,18 @@ export function ensurePortProxy() {
   if (portProxyOk(wslIp)) return false;
 
   console.log(
-    "🔐 O IP do WSL mudou. Confirme a janela de administrador do Windows (UAC)...",
+    '🔐 O IP do WSL mudou. Confirme a janela de administrador do Windows (UAC)...',
   );
   const inner = `
-    foreach ($p in ${PROXY_PORTS.join(",")}) {
+    foreach ($p in ${PROXY_PORTS.join(',')}) {
       netsh interface portproxy delete v4tov4 listenport=$p listenaddress=0.0.0.0 | Out-Null
       netsh interface portproxy add v4tov4 listenport=$p listenaddress=0.0.0.0 connectport=$p connectaddress=${wslIp}
     }
     if (-not (Get-NetFirewallRule -DisplayName '${RULE_NAME}' -ErrorAction SilentlyContinue)) {
-      New-NetFirewallRule -DisplayName '${RULE_NAME}' -Direction Inbound -Action Allow -Protocol TCP -LocalPort ${PROXY_PORTS.join(",")} -Profile Private,Public | Out-Null
+      New-NetFirewallRule -DisplayName '${RULE_NAME}' -Direction Inbound -Action Allow -Protocol TCP -LocalPort ${PROXY_PORTS.join(',')} -Profile Private,Public | Out-Null
     }
   `;
-  const encoded = Buffer.from(inner, "utf16le").toString("base64");
+  const encoded = Buffer.from(inner, 'utf16le').toString('base64');
   try {
     powershell(
       `Start-Process powershell.exe -Verb RunAs -Wait -ArgumentList '-NoProfile','-EncodedCommand','${encoded}'`,
@@ -145,7 +145,7 @@ export function ensurePortProxy() {
 
   if (!portProxyOk(wslIp)) {
     throw new Error(
-      "Port proxy não foi configurado (UAC cancelado?). Rode o comando de novo e aceite a janela.",
+      'Port proxy não foi configurado (UAC cancelado?). Rode o comando de novo e aceite a janela.',
     );
   }
   return true;
@@ -156,8 +156,8 @@ export function isPortBusy(port) {
   return new Promise((resolve) => {
     const server = net
       .createServer()
-      .once("error", (err) => resolve(err.code === "EADDRINUSE"))
-      .once("listening", () => server.close(() => resolve(false)));
-    server.listen(port, "0.0.0.0");
+      .once('error', (err) => resolve(err.code === 'EADDRINUSE'))
+      .once('listening', () => server.close(() => resolve(false)));
+    server.listen(port, '0.0.0.0');
   });
 }

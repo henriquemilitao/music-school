@@ -6,16 +6,16 @@
 //
 // Flags extras vão pro Expo:  npm run dev:mobile -- --clear
 // Pra abrir em Development Build (em vez de Expo Go): ... -- --dev-client
-import { spawn, spawnSync } from "node:child_process";
+import { spawn, spawnSync } from 'node:child_process';
 import {
   createWriteStream,
   existsSync,
   mkdirSync,
   readFileSync,
   writeFileSync,
-} from "node:fs";
-import { dirname, resolve } from "node:path";
-import { fileURLToPath } from "node:url";
+} from 'node:fs';
+import { dirname, resolve } from 'node:path';
+import { fileURLToPath } from 'node:url';
 import {
   API_PORT,
   METRO_PORT,
@@ -24,42 +24,42 @@ import {
   getLanIp,
   isPortBusy,
   isWsl,
-} from "./lib/network.mjs";
+} from './lib/network.mjs';
 
-const ROOT = resolve(dirname(fileURLToPath(import.meta.url)), "..");
-const BACK = resolve(ROOT, "backend");
-const MOBILE = resolve(ROOT, "mobile");
-const LOG_DIR = resolve(ROOT, ".logs");
-const RESET = "\x1b[0m";
+const ROOT = resolve(dirname(fileURLToPath(import.meta.url)), '..');
+const BACK = resolve(ROOT, 'backend');
+const MOBILE = resolve(ROOT, 'mobile');
+const LOG_DIR = resolve(ROOT, '.logs');
+const RESET = '\x1b[0m';
 
 const SERVICES = [
   {
-    name: "api",
+    name: 'api',
     cwd: BACK,
-    cmd: ["npm", "run", "start:dev"],
+    cmd: ['npm', 'run', 'start:dev'],
     env: { PORT: String(API_PORT) },
-    color: "\x1b[32m",
+    color: '\x1b[32m',
   },
   {
-    name: "studio",
+    name: 'studio',
     cwd: BACK,
     cmd: [
-      "npx",
-      "prisma",
-      "studio",
-      "--port",
+      'npx',
+      'prisma',
+      'studio',
+      '--port',
       String(STUDIO_PORT),
-      "--browser",
-      "none",
+      '--browser',
+      'none',
     ],
     env: {},
-    color: "\x1b[35m",
+    color: '\x1b[35m',
   },
 ];
 
-const [mode = "all", ...extraArgs] = process.argv.slice(2);
-if (!["all", "back", "mobile"].includes(mode)) {
-  console.error("Uso: node scripts/dev.mjs [all|back|mobile] [flags do expo]");
+const [mode = 'all', ...extraArgs] = process.argv.slice(2);
+if (!['all', 'back', 'mobile'].includes(mode)) {
+  console.error('Uso: node scripts/dev.mjs [all|back|mobile] [flags do expo]');
   process.exit(1);
 }
 mkdirSync(LOG_DIR, { recursive: true });
@@ -70,45 +70,74 @@ let mobileChild = null;
 function stopBack() {
   for (const c of backChildren) {
     try {
-      process.kill(-c.pid, "SIGTERM");
+      process.kill(-c.pid, 'SIGTERM');
     } catch {
       /* já encerrou */
     }
   }
   backChildren.length = 0;
 }
-process.on("exit", stopBack);
-process.on("SIGTERM", () => {
+process.on('exit', stopBack);
+process.on('SIGTERM', () => {
   stopBack();
   process.exit(0);
 });
-process.on("SIGINT", () => {
+process.on('SIGINT', () => {
   stopBack();
   // com o Expo em primeiro plano, ele recebe o Ctrl+C e encerra sozinho
   if (!mobileChild) process.exit(0);
 });
 
 /** Roda um comando até o fim; se falhar, aborta tudo com a mensagem. */
-function step(title, cmd, args, cwd = ROOT) {
+function step(title, cmd, args, cwd = ROOT, onFail) {
   console.log(`▶ ${title}`);
-  const r = spawnSync(cmd, args, { cwd, stdio: "inherit" });
+  const r = spawnSync(cmd, args, { cwd, stdio: 'inherit' });
   if (r.status !== 0) {
     console.error(`✖ Falhou: ${title}`);
+    onFail?.();
     process.exit(r.status ?? 1);
   }
+}
+
+/** Lê um arquivo .env simples (CHAVE=valor) sem mostrar nada na tela. */
+function readEnv(file) {
+  const env = {};
+  for (const line of readFileSync(file, 'utf8').split(/\r?\n/)) {
+    const m = /^\s*([A-Za-z_][A-Za-z0-9_]*)\s*=\s*(.*?)\s*$/.exec(line);
+    if (m) env[m[1]] = m[2].replace(/^(['"])(.*)\1$/, '$2');
+  }
+  return env;
 }
 
 /** Confere pré-requisitos e explica em português o que falta. */
 function preflight() {
   const missing = [];
-  if (!existsSync(resolve(ROOT, ".env")))
-    missing.push(".env (raiz)  -> copie de .env.example e preencha");
-  if (!existsSync(resolve(BACK, ".env")))
-    missing.push("backend/.env  -> copie de backend/.env.example e preencha");
+  if (!existsSync(resolve(ROOT, '.env')))
+    missing.push('.env (raiz)  -> copie de .env.example e preencha');
+  if (!existsSync(resolve(BACK, '.env')))
+    missing.push('backend/.env  -> copie de backend/.env.example e preencha');
   if (missing.length) {
     console.error(
-      "✖ Faltam arquivos de configuração:\n  - " + missing.join("\n  - "),
+      '✖ Faltam arquivos de configuração:\n  - ' + missing.join('\n  - '),
     );
+    process.exit(1);
+  }
+
+  // O Postgres do Docker recusa subir (o container "sai com código 1") se
+  // usuário/senha/banco estiverem vazios no .env da raiz.
+  const root = readEnv(resolve(ROOT, '.env'));
+  const empty = ['POSTGRES_USER', 'POSTGRES_PASSWORD', 'POSTGRES_DB'].filter(
+    (k) => !root[k],
+  );
+  if (empty.length) {
+    console.error(
+      `✖ No .env da raiz estão vazios ou ausentes: ${empty.join(', ')}.\n` +
+        '  Preencha (veja .env.example) e use os mesmos dados no DATABASE_URL do backend/.env.',
+    );
+    process.exit(1);
+  }
+  if (!readEnv(resolve(BACK, '.env')).DATABASE_URL) {
+    console.error('✖ DATABASE_URL está vazio no backend/.env.');
     process.exit(1);
   }
 }
@@ -119,10 +148,10 @@ async function checkPorts(ports) {
     if (await isPortBusy(port)) busy.push(`${name} (${port})`);
   if (busy.length) {
     console.error(
-      `✖ Porta em uso: ${busy.join(", ")}.\n` +
+      `✖ Porta em uso: ${busy.join(', ')}.\n` +
         '  Tem outro projeto rodando (ex: Enfermaria) ou um "npm run dev" antigo?\n' +
-        "  Pare com: npm run stop   (cuidado: derruba qualquer coisa nessas portas)\n" +
-        "  Ou troque as portas: API_PORT=3001 METRO_PORT=8082 npm run dev",
+        '  Pare com: npm run stop   (cuidado: derruba qualquer coisa nessas portas)\n' +
+        '  Ou troque as portas: API_PORT=3001 METRO_PORT=8082 npm run dev',
     );
     process.exit(1);
   }
@@ -130,13 +159,13 @@ async function checkPorts(ports) {
 
 /** Instala dependências só se a pasta node_modules ainda não existir. */
 function ensureDeps(dir, label) {
-  if (existsSync(resolve(dir, "node_modules"))) return;
-  step(`Instalando dependências (${label})`, "npm", ["install"], dir);
+  if (existsSync(resolve(dir, 'node_modules'))) return;
+  step(`Instalando dependências (${label})`, 'npm', ['install'], dir);
 }
 
 function startBack(toFile) {
   const out = toFile
-    ? createWriteStream(resolve(LOG_DIR, "back.log"), { flags: "w" })
+    ? createWriteStream(resolve(LOG_DIR, 'back.log'), { flags: 'w' })
     : process.stdout;
 
   for (const { name, cwd, cmd, env, color } of SERVICES) {
@@ -145,21 +174,21 @@ function startBack(toFile) {
       cwd,
       env: { ...process.env, ...env },
       detached: true, // grupo próprio: dá para encerrar a árvore inteira
-      stdio: ["ignore", "pipe", "pipe"],
+      stdio: ['ignore', 'pipe', 'pipe'],
     });
     backChildren.push(child);
 
     const tag = toFile ? `[${name}]` : `${color}[${name}]${RESET}`;
     for (const stream of [child.stdout, child.stderr]) {
-      let buffer = "";
-      stream.on("data", (chunk) => {
+      let buffer = '';
+      stream.on('data', (chunk) => {
         buffer += chunk.toString();
-        const lines = buffer.split("\n");
-        buffer = lines.pop() ?? "";
+        const lines = buffer.split('\n');
+        buffer = lines.pop() ?? '';
         for (const line of lines) out.write(`${tag} ${line}\n`);
       });
     }
-    child.on("exit", (code) => {
+    child.on('exit', (code) => {
       if (code) console.error(`⚠ ${name} encerrou com código ${code}`);
     });
   }
@@ -186,74 +215,87 @@ function startMobile() {
   const changed = ensurePortProxy();
   const apiUrl = `http://${lanIp}:${API_PORT}`;
 
-  const lastIpFile = resolve(LOG_DIR, "last-ip");
+  const lastIpFile = resolve(LOG_DIR, 'last-ip');
   const ipChanged =
-    !existsSync(lastIpFile) || readFileSync(lastIpFile, "utf8") !== lanIp;
+    !existsSync(lastIpFile) || readFileSync(lastIpFile, 'utf8') !== lanIp;
   writeFileSync(lastIpFile, lanIp);
 
   console.log(
-    `📶 IP da rede: ${lanIp}${ipChanged ? " (mudou, limpando cache)" : ""}${isWsl() ? " [WSL]" : ""}`,
+    `📶 IP da rede: ${lanIp}${ipChanged ? ' (mudou, limpando cache)' : ''}${isWsl() ? ' [WSL]' : ''}`,
   );
-  if (changed) console.log("🔁 Port proxy atualizado");
+  if (changed) console.log('🔁 Port proxy atualizado');
   console.log(`📱 API: ${apiUrl}   Swagger: ${apiUrl}/api\n`);
 
   // O pacote expo-dev-client faz o "expo start" puro abrir em modo Dev
   // Client; pro Expo Go precisa do --go.
-  const args = ["expo", "start"];
-  if (!extraArgs.includes("--dev-client") && !extraArgs.includes("--go"))
-    args.push("--go");
-  if (ipChanged && !extraArgs.includes("--clear")) args.push("--clear");
-  args.push("--port", String(METRO_PORT), ...extraArgs);
+  const args = ['expo', 'start'];
+  if (!extraArgs.includes('--dev-client') && !extraArgs.includes('--go'))
+    args.push('--go');
+  if (ipChanged && !extraArgs.includes('--clear')) args.push('--clear');
+  args.push('--port', String(METRO_PORT), ...extraArgs);
 
-  mobileChild = spawn("npx", args, {
+  mobileChild = spawn('npx', args, {
     cwd: MOBILE,
-    stdio: "inherit", // mantém o QR code e as teclas do Expo
+    stdio: 'inherit', // mantém o QR code e as teclas do Expo
     env: {
       ...process.env,
       EXPO_PUBLIC_API_URL: apiUrl,
       REACT_NATIVE_PACKAGER_HOSTNAME: lanIp,
     },
   });
-  mobileChild.on("exit", (code) => {
+  mobileChild.on('exit', (code) => {
     stopBack();
     process.exit(code ?? 0);
   });
 }
 
 async function main() {
-  if (mode !== "mobile") {
+  if (mode !== 'mobile') {
     preflight();
     await checkPorts([
-      ["API", API_PORT],
-      ["Prisma Studio", STUDIO_PORT],
-      ...(mode === "all" ? [["Metro/Expo", METRO_PORT]] : []),
+      ['API', API_PORT],
+      ['Prisma Studio', STUDIO_PORT],
+      ...(mode === 'all' ? [['Metro/Expo', METRO_PORT]] : []),
     ]);
-    ensureDeps(BACK, "backend");
-    step("Subindo o banco (Docker)", "docker", [
-      "compose",
-      "up",
-      "-d",
-      "--wait",
-    ]);
-    step("Gerando o Prisma Client", "npx", ["prisma", "generate"], BACK);
-    step("Aplicando migrations", "npx", ["prisma", "migrate", "deploy"], BACK);
-    startBack(mode === "all"); // no "all" os logs vão para .logs/back.log
-    if (mode === "back") {
+    ensureDeps(BACK, 'backend');
+    step(
+      'Subindo o banco (Docker)',
+      'docker',
+      ['compose', 'up', '-d', '--wait'],
+      ROOT,
+      () => {
+        console.error('\n--- últimas linhas do log do banco ---');
+        spawnSync('docker', ['compose', 'logs', 'db', '--tail', '20'], {
+          cwd: ROOT,
+          stdio: 'inherit',
+        });
+        console.error(
+          '--------------------------------------\n' +
+            'Causas comuns: senha/usuário/banco vazios no .env da raiz; volume antigo\n' +
+            'criado com outra senha (apague com: docker compose down -v — APAGA os dados\n' +
+            'locais do banco); porta 5432 ocupada (defina DB_PORT=5433 no .env).',
+        );
+      },
+    );
+    step('Gerando o Prisma Client', 'npx', ['prisma', 'generate'], BACK);
+    step('Aplicando migrations', 'npx', ['prisma', 'migrate', 'deploy'], BACK);
+    startBack(mode === 'all'); // no "all" os logs vão para .logs/back.log
+    if (mode === 'back') {
       console.log(
         '✅ Back rodando. Ctrl+C para parar (o banco continua; use "npm run stop").',
       );
       return;
     }
   } else {
-    await checkPorts([["Metro/Expo", METRO_PORT]]);
+    await checkPorts([['Metro/Expo', METRO_PORT]]);
   }
 
-  ensureDeps(MOBILE, "mobile");
-  if (mode === "all") {
-    console.log("⏳ Aguardando a API...");
+  ensureDeps(MOBILE, 'mobile');
+  if (mode === 'all') {
+    console.log('⏳ Aguardando a API...');
     const ok = await waitForApi();
     console.log(
-      ok ? "✅ API no ar" : "⚠ API não respondeu em 90s. Veja: npm run logs",
+      ok ? '✅ API no ar' : '⚠ API não respondeu em 90s. Veja: npm run logs',
     );
   }
   startMobile();
