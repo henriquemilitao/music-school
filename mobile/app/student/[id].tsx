@@ -7,6 +7,7 @@ import {
   TouchableOpacity,
   Alert,
 } from 'react-native';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import {
   useLocalSearchParams,
@@ -408,6 +409,7 @@ function LessonMonthGroup({
 // ─── Tela principal ───────────────────────────────────────────────────
 
 export default function AdminStudentDetail() {
+  const insets = useSafeAreaInsets();
   const { id } = useLocalSearchParams<{ id: string }>();
   const router = useRouter();
   const queryClient = useQueryClient();
@@ -558,7 +560,10 @@ export default function AdminStudentDetail() {
     : undefined;
 
   return (
-    <ScrollView className="flex-1 bg-[#F5F1EA]">
+    <ScrollView
+      className="flex-1 bg-[#F5F1EA]"
+      contentContainerStyle={{ paddingBottom: insets.bottom }}
+    >
       <Stack.Screen options={{ headerShown: false }} />
 
       {/* Header no mesmo padrão de lesson/[id] e payment/[id] */}

@@ -11,7 +11,6 @@ import {
   ActivityIndicator,
   TouchableOpacity,
   KeyboardAvoidingView,
-  Platform,
   BackHandler,
 } from 'react-native';
 import {
@@ -21,6 +20,7 @@ import {
   useRouter,
 } from 'expo-router';
 import { usePreventRemove } from '@react-navigation/native';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import {
   Check,
@@ -50,6 +50,7 @@ import {
   makeupLessonVisual,
   type LessonStatus,
 } from '../../lib/status';
+import { useKeyboardVisible } from '../../lib/useKeyboardVisible';
 import { useLessonStatus } from '../../lib/useLessonStatus';
 import { Card } from '../../components/ui/Card';
 import { InfoRow } from '../../components/ui/InfoRow';
@@ -180,6 +181,8 @@ export default function AdminLessonDetail() {
   const router = useRouter();
   const navigation = useNavigation();
   const queryClient = useQueryClient();
+  const insets = useSafeAreaInsets();
+  const keyboardVisible = useKeyboardVisible();
 
   const [isEditing, setIsEditing] = useState(false);
   const [draft, setDraft] = useState('');
@@ -307,10 +310,7 @@ export default function AdminLessonDetail() {
   // no topo (nunca fica escondido atrás do teclado) ──────────────────────
   if (isEditing) {
     return (
-      <KeyboardAvoidingView
-        className="flex-1 bg-[#F5F1EA]"
-        behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
-      >
+      <KeyboardAvoidingView className="flex-1 bg-[#F5F1EA]" behavior="padding">
         <Stack.Screen options={{ headerShown: false }} />
         <ScreenHeader
           title="Anotações da aula"
@@ -323,7 +323,10 @@ export default function AdminLessonDetail() {
             />
           }
         />
-        <View className="flex-1 px-5 pt-4 pb-4">
+        <View
+          className="flex-1 px-5 pt-4"
+          style={{ paddingBottom: keyboardVisible ? 12 : insets.bottom + 16 }}
+        >
           <Text className="text-xs text-gray-500 mb-3 px-1" numberOfLines={1}>
             {lesson.student.name} · {formatLessonShortDate(lesson.scheduledAt)}{' '}
             · {formatLessonTime(lesson.scheduledAt)}
@@ -352,7 +355,10 @@ export default function AdminLessonDetail() {
   );
 
   return (
-    <ScrollView className="flex-1 bg-[#F5F1EA]">
+    <ScrollView
+      className="flex-1 bg-[#F5F1EA]"
+      contentContainerStyle={{ paddingBottom: insets.bottom }}
+    >
       <Stack.Screen options={{ headerShown: false }} />
       <ScreenHeader title="Detalhes da aula" />
 

@@ -1,4 +1,5 @@
 import { View, Text, ScrollView, ActivityIndicator } from 'react-native';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { useLocalSearchParams, Stack, useFocusEffect } from 'expo-router';
 import { Clock, User, Music, StickyNote } from 'lucide-react-native';
@@ -32,6 +33,7 @@ type Lesson = {
 };
 
 export default function LessonDetail() {
+  const insets = useSafeAreaInsets();
   const { id } = useLocalSearchParams<{ id: string }>();
   const queryClient = useQueryClient();
 
@@ -97,7 +99,10 @@ export default function LessonDetail() {
   const config = lessonStatusConfig(effectiveStatus, lesson.isMakeup);
 
   return (
-    <ScrollView className="flex-1 bg-[#F5F1EA]">
+    <ScrollView
+      className="flex-1 bg-[#F5F1EA]"
+      contentContainerStyle={{ paddingBottom: insets.bottom }}
+    >
       <Stack.Screen options={{ headerShown: false }} />
       <ScreenHeader title="Detalhes da aula" />
 
