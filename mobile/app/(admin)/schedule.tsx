@@ -14,6 +14,8 @@ import { ChevronLeft, ChevronRight, CalendarDays } from 'lucide-react-native';
 import DateTimePicker from '@react-native-community/datetimepicker';
 import { api } from '../../lib/api';
 import { formatInstrument } from '../../lib/instrument';
+import { adminLessonKeys } from '../../lib/queryKeys';
+import { NotesIndicator } from '../../components/lesson/NotesIndicator';
 
 // ─── Tipos ────────────────────────────────────────────────────────────
 
@@ -22,6 +24,7 @@ type LessonOfDay = {
   scheduledAt: string;
   status: 'SCHEDULED' | 'COMPLETED' | 'CANCELLED';
   isMakeup: boolean;
+  notes: string | null;
   student: { id: string; name: string; instrument: string | null };
   teacher: { user: { name: string } } | null;
 };
@@ -43,6 +46,13 @@ function addDays(date: Date, amount: number) {
   const next = new Date(date);
   next.setDate(next.getDate() + amount);
   return next;
+}
+
+// Início e fim do dia selecionado no fuso do aparelho, em ISO/UTC — é o
+// que o GET /lessons/day espera (o backend só compara instantes).
+function dayRangeIso(date: Date) {
+  const start = new Date(date.getFullYear(), date.getMonth(), date.getDate());
+  return { start: start.toISOString(), end: addDays(start, 1).toISOString() };
 }
 
 function formatHeaderDate(date: Date) {
@@ -112,7 +122,7 @@ function LessonCard({
         shadowRadius: 4,
         elevation: 1,
       }}
-      onPress={() => router.push(`/student/${lesson.student.id}`)}
+      onPress={() => router.push(`/admin-lesson/${lesson.id}`)}
     >
       <View className="items-center pr-3.5 mr-3.5" style={{ minWidth: 56 }}>
         <Text
@@ -139,9 +149,30 @@ function LessonCard({
         {lesson.isMakeup && (
           <Text className="text-[11px] text-[#B08D57] mt-0.5">Reposição</Text>
         )}
+        {lesson.notes && <NotesIndicator />}
       </View>
       <Badge label={cfg.label} bg={cfg.bg} color={cfg.text} />
     </TouchableOpacity>
+  );
+}
+
+function ErrorState({ onRetry }: { onRetry: () => void }) {
+  return (
+    <View
+      className="items-center py-10 bg-white rounded-2xl px-6"
+      style={{ borderWidth: 1, borderColor: 'rgba(0,0,0,0.06)' }}
+    >
+      <Text className="text-sm text-red-500 text-center">
+        Não foi possível carregar a agenda
+      </Text>
+      <TouchableOpacity
+        onPress={onRetry}
+        className="mt-3 rounded-full px-4 py-2"
+        style={{ borderWidth: 1, borderColor: 'rgba(0,0,0,0.08)' }}
+      >
+        <Text className="text-sm font-medium">Tentar novamente</Text>
+      </TouchableOpacity>
+    </View>
   );
 }
 
@@ -172,11 +203,16 @@ export default function AdminSchedule() {
 
   const dateKey = toDateKey(selectedDate);
 
-  const { data: lessons, isLoading } = useQuery({
-    queryKey: ['admin-schedule', dateKey],
+  const {
+    data: lessons,
+    isLoading,
+    isError,
+    refetch,
+  } = useQuery({
+    queryKey: adminLessonKeys.scheduleDay(dateKey),
     queryFn: async () => {
       const response = await api.get<LessonOfDay[]>('/lessons/day', {
-        params: { date: dateKey },
+        params: dayRangeIso(selectedDate),
       });
       return response.data;
     },
@@ -318,7 +354,7 @@ export default function AdminSchedule() {
       )}
 
       {/* Contagem do dia */}
-      {!isLoading && (
+      {!isLoading && !isError && (
         <Text className="text-xs text-gray-400 mb-3 px-1">
           {sortedLessons.length}{' '}
           {sortedLessons.length === 1 ? 'aula agendada' : 'aulas agendadas'}
@@ -329,6 +365,8 @@ export default function AdminSchedule() {
       <View className="gap-2.5 pb-10">
         {isLoading ? (
           <ActivityIndicator color="#B08D57" style={{ marginTop: 24 }} />
+        ) : isError ? (
+          <ErrorState onRetry={() => refetch()} />
         ) : sortedLessons.length === 0 ? (
           <EmptyState />
         ) : (

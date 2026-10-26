@@ -11,3 +11,15 @@ export const paymentKeys = {
 export const dashboardKeys = {
   all: ['dashboard'] as const,
 };
+
+// Aulas na visão do admin. Depois de mudar uma aula, invalidar
+// `schedule()` atualiza a agenda de qualquer dia já carregado, e
+// `byStudent(id)` a aba "Aulas" do aluno.
+export const adminLessonKeys = {
+  detail: (id: string) => ['admin-lesson', id] as const,
+  schedule: () => ['admin-schedule'] as const,
+  scheduleDay: (dateKey: string) =>
+    [...adminLessonKeys.schedule(), dateKey] as const,
+  byStudent: (studentId: string) =>
+    ['admin-student-lessons', studentId] as const,
+};

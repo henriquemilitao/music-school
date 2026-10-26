@@ -1,23 +1,20 @@
-import {
-  View,
-  Text,
-  ScrollView,
-  ActivityIndicator,
-  TouchableOpacity,
-} from 'react-native';
+import { View, Text, ScrollView, ActivityIndicator } from 'react-native';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
-import {
-  useLocalSearchParams,
-  useRouter,
-  Stack,
-  useFocusEffect,
-} from 'expo-router';
-import { ArrowLeft, Clock, User, Music, StickyNote } from 'lucide-react-native';
+import { useLocalSearchParams, Stack, useFocusEffect } from 'expo-router';
+import { Clock, User, Music, StickyNote } from 'lucide-react-native';
 import { useCallback } from 'react';
 import { api } from '../../lib/api';
 import { formatInstrument } from '../../lib/instrument';
+import {
+  formatLessonFullDate,
+  formatLessonTimeRange,
+} from '../../lib/lessonFormat';
 import { lessonStatusConfig, getEffectiveLessonStatus } from '../../lib/status';
 import { StatusPill } from '../../components/ui/StatusPill';
+import { ScreenHeader } from '../../components/ui/ScreenHeader';
+import { Card } from '../../components/ui/Card';
+import { InfoRow } from '../../components/ui/InfoRow';
+import { LessonNotesCard } from '../../components/lesson/LessonNotesCard';
 import { useLessonStatus } from '../../lib/useLessonStatus';
 
 type Lesson = {
@@ -27,65 +24,14 @@ type Lesson = {
   status: 'SCHEDULED' | 'COMPLETED' | 'CANCELLED';
   isMakeup: boolean;
   notes: string | null;
+  notesUpdatedAt: string | null;
   cancelReason: string | null;
   teacher: { user: { name: string } } | null;
   student: { name: string; instrument: string | null };
 };
 
-function capitalize(s: string) {
-  return s.charAt(0).toUpperCase() + s.slice(1);
-}
-
-function formatFullDate(iso: string) {
-  const date = new Date(iso);
-  return capitalize(
-    date.toLocaleDateString('pt-BR', {
-      weekday: 'long',
-      day: 'numeric',
-      month: 'long',
-      year: 'numeric',
-    }),
-  );
-}
-
-function formatTime(iso: string) {
-  return new Date(iso).toLocaleTimeString('pt-BR', {
-    hour: '2-digit',
-    minute: '2-digit',
-  });
-}
-
-function addMinutes(iso: string, minutes: number) {
-  const date = new Date(iso);
-  date.setMinutes(date.getMinutes() + minutes);
-  return date.toISOString();
-}
-
-function InfoRow({
-  icon: Icon,
-  label,
-  value,
-}: {
-  icon: React.ComponentType<{ size?: number; color?: string }>;
-  label: string;
-  value: string;
-}) {
-  return (
-    <View className="flex-row items-center gap-3">
-      <View className="w-9 h-9 rounded-xl bg-[#F3EADD] items-center justify-center">
-        <Icon size={17} color="#B08D57" />
-      </View>
-      <View>
-        <Text className="text-xs text-gray-400">{label}</Text>
-        <Text className="text-sm font-medium">{value}</Text>
-      </View>
-    </View>
-  );
-}
-
 export default function LessonDetail() {
   const { id } = useLocalSearchParams<{ id: string }>();
-  const router = useRouter();
   const queryClient = useQueryClient();
 
   const {
@@ -130,10 +76,14 @@ export default function LessonDetail() {
 
   if (error || !lesson) {
     return (
-      <View className="flex-1 items-center justify-center bg-[#F5F1EA] px-6">
-        <Text className="text-red-500 text-center">
-          Não foi possível carregar essa aula
-        </Text>
+      <View className="flex-1 bg-[#F5F1EA]">
+        <Stack.Screen options={{ headerShown: false }} />
+        <ScreenHeader title="Detalhes da aula" />
+        <View className="flex-1 items-center justify-center px-6">
+          <Text className="text-red-500 text-center">
+            Não foi possível carregar essa aula
+          </Text>
+        </View>
       </View>
     );
   }
@@ -147,27 +97,14 @@ export default function LessonDetail() {
   return (
     <ScrollView className="flex-1 bg-[#F5F1EA]">
       <Stack.Screen options={{ headerShown: false }} />
-
-      <View
-        className="flex-row items-center px-4 pt-14 pb-3 bg-[#F5F1EA]"
-        style={{ borderBottomWidth: 1, borderBottomColor: 'rgba(0,0,0,0.04)' }}
-      >
-        <TouchableOpacity
-          className="w-9 h-9 rounded-full bg-white items-center justify-center mr-3"
-          style={{ borderWidth: 1, borderColor: 'rgba(0,0,0,0.05)' }}
-          onPress={() => router.back()}
-        >
-          <ArrowLeft size={18} color="#1A1A1A" />
-        </TouchableOpacity>
-        <Text className="text-base font-semibold">Detalhes da aula</Text>
-      </View>
+      <ScreenHeader title="Detalhes da aula" />
 
       <View className="px-5 pt-5 pb-6">
         <Text
           className="text-2xl"
           style={{ fontFamily: 'PlayfairDisplay_700Bold' }}
         >
-          {formatFullDate(lesson.scheduledAt)}
+          {formatLessonFullDate(lesson.scheduledAt)}
         </Text>
         <View style={{ marginTop: 8, alignSelf: 'flex-start' }}>
           <StatusPill {...config} />
@@ -175,21 +112,14 @@ export default function LessonDetail() {
       </View>
 
       <View className="px-5 gap-4 pb-10">
-        <View
-          className="bg-white rounded-2xl p-5 gap-4"
-          style={{
-            shadowColor: '#000',
-            shadowOpacity: 0.06,
-            shadowRadius: 8,
-            elevation: 2,
-          }}
-        >
+        <Card className="gap-4">
           <InfoRow
             icon={Clock}
             label="Horário"
-            value={`${formatTime(lesson.scheduledAt)} às ${formatTime(
-              addMinutes(lesson.scheduledAt, lesson.durationMinutes),
-            )}`}
+            value={formatLessonTimeRange(
+              lesson.scheduledAt,
+              lesson.durationMinutes,
+            )}
           />
           {lesson.teacher && (
             <InfoRow
@@ -205,18 +135,10 @@ export default function LessonDetail() {
               value={formatInstrument(lesson.student.instrument)}
             />
           )}
-        </View>
+        </Card>
 
         {lesson.status === 'CANCELLED' && lesson.cancelReason && (
-          <View
-            className="bg-white rounded-2xl p-5"
-            style={{
-              shadowColor: '#000',
-              shadowOpacity: 0.06,
-              shadowRadius: 8,
-              elevation: 2,
-            }}
-          >
+          <Card>
             <View className="flex-row items-center gap-2 mb-3">
               <StickyNote size={18} color="#DC2626" />
               <Text className="text-sm font-bold">Motivo da falta</Text>
@@ -224,27 +146,14 @@ export default function LessonDetail() {
             <Text className="text-gray-600 text-sm leading-5">
               {lesson.cancelReason}
             </Text>
-          </View>
+          </Card>
         )}
 
         {lesson.notes && (
-          <View
-            className="bg-white rounded-2xl p-5"
-            style={{
-              shadowColor: '#000',
-              shadowOpacity: 0.06,
-              shadowRadius: 8,
-              elevation: 2,
-            }}
-          >
-            <View className="flex-row items-center gap-2 mb-3">
-              <StickyNote size={18} color="#B08D57" />
-              <Text className="text-sm font-bold">Observações</Text>
-            </View>
-            <Text className="text-gray-600 text-sm leading-5">
-              {lesson.notes}
-            </Text>
-          </View>
+          <LessonNotesCard
+            notes={lesson.notes}
+            updatedAt={lesson.notesUpdatedAt}
+          />
         )}
       </View>
     </ScrollView>

@@ -14,6 +14,7 @@ import { formatInstrument } from '../../lib/instrument';
 import { useStudent } from '../../context/StudentContext';
 import { lessonStatusConfig, getEffectiveLessonStatus } from '../../lib/status';
 import { StatusPill } from '../../components/ui/StatusPill';
+import { NotesIndicator } from '../../components/lesson/NotesIndicator';
 import { useLessonStatus } from '../../lib/useLessonStatus';
 
 const RECENTLY_FINISHED_GRACE_MINUTES = 30; // precisa bater com backend e useLessonStatus
@@ -24,6 +25,7 @@ type Lesson = {
   durationMinutes: number; // NOVO — precisa vir do backend (já vem, só faltava tipar)
   status: 'SCHEDULED' | 'COMPLETED' | 'CANCELLED';
   isMakeup: boolean;
+  notes: string | null;
   teacher: { user: { name: string } } | null;
   student: { name: string; instrument: string | null };
 };
@@ -140,6 +142,7 @@ function UpcomingLesson({ lesson }: { lesson: Lesson }) {
             />
           </View>
         )}
+        {lesson.notes && <NotesIndicator />}
       </View>
       {formatInstrument(lesson.student.instrument) && (
         <View className="rounded-full px-2.5 py-1 bg-[#F3EADD]">
@@ -172,6 +175,7 @@ function HistoryRow({ lesson }: { lesson: Lesson }) {
           {formatTime(lesson.scheduledAt)}
           {lesson.teacher ? ` · ${lesson.teacher.user.name}` : ''}
         </Text>
+        {lesson.notes && <NotesIndicator />}
       </View>
       <View style={{ flexShrink: 0 }}>
         <StatusPill {...lessonStatusConfig(lesson.status, lesson.isMakeup)} />
