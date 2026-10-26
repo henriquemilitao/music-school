@@ -7,6 +7,7 @@
 // Flags extras vão pro Expo:  npm run dev:mobile -- --clear
 // Pra abrir em Development Build (em vez de Expo Go): ... -- --dev-client
 import { spawn, spawnSync } from 'node:child_process';
+import { createHash } from 'node:crypto';
 import {
   createWriteStream,
   existsSync,
@@ -157,10 +158,31 @@ async function checkPorts(ports) {
   }
 }
 
-/** Instala dependências só se a pasta node_modules ainda não existir. */
+/**
+ * Instala dependências quando a pasta node_modules não existe OU quando o
+ * package-lock.json mudou desde a última instalação feita por este script
+ * (ex: você trocou de branch e entrou uma dependência nova).
+ */
 function ensureDeps(dir, label) {
-  if (existsSync(resolve(dir, 'node_modules'))) return;
+  const lockFile = resolve(dir, 'package-lock.json');
+  const stampFile = resolve(LOG_DIR, `deps-${label}.hash`);
+  const hashLock = () =>
+    existsSync(lockFile)
+      ? createHash('sha1').update(readFileSync(lockFile)).digest('hex')
+      : '';
+  const lockHash = hashLock();
+  const lastHash = existsSync(stampFile)
+    ? readFileSync(stampFile, 'utf8')
+    : null;
+  const installed = existsSync(resolve(dir, 'node_modules'));
+
+  // Sem registro anterior (primeira vez) também instala: num projeto já em
+  // dia o `npm install` termina em poucos segundos.
+  if (installed && lastHash === lockHash) return;
+
   step(`Instalando dependências (${label})`, 'npm', ['install'], dir);
+  // o npm pode reescrever o lock; registra o hash de DEPOIS da instalação
+  writeFileSync(stampFile, hashLock());
 }
 
 function startBack(toFile) {

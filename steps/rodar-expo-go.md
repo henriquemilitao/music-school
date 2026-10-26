@@ -79,3 +79,16 @@ da raiz, rode `docker compose down -v` e tente de novo.
 
 Cuidado: o `backend/.env` local deve usar chaves de TESTE (Mercado Pago etc.) e
 `RESEND_API_KEY` de teste/vazia de verdade, nunca as de produção.
+
+## Branches (depois de unir o app na main)
+A branch `mobile` (app em produção) foi mesclada na base de trabalho, então
+back, banco e app vivem juntos na mesma branch. Fluxo planejado:
+1. `npm run dev` (Expo Go + back local) -> testar.
+2. Build de preview (`eas build --profile preview`): usa a API de staging
+   (`music-school-staging` no Railway, definida no `eas.json`).
+3. Se estiver ok, merge na `main` e build de production.
+
+Aviso: se o `mobile/` rodar SEM `EXPO_PUBLIC_API_URL`, o `lib/api.ts` cai na
+URL de PRODUÇÃO do Railway. Por isso use sempre `npm run dev` / `dev:mobile`
+(eles definem a URL local). O `npm run start:railway` (em `mobile/`) existe
+justamente pra conectar o dev build na API do Railway.
