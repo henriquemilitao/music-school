@@ -1,4 +1,5 @@
 // lib/notifications.ts
+import { isRunningInExpoGo } from 'expo';
 import * as Notifications from 'expo-notifications';
 import * as Device from 'expo-device';
 import Constants from 'expo-constants';
@@ -17,6 +18,14 @@ Notifications.setNotificationHandler({
 export async function registerForPushNotificationsAsync(): Promise<
   string | null
 > {
+  // Push remoto não existe no Expo Go (removido no SDK 53). Pula o
+  // registro pra não gerar erro vermelho — o resto do app funciona
+  // normal. Pra testar push, use um Development Build.
+  if (isRunningInExpoGo()) {
+    console.log('Expo Go: push notifications desativadas (use dev build).');
+    return null;
+  }
+
   if (Platform.OS === 'android') {
     await Notifications.setNotificationChannelAsync('default', {
       name: 'default',
@@ -76,6 +85,8 @@ export async function registerForPushNotificationsAsync(): Promise<
 export function subscribeToPushTokenChanges(
   onTokenChange: (token: string) => void,
 ) {
+  if (isRunningInExpoGo()) return () => {};
+
   const subscription = Notifications.addPushTokenListener((event) => {
     console.log('Push token mudou, revalidando:', event.data);
     onTokenChange(event.data);
