@@ -263,7 +263,11 @@ model Lesson {
   scheduledAt     DateTime // data e hora da aula
   durationMinutes Int          @default(60)
   status          LessonStatus @default(SCHEDULED)
-  notes           String? // observações pós-aula
+  // Anotações da aula (o que foi trabalhado, o que estudar em casa).
+  // Escritas pelo admin/professor e VISÍVEIS pro aluno no app — não
+  // usar pra observação interna.
+  notes           String?
+  notesUpdatedAt  DateTime? // última edição das anotações (null = aula sem anotação)
 
   isMakeup     Boolean @default(false) // true = aula de reposição
   cancelReason String? // motivo do cancelamento

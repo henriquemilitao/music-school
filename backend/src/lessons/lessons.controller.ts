@@ -107,11 +107,11 @@ export class LessonsController {
     return this.lessonsService.findOne(id, user.schoolId);
   }
 
-  // PATCH /lessons/:id — atualiza status, notas ou cancela
+  // PATCH /lessons/:id — atualiza status, anotações ou cancela
   @Patch(':id')
   @Roles(Role.ADMIN)
   @ApiOperation({
-    summary: 'Atualizar aula: status, notas, cancelamento (admin)',
+    summary: 'Atualizar aula: status, anotações, cancelamento (admin)',
   })
   update(
     @Param('id') id: string,
@@ -121,9 +121,12 @@ export class LessonsController {
     return this.lessonsService.update(id, dto, user.schoolId);
   }
 
-  // GET /lessons/student?status=SCHEDULED&studentId=xxx — aulas do aluno logado
+  // GET /lessons/student/:id?status=SCHEDULED — aulas de um aluno da escola.
+  // Só admin: devolve as anotações das aulas, que são do aluno e não
+  // podem vazar pra outro aluno logado (use /lessons/my no app do aluno).
   @Get('student/:id')
-  @ApiOperation({ summary: 'Listar aulas de um aluno' })
+  @Roles(Role.ADMIN)
+  @ApiOperation({ summary: 'Listar aulas de um aluno (admin)' })
   @ApiQuery({ name: 'status', enum: LessonStatus, required: false })
   findStudentLessons(
     @CurrentUser() user: AuthUser,

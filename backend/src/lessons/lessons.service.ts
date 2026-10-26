@@ -7,8 +7,16 @@ import {
 import { PrismaService } from '../prisma/prisma.service';
 import { CreateLessonDto } from './dto/create-lesson.dto';
 import { UpdateLessonDto } from './dto/update-lesson.dto';
-import { LessonStatus } from '@prisma/client';
-import { calculateAge } from 'src/common/utils/age.util';
+import { LessonStatus, Prisma } from '@prisma/client';
+import { calculateAge } from '../common/utils/age.util';
+
+// Formato do detalhe da aula na visão do admin. O PATCH devolve o mesmo
+// formato, assim o app atualiza a tela direto com a resposta do save.
+const LESSON_DETAIL_INCLUDE = {
+  student: { include: { user: { select: { name: true, email: true } } } },
+  teacher: { include: { user: { select: { name: true } } } },
+  enrollment: { select: { id: true, weekDay: true, startTime: true } },
+} satisfies Prisma.LessonInclude;
 
 @Injectable()
 export class LessonsService {
@@ -30,7 +38,8 @@ export class LessonsService {
         scheduledAt: new Date(dto.scheduledAt),
         durationMinutes: dto.durationMinutes ?? 60,
         isMakeup: dto.isMakeup ?? false,
-        notes: dto.notes,
+        notes: dto.notes || null,
+        notesUpdatedAt: dto.notes ? new Date() : null,
         status: LessonStatus.SCHEDULED,
       },
       include: {
@@ -44,11 +53,7 @@ export class LessonsService {
   async findOne(lessonId: string, schoolId: string) {
     const lesson = await this.prisma.lesson.findFirst({
       where: { id: lessonId, schoolId },
-      include: {
-        student: { include: { user: { select: { name: true, email: true } } } },
-        teacher: { include: { user: { select: { name: true } } } },
-        enrollment: { select: { id: true, weekDay: true, startTime: true } },
-      },
+      include: LESSON_DETAIL_INCLUDE,
     });
     if (!lesson) throw new NotFoundException('Aula não encontrada');
     return lesson;
@@ -99,7 +104,7 @@ export class LessonsService {
     });
   }
 
-  // ─── Admin: atualiza status/notas/cancelamento ────────────────────────
+  // ─── Admin: atualiza status/anotações/cancelamento ────────────────────
   async update(lessonId: string, dto: UpdateLessonDto, schoolId: string) {
     const lesson = await this.prisma.lesson.findFirst({
       where: { id: lessonId, schoolId },
@@ -111,17 +116,23 @@ export class LessonsService {
       throw new BadRequestException('Informe o motivo do cancelamento');
     }
 
+    // Anotações: undefined = não veio no body (não mexe); "" ou null =
+    // apagar. O DTO já faz o trim. notesUpdatedAt só muda quando o texto
+    // muda de verdade — salvar o mesmo texto de novo não "atualiza" a data
+    // que o aluno vê.
+    const nextNotes = dto.notes === undefined ? undefined : dto.notes || null;
+    const notesChanged = nextNotes !== undefined && nextNotes !== lesson.notes;
+
     return this.prisma.lesson.update({
       where: { id: lessonId },
       data: {
         status: dto.status,
-        notes: dto.notes,
         cancelReason: dto.cancelReason,
+        ...(notesChanged
+          ? { notes: nextNotes, notesUpdatedAt: nextNotes ? new Date() : null }
+          : {}),
       },
-      include: {
-        student: { include: { user: { select: { name: true } } } },
-        teacher: { include: { user: { select: { name: true } } } },
-      },
+      include: LESSON_DETAIL_INCLUDE,
     });
   }
 
