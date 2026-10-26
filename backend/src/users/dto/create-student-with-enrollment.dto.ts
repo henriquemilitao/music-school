@@ -1,6 +1,8 @@
 // backend/src/users/dto/create-student-with-enrollment.dto.ts
 import {
   IsString,
+  IsNotEmpty,
+  MaxLength,
   IsOptional,
   IsEnum,
   IsDateString,
@@ -18,6 +20,8 @@ export class CreateStudentWithEnrollmentDto {
     example: 'João Silva',
   })
   @IsString()
+  @IsNotEmpty({ message: 'Informe o nome do aluno' })
+  @MaxLength(120)
   name!: string;
 
   @ApiPropertyOptional({

@@ -3,7 +3,9 @@ import {
   IsEmail,
   IsEnum,
   IsOptional,
+  IsNotEmpty,
   IsString,
+  MaxLength,
   ValidateNested,
   ArrayMinSize,
 } from 'class-validator';
@@ -18,6 +20,8 @@ export class CreateFullUserDto {
     example: 'Maria Silva',
   })
   @IsString()
+  @IsNotEmpty({ message: 'Informe o nome do titular' })
+  @MaxLength(120)
   name!: string;
 
   @ApiProperty({ example: 'maria@email.com' })

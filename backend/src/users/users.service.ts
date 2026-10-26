@@ -3,6 +3,7 @@ import {
   ConflictException,
   NotFoundException,
   ForbiddenException,
+  Logger,
 } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
 import { AuthService } from '../auth/auth.service';
@@ -16,6 +17,8 @@ import { EmailService } from 'src/email/email.service';
 
 @Injectable()
 export class UsersService {
+  private readonly logger = new Logger(UsersService.name);
+
   constructor(
     private prisma: PrismaService,
     private authService: AuthService,
@@ -145,6 +148,24 @@ export class UsersService {
       throw new ConflictException('Email já cadastrado');
     }
 
+    // Valida os professores ANTES de criar qualquer coisa — assim um
+    // teacherId inválido não deixa um cadastro pela metade.
+    const teacherIds = [
+      ...new Set(
+        dto.students
+          .map((s) => s.enrollment.teacherId)
+          .filter((id): id is string => !!id),
+      ),
+    ];
+    if (teacherIds.length) {
+      const found = await this.prisma.teacher.count({
+        where: { id: { in: teacherIds }, user: { schoolId } },
+      });
+      if (found !== teacherIds.length) {
+        throw new NotFoundException('Professor não encontrado');
+      }
+    }
+
     // 1. cria o User titular (sem senha — mesmo fluxo de convite de sempre)
     const user = await this.prisma.user.create({
       data: {
@@ -162,58 +183,62 @@ export class UsersService {
       student: Student;
       enrollment: Awaited<ReturnType<EnrollmentsService['create']>>;
     }> = [];
+    const createdStudentIds: string[] = [];
 
-    // 2. cria cada Student vinculado a esse User
-    for (const studentDto of dto.students) {
-      const student = await this.prisma.student.create({
-        data: {
-          userId: user.id,
-          name: studentDto.name,
-          birthDate: studentDto.birthDate
-            ? new Date(studentDto.birthDate)
-            : undefined,
-          instrument: studentDto.instrument,
-          notes: studentDto.notes,
-        },
-      });
+    try {
+      // 2. cria cada Student vinculado a esse User
+      for (const studentDto of dto.students) {
+        const student = await this.prisma.student.create({
+          data: {
+            userId: user.id,
+            name: studentDto.name,
+            birthDate: studentDto.birthDate
+              ? new Date(studentDto.birthDate)
+              : undefined,
+            instrument: studentDto.instrument,
+            notes: studentDto.notes,
+          },
+        });
+        createdStudentIds.push(student.id);
 
-      // 3. reaproveita o EnrollmentsService já existente — mesma
-      // lógica de gerar Lessons + Payment do primeiro período,
-      // idempotência, cálculo de weekDay a partir do startDate, etc.
-      // dentro de createFull(), no loop "for (const studentDto of dto.students)"
+        // 3. reaproveita o EnrollmentsService já existente — mesma
+        // lógica de gerar Lessons + Payment do primeiro período,
+        // idempotência, cálculo de weekDay a partir da data, etc.
+        const enrollment = await this.enrollmentsService.create(
+          {
+            studentId: student.id,
+            teacherId: studentDto.enrollment.teacherId,
+            startTime: studentDto.enrollment.startTime,
+            durationMinutes: studentDto.enrollment.durationMinutes,
+            monthlyAmount: studentDto.enrollment.monthlyAmount,
+            // Data da AULA (não do pagamento).
+            firstLessonDate: studentDto.enrollment.firstLessonDate,
+            // Vencimento customizado, se informado; senão o
+            // EnrollmentsService.create aplica o default (mesma data
+            // da primeira aula).
+            firstPaymentDueDate: studentDto.enrollment.firstPaymentDueDate,
+            // Rótulo manual do mês, se veio; senão é calculado lá dentro.
+            referenceMonth: studentDto.enrollment.referenceMonth,
+            firstPaymentPaid: studentDto.enrollment.firstPaymentPaid,
+          },
+          schoolId,
+        );
 
-      const enrollment = await this.enrollmentsService.create(
-        {
-          studentId: student.id,
-          teacherId: studentDto.enrollment.teacherId,
-          startTime: studentDto.enrollment.startTime,
-          durationMinutes: studentDto.enrollment.durationMinutes,
-          monthlyAmount: studentDto.enrollment.monthlyAmount,
-          // Renomeado de startDate — mesma ideia de antes, só nome mais
-          // claro (é a data da aula, não do pagamento).
-          firstLessonDate: studentDto.enrollment.firstLessonDate,
-          // NOVO — repassa o vencimento customizado, se o admin informou
-          // um na hora de cadastrar esse aluno específico. Se vier
-          // undefined, o EnrollmentsService.create aplica o default
-          // (mesma data de firstLessonDate) — não precisamos resolver
-          // esse default aqui, ele já é tratado lá dentro.
-          firstPaymentDueDate: studentDto.enrollment.firstPaymentDueDate,
-          // NOVO — mesma ideia: repassa o rótulo manual se veio, senão
-          // undefined e o default (mês do vencimento) é calculado lá
-          // dentro do EnrollmentsService.create.
-          referenceMonth: studentDto.enrollment.referenceMonth,
-          firstPaymentPaid: studentDto.enrollment.firstPaymentPaid,
-        },
-        schoolId,
-      );
-
-      createdStudents.push({ student, enrollment });
+        createdStudents.push({ student, enrollment });
+      }
+    } catch (error) {
+      // Os passos acima não rodam numa transação única (o
+      // EnrollmentsService usa o próprio acesso ao banco). Se algo
+      // falhar no meio, desfaz o que foi criado pra que o admin possa
+      // tentar de novo com o mesmo e-mail, sem sobrar usuário órfão.
+      await this.rollbackFullCreation(user.id, createdStudentIds);
+      throw error;
     }
 
     // 4. gera o link de convite, igual o create() simples já faz
     const inviteLink = await this.authService.createInvite(user.id);
 
-    await this.emailService.sendInviteEmail({
+    const emailSent = await this.emailService.sendInviteEmail({
       to: user.email,
       name: user.name,
       inviteLink,
@@ -229,7 +254,34 @@ export class UsersService {
       },
       students: createdStudents,
       inviteLink,
+      // false = cadastro feito, mas o e-mail não saiu (o app avisa o admin
+      // e ele pode reenviar o convite depois).
+      emailSent,
     };
+  }
+
+  // Apaga, em ordem de dependência, tudo que createFull() criou até aqui.
+  private async rollbackFullCreation(userId: string, studentIds: string[]) {
+    try {
+      await this.prisma.$transaction([
+        this.prisma.lesson.deleteMany({
+          where: { studentId: { in: studentIds } },
+        }),
+        this.prisma.payment.deleteMany({
+          where: { studentId: { in: studentIds } },
+        }),
+        this.prisma.enrollment.deleteMany({
+          where: { studentId: { in: studentIds } },
+        }),
+        this.prisma.student.deleteMany({ where: { userId } }),
+        this.prisma.user.delete({ where: { id: userId } }),
+      ]);
+    } catch (cleanupError) {
+      this.logger.error(
+        `Falha ao desfazer cadastro incompleto do usuário ${userId}`,
+        cleanupError,
+      );
+    }
   }
 
   async deleteAccount(userId: string, password: string) {

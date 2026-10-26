@@ -8,6 +8,7 @@ export class EmailService {
   private readonly resend: Resend;
   private readonly fromAddress: string;
   private readonly replyToAddress: string;
+  private readonly appDownloadUrl: string;
 
   constructor(private config: ConfigService) {
     this.resend = new Resend(this.config.getOrThrow<string>('RESEND_API_KEY'));
@@ -20,6 +21,13 @@ export class EmailService {
     this.replyToAddress = this.config.get<string>(
       'EMAIL_REPLY_TO',
       'pianissimaem@gmail.com',
+    );
+
+    // Link pra baixar/abrir o app (Play Store). Pode ser trocado por
+    // variável de ambiente sem mexer no código.
+    this.appDownloadUrl = this.config.get<string>(
+      'APP_DOWNLOAD_URL',
+      'https://play.google.com/store/apps/details?id=com.henrique_militao.pianissima',
     );
   }
 
@@ -100,40 +108,74 @@ export class EmailService {
     `;
   }
 
+  // Retorna true se o Resend aceitou o envio. Nunca lança: o chamador
+  // (criação de usuário) usa o booleano pra avisar o admin quando o e-mail
+  // não saiu, sem derrubar o cadastro.
   async sendInviteEmail(params: {
     to: string;
     name: string;
     inviteLink: string;
-  }) {
+  }): Promise<boolean> {
     try {
-      await this.resend.emails.send({
+      const { error } = await this.resend.emails.send({
         from: `Pianíssima <${this.fromAddress}>`,
         to: params.to,
         replyTo: this.replyToAddress,
         subject: 'Bem-vindo(a) ao Pianíssima — crie sua senha',
-        html: this.buildInviteEmailHtml(params.name, params.inviteLink),
+        html: this.buildInviteEmailHtml(
+          params.name,
+          params.inviteLink,
+          this.appDownloadUrl,
+        ),
       });
+      if (error) {
+        this.logger.error('Resend recusou o e-mail de convite', error);
+        return false;
+      }
+      return true;
     } catch (error) {
       // Mesmo padrão dos outros envios — não derruba a requisição
       // que criou o usuário só porque o e-mail falhou.
       this.logger.error('Falha ao enviar e-mail de convite', error);
+      return false;
     }
   }
 
-  private buildInviteEmailHtml(name: string, inviteLink: string): string {
+  private buildInviteEmailHtml(
+    name: string,
+    inviteLink: string,
+    appDownloadUrl: string,
+  ): string {
     return `
     <div style="font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; background: #f5f1ea; padding: 32px;">
       <div style="max-width: 480px; margin: 0 auto; background: white; border-radius: 16px; padding: 32px 24px;">
         <h1 style="font-size: 20px; color: #1a1a1a; margin-bottom: 8px;">Olá, ${name}!</h1>
         <p style="font-size: 14px; color: #374151; line-height: 1.6;">
-          Sua conta no Pianíssima foi criada. Toque no botão abaixo para definir sua senha e começar a usar o app.
+          Sua conta no Pianíssima foi criada. Siga os dois passos abaixo para começar a usar o app.
         </p>
-        <div style="text-align: center; margin: 28px 0;">
+
+        <p style="font-size: 13px; font-weight: bold; color: #b08d57; margin: 24px 0 0; text-transform: uppercase; letter-spacing: 1px;">
+          1. Crie sua senha
+        </p>
+        <div style="text-align: center; margin: 12px 0 8px;">
           <a href="${inviteLink}" style="background: #b08d57; color: white; padding: 14px 28px; border-radius: 12px; font-weight: bold; font-size: 15px; text-decoration: none; display: inline-block;">
             Criar minha senha
           </a>
         </div>
-        <p style="font-size: 13px; color: #9ca3af; line-height: 1.6;">
+
+        <p style="font-size: 13px; font-weight: bold; color: #b08d57; margin: 24px 0 0; text-transform: uppercase; letter-spacing: 1px;">
+          2. Acesse o app
+        </p>
+        <p style="font-size: 14px; color: #374151; line-height: 1.6; margin: 8px 0 0;">
+          Baixe o app na Play Store e entre com este e-mail e a senha que você acabou de criar.
+        </p>
+        <div style="text-align: center; margin: 12px 0 8px;">
+          <a href="${appDownloadUrl}" style="background: #1a1a1a; color: white; padding: 14px 28px; border-radius: 12px; font-weight: bold; font-size: 15px; text-decoration: none; display: inline-block;">
+            Baixar o app
+          </a>
+        </div>
+
+        <p style="font-size: 13px; color: #9ca3af; line-height: 1.6; margin-top: 24px;">
           Se você não esperava este e-mail, pode ignorá-lo com segurança.
         </p>
       </div>

@@ -5,7 +5,7 @@
 // direto numa tela — sempre passa por formatInstrument().
 
 export type InstrumentValue =
-  'VIOLAO' | 'BATERIA' | 'PIANO' | 'GUITARRA' | 'CAJON';
+  'VIOLAO' | 'BATERIA' | 'PIANO' | 'GUITARRA' | 'CAJON' | 'TECLADO' | 'BAIXO';
 
 export const INSTRUMENT_LABELS: Record<InstrumentValue, string> = {
   VIOLAO: 'Violão',
@@ -13,6 +13,8 @@ export const INSTRUMENT_LABELS: Record<InstrumentValue, string> = {
   PIANO: 'Piano',
   GUITARRA: 'Guitarra',
   CAJON: 'Cajon',
+  TECLADO: 'Teclado',
+  BAIXO: 'Baixo',
 };
 
 export const INSTRUMENT_OPTIONS: { value: InstrumentValue; label: string }[] = (

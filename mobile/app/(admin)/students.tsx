@@ -1,4 +1,4 @@
-import { useState, useMemo, useCallback } from 'react';
+import { useState, useCallback } from 'react';
 import {
   View,
   Text,
@@ -11,6 +11,7 @@ import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { useFocusEffect, useRouter } from 'expo-router';
 import {
   Search,
+  Plus,
   ChevronRight,
   Users,
   CheckCircle2,
@@ -403,15 +404,28 @@ export default function AdminStudents() {
 
   return (
     <ScrollView className="flex-1 bg-[#F5F1EA] px-5 pt-5">
-      <Text className="text-xs font-bold uppercase tracking-widest text-[#B08D57] mb-1">
-        Gestão
-      </Text>
-      <Text
-        className="text-2xl mb-4"
-        style={{ fontFamily: 'PlayfairDisplay_700Bold' }}
-      >
-        Alunos
-      </Text>
+      <View className="flex-row items-end justify-between mb-4">
+        <View>
+          <Text className="text-xs font-bold uppercase tracking-widest text-[#B08D57] mb-1">
+            Gestão
+          </Text>
+          <Text
+            className="text-2xl"
+            style={{ fontFamily: 'PlayfairDisplay_700Bold' }}
+          >
+            Alunos
+          </Text>
+        </View>
+        <TouchableOpacity
+          onPress={() => router.push('/new-student')}
+          className="flex-row items-center gap-1.5 rounded-full bg-[#B08D57] pl-3.5 pr-4 h-10"
+          accessibilityRole="button"
+          accessibilityLabel="Adicionar novo aluno"
+        >
+          <Plus size={16} color="#fff" />
+          <Text className="text-white text-sm font-semibold">Novo aluno</Text>
+        </TouchableOpacity>
+      </View>
 
       {/* Cards de resumo — clicáveis, funcionam como filtro de status */}
       <View className="flex-row gap-2.5 mb-2.5">
