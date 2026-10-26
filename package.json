@@ -8,6 +8,7 @@
     "dev:mobile": "node scripts/dev.mjs mobile",
     "db:up": "docker compose up -d --wait",
     "db:down": "docker compose down",
+    "db:restore": "node scripts/restore-dump.mjs",
     "logs": "tail -f .logs/back.log",
     "stop": "npx --yes kill-port 3000 5555 8081; docker compose down",
     "setup": "npm install --prefix backend && npm install --prefix mobile"

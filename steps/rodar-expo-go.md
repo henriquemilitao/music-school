@@ -54,3 +54,28 @@ Os dois usam as portas 3000 (API) e 8081 (Expo) — rode um de cada vez
 - Erro estranho de módulo nativo no Metro: o `mobile/node_modules` pode ter
   sido instalado pelo Windows. No WSL: `rm -rf mobile/node_modules && npm install --prefix mobile`.
 - WSL em modo `mirrored`: funciona (o script detecta e pula o port proxy).
+
+## Banco local igual à produção (restaurar dump)
+
+Os dumps ficam em `backups/` (pasta no `.gitignore` — têm dados reais, nunca
+commitar). Com o banco do Docker de pé:
+
+    npm run db:restore                        # usa backups/prod.dump
+    npm run db:restore -- backups/outro.dump
+    npm run db:restore -- --anon-names        # também troca nomes/notas por genéricos
+    DEV_PASSWORD=outra npm run db:restore     # senha dos usuários (padrão: senha123)
+
+O que ele faz: apaga o banco local -> restaura o dump -> limpa dados sensíveis
+-> `prisma migrate deploy` (aplica só o que a produção ainda não tem).
+
+Limpeza: e-mails de quem não é ADMIN viram `user-<id>@example.com`; telefones,
+push tokens, códigos/ids de Pix e convites/códigos de senha pendentes são
+apagados; todos os usuários ganham a mesma senha de dev. Assim o ambiente local
+não consegue mandar e-mail, push nem cobrança de verdade pra ninguém.
+
+Se o restore reclamar de "unsupported version", o dump foi feito por um Postgres
+mais novo: defina `POSTGRES_IMAGE_TAG=17-alpine` (a versão da produção) no `.env`
+da raiz, rode `docker compose down -v` e tente de novo.
+
+Cuidado: o `backend/.env` local deve usar chaves de TESTE (Mercado Pago etc.) e
+`RESEND_API_KEY` de teste/vazia de verdade, nunca as de produção.

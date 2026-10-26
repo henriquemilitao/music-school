@@ -1,6 +1,8 @@
 services:
   db:
-    image: postgres:15-alpine
+    # Versão do Postgres: padrão 15. Se o dump de produção foi feito por um
+    # Postgres mais novo, defina POSTGRES_IMAGE_TAG=17-alpine (por ex.) no .env.
+    image: postgres:${POSTGRES_IMAGE_TAG:-15-alpine}
     container_name: music-school-db
     ports:
       # Porta do host configurável via DB_PORT no .env (padrão 5432).

@@ -8,3 +8,8 @@ coverage/
 
 # logs do "npm run dev"
 .logs/
+
+# dumps do banco (têm dados reais de produção — NUNCA commitar)
+backups/
+*.dump
+*.sql.gz
