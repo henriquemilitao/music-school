@@ -43,3 +43,4 @@ yarn-error.*
 
 # Firebase
 *firebase-adminsdk*.json
+.env*.publish-bak
