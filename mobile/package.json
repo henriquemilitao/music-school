@@ -7,6 +7,7 @@
     "start:phone": "node scripts/start-with-ip.js",
     "start:devclient": "node scripts/start-with-ip.js --dev-client",
     "start:web": "node scripts/start-web-with-ip.js",
+    "start:railway": "expo start --dev-client",
     "android": "expo start --android",
     "ios": "expo start --ios",
     "web": "expo start --web"
@@ -29,6 +30,7 @@
     "expo-router": "~6.0.24",
     "expo-secure-store": "~15.0.8",
     "expo-status-bar": "~3.0.9",
+    "expo-updates": "~29.0.20",
     "lucide-react-native": "^1.28.0",
     "nativewind": "^4.2.6",
     "react": "19.1.0",

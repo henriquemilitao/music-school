@@ -1,21 +1,59 @@
 {
   "project_info": {
-    "project_number": "722205660558",
-    "project_id": "pianissima-music-school",
-    "storage_bucket": "pianissima-music-school.firebasestorage.app"
+    "project_number": "455819498590",
+    "project_id": "pianissima-v3",
+    "storage_bucket": "pianissima-v3.firebasestorage.app"
   },
   "client": [
     {
       "client_info": {
-        "mobilesdk_app_id": "1:722205660558:android:46644266886c2c696680df",
+        "mobilesdk_app_id": "1:455819498590:android:3f7c8df17f33410b9b50cf",
         "android_client_info": {
-          "package_name": "com.henrique_militao.mobile"
+          "package_name": "com.henrique_militao.pianissima"
         }
       },
       "oauth_client": [],
       "api_key": [
         {
-          "current_key": "AIzaSyCiQx2g2Eg68sukYIVNgZ8CsNJfCsd_5D8"
+          "current_key": "AIzaSyBe_pM2g6C9f4YVJY1tAjcoILrM721kf9Y"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": []
+        }
+      }
+    },
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:455819498590:android:aa112d573cf0b47b9b50cf",
+        "android_client_info": {
+          "package_name": "com.henrique_militao.pianissima.dev"
+        }
+      },
+      "oauth_client": [],
+      "api_key": [
+        {
+          "current_key": "AIzaSyBe_pM2g6C9f4YVJY1tAjcoILrM721kf9Y"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": []
+        }
+      }
+    },
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:455819498590:android:c104c985740094959b50cf",
+        "android_client_info": {
+          "package_name": "com.henrique_militao.pianissima.preview"
+        }
+      },
+      "oauth_client": [],
+      "api_key": [
+        {
+          "current_key": "AIzaSyBe_pM2g6C9f4YVJY1tAjcoILrM721kf9Y"
         }
       ],
       "services": {

@@ -33,6 +33,8 @@ import {
 } from '../../lib/paymentFormat';
 import { paymentStatusConfig } from '../../lib/status';
 import { StatusPill } from '../../components/ui/StatusPill';
+import { firstName } from '../../lib/name';
+import { studentLabel } from '../../lib/studentLabel';
 
 type BundlePayment = {
   id: string;
@@ -120,7 +122,8 @@ export default function PaymentBundleDetail() {
     return (
       <View className="flex-1 items-center justify-center bg-[#F5F1EA] px-6">
         <Text className="text-red-500 text-center">
-          Não foi possível carregar esse pagamento agregado
+          Não foi possível carregar esse pagamento. Verifique sua conexão com a
+          internet e tente novamente.
         </Text>
       </View>
     );
@@ -131,6 +134,7 @@ export default function PaymentBundleDetail() {
   // pagamento, tratando 'PENDING' do bundle como o "Aguardando"
   const bundleConfig = paymentStatusConfig(isPaid ? 'PAID' : 'PENDING');
 
+  const studentCount = bundle.payments.length; // segue o padrão: sempre mostra instrumento com >1 fatura/aluno no bundle
   return (
     <ScrollView className="flex-1 bg-[#F5F1EA]">
       <Stack.Screen options={{ headerShown: false }} />
@@ -200,7 +204,7 @@ export default function PaymentBundleDetail() {
               <View className="flex-1">
                 <View className="flex-row items-center gap-2 mb-0.5">
                   <Text className="text-sm font-semibold">
-                    {payment.student.name}
+                    {studentLabel(payment.student, studentCount)}
                   </Text>
                   <StatusPill
                     {...paymentStatusConfig(payment.status)}
@@ -258,20 +262,21 @@ export default function PaymentBundleDetail() {
               </View>
 
               {countdown && !pixExpired && (
-                <View className="flex-row items-center gap-1.5 bg-[#F5F1EA] rounded-full px-2.5 py-1">
-                  <Timer size={13} color="#B08D57" />
-                  <Text className="text-xs font-bold text-[#B08D57]">
-                    {formatPixCountdown(countdown.minutes, countdown.seconds)}
-                  </Text>
+                <View className="items-end">
+                  <View className="flex-row items-center gap-1.5 bg-[#F5F1EA] rounded-full px-2.5 py-1">
+                    <Timer size={13} color="#B08D57" />
+                    <Text className="text-xs font-bold text-[#B08D57]">
+                      {formatPixCountdown(countdown.minutes, countdown.seconds)}
+                    </Text>
+                  </View>
+                  {bundle.pixExpiresAt && (
+                    <Text className="text-[10px] text-gray-400 mt-1">
+                      Válido até {formatExpiresAtTime(bundle.pixExpiresAt)}
+                    </Text>
+                  )}
                 </View>
               )}
             </View>
-
-            {bundle.pixExpiresAt && !pixExpired && (
-              <Text className="text-[11px] text-gray-400 text-right mb-3">
-                Válido até {formatExpiresAtTime(bundle.pixExpiresAt)}
-              </Text>
-            )}
 
             {pixExpired ? (
               <View className="items-center py-6">
@@ -289,7 +294,7 @@ export default function PaymentBundleDetail() {
                     <QrCode size={16} color="#fff" />
                   )}
                   <Text className="text-white font-bold">
-                    {isFetching ? 'Gerando...' : 'Gerar novo PIX'}
+                    {isFetching ? 'Gerando novo PIX...' : 'Gerar novo PIX'}
                   </Text>
                 </TouchableOpacity>
               </View>
@@ -318,7 +323,7 @@ export default function PaymentBundleDetail() {
                     </Text>
 
                     <View className="bg-[#F5F1EA] rounded-xl p-3 mb-3">
-                      <Text className="text-xs text-gray-500" numberOfLines={2}>
+                      <Text className="text-xs text-gray-500" numberOfLines={1}>
                         {bundle.pixCopyPaste}
                       </Text>
                     </View>

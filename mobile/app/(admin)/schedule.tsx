@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useCallback, useState } from 'react';
 import {
   View,
   Text,
@@ -8,8 +8,8 @@ import {
   Platform,
   Modal,
 } from 'react-native';
-import { useQuery } from '@tanstack/react-query';
-import { useRouter } from 'expo-router';
+import { useQuery, useQueryClient } from '@tanstack/react-query';
+import { useFocusEffect, useRouter } from 'expo-router';
 import { ChevronLeft, ChevronRight, CalendarDays } from 'lucide-react-native';
 import DateTimePicker from '@react-native-community/datetimepicker';
 import { api } from '../../lib/api';
@@ -169,18 +169,40 @@ export default function AdminSchedule() {
   const router = useRouter();
   const [selectedDate, setSelectedDate] = useState(new Date());
   const [pickerOpen, setPickerOpen] = useState(false);
+  const queryClient = useQueryClient();
 
-  const dateKey = toDateKey(selectedDate);
+  // Início/fim do dia selecionado NO FUSO LOCAL DO APARELHO, convertidos
+  // pro instante UTC correspondente — o backend só compara UTC.
+  function getDayBoundsIso(date: Date) {
+    const start = new Date(date);
+    start.setHours(0, 0, 0, 0);
+
+    const end = new Date(start);
+    end.setDate(end.getDate() + 1);
+
+    return { start: start.toISOString(), end: end.toISOString() };
+  }
+
+  const { start, end } = getDayBoundsIso(selectedDate);
 
   const { data: lessons, isLoading } = useQuery({
-    queryKey: ['admin-schedule', dateKey],
+    queryKey: ['admin-schedule', start, end],
     queryFn: async () => {
       const response = await api.get<LessonOfDay[]>('/lessons/day', {
-        params: { date: dateKey },
+        params: { start, end },
       });
       return response.data;
     },
   });
+
+  useFocusEffect(
+    useCallback(() => {
+      queryClient.invalidateQueries({
+        predicate: (q) =>
+          Array.isArray(q.queryKey) && q.queryKey[0] === 'admin-schedule',
+      });
+    }, [queryClient]),
+  );
 
   const sortedLessons = (lessons ?? [])
     .slice()

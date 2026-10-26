@@ -22,10 +22,11 @@ import { useStudent } from '../../context/StudentContext';
 import { dashboardKeys } from '../../lib/queryKeys';
 import { lessonStatusConfig } from '../../lib/status';
 import { StatusPill } from '../../components/ui/StatusPill';
-import { useCallback } from 'react';
+import { useCallback, useEffect } from 'react';
 import { formatCurrency } from '../../lib/paymentFormat';
 import * as Notifications from 'expo-notifications';
 import { registerForPushNotificationsAsync } from '../../lib/notifications';
+import { firstName } from '../../lib/name';
 
 // Configura para exibir o alerta mesmo com o app aberto na tela
 Notifications.setNotificationHandler({
@@ -75,7 +76,10 @@ function formatFullDate(iso: string) {
 
 function formatShortDate(iso: string) {
   const date = new Date(iso);
-  return `${date.getDate()} de ${date.toLocaleDateString('pt-BR', { month: 'long' })}`;
+  const day = String(date.getDate()).padStart(2, '0');
+  const month = date.toLocaleDateString('pt-BR', { month: 'long' });
+
+  return `${day} de ${month}`;
 }
 
 function formatTime(iso: string) {
@@ -103,6 +107,7 @@ function DashboardCard({
   accentBg,
   accentColor,
   label,
+  topRight, // 👈 novo
   onPress,
   children,
 }: {
@@ -110,6 +115,7 @@ function DashboardCard({
   accentBg: string;
   accentColor: string;
   label: string;
+  topRight?: React.ReactNode; // 👈 novo
   onPress: () => void;
   children: React.ReactNode;
 }) {
@@ -131,9 +137,12 @@ function DashboardCard({
         <Icon size={18} color={accentColor} />
       </View>
       <View className="flex-1">
-        <Text className="text-[10px] font-bold tracking-widest text-gray-400 uppercase mb-0.5">
-          {label}
-        </Text>
+        <View className="flex-row items-center justify-between mb-0.5">
+          <Text className="text-[10px] font-bold tracking-widest text-gray-400 uppercase">
+            {label}
+          </Text>
+          {topRight}
+        </View>
         {children}
       </View>
       <ChevronRight size={16} color="#D4CFC4" />
@@ -226,17 +235,23 @@ function NextLessonStatus({
 // enquanto outro filho acumulava atrasos sem nenhum sinal visual.
 function OtherStudentsPendingNote({
   otherStudents,
+  currentStudentHasOpenPayments,
   onPress,
 }: {
   otherStudents: DashboardItem[];
+  currentStudentHasOpenPayments: boolean;
   onPress: () => void;
 }) {
   if (otherStudents.length === 0) return null;
 
+  const verb = currentStudentHasOpenPayments ? 'também tem' : 'tem';
+
   const label =
     otherStudents.length === 1
-      ? `${otherStudents[0].student.name} também tem fatura em aberto`
-      : `${otherStudents.length} outros alunos têm faturas em aberto`;
+      ? `${firstName(otherStudents[0].student.name)} ${verb} fatura em aberto`
+      : `${otherStudents.length} outros alunos ${
+          currentStudentHasOpenPayments ? 'também têm' : 'têm'
+        } faturas em aberto`;
 
   return (
     <TouchableOpacity
@@ -268,11 +283,22 @@ export default function Index() {
 
   useFocusEffect(
     useCallback(() => {
-      console.log('Dashboard focou, invalidando', selectedStudentId);
+      // console.log('Dashboard focou, invalidando', selectedStudentId);
 
       queryClient.invalidateQueries({ queryKey: dashboardKeys.all });
     }, [queryClient]),
   );
+
+  // useEffect(() => {
+  //   // Escuta notificações chegando com o app aberto
+  //   const subscription = Notifications.addNotificationReceivedListener(
+  //     (notification) => {
+  //       console.log('NOTIFICAÇÃO CHEGOU NO CELULAR! Data:', notification);
+  //     },
+  //   );
+
+  //   return () => subscription.remove();
+  // }, []);
 
   // ⬇️ MOVIDO PRA CÁ, antes de qualquer return condicional
   const handleLessonFinish = useCallback(() => {
@@ -291,7 +317,8 @@ export default function Index() {
     return (
       <View className="flex-1 items-center justify-center bg-[#F5F1EA] px-6">
         <Text className="text-red-500 text-center">
-          Não foi possível carregar seus dados
+          Não foi possível carregar seus dados. Verifique sua conexão com a
+          internet e tente novamente.
         </Text>
       </View>
     );
@@ -320,26 +347,29 @@ export default function Index() {
   // vez do badge verde hardcoded que existia antes.
   const lastLessonConfig = lessonStatusConfig('COMPLETED', false);
 
-  async function handleTestNotification() {
-    await Notifications.scheduleNotificationAsync({
-      content: {
-        title: 'Notificação da Pianíssima 🎶',
-        body: 'Teste de notificação local no Dev Client funcionando!',
-      },
-      trigger: null, // Dispara instantaneamente
-    });
-  }
+  // async function handleTestNotification() {
+  //   await Notifications.scheduleNotificationAsync({
+  //     content: {
+  //       title: 'Notificação da Pianíssima 🎶',
+  //       body: 'Teste de notificação local no Dev Client funcionando!',
+  //     },
+  //     trigger: null, // Dispara instantaneamente
+  //   });
+  // }
 
-  async function handleGetPushToken() {
-    const token = await registerForPushNotificationsAsync();
+  // async function handleGetPushToken() {
+  //   const token = await registerForPushNotificationsAsync();
 
-    if (token) {
-      console.log('PUSH TOKEN GERADO:', token);
-      Alert.alert('Token Gerado com Sucesso!', token);
-    } else {
-      Alert.alert('Erro', 'Não foi possível gerar o token. Verifique os logs.');
-    }
-  }
+  //   if (token) {
+  //     console.log('PUSH TOKEN GERADO:', token);
+  //     // Pega o token nativo do Firebase (FCM)
+  //     const deviceToken = await Notifications.getDevicePushTokenAsync();
+  //     console.log('FCM TOKEN NATIVO:', deviceToken.data);
+  //     Alert.alert('Token Gerado com Sucesso!', token);
+  //   } else {
+  //     Alert.alert('Erro', 'Não foi possível gerar o token. Verifique os logs.');
+  //   }
+  // }
   return (
     <View className="flex-1 bg-[#F5F1EA]">
       <ScrollView className="flex-1 px-4 pt-4">
@@ -347,7 +377,7 @@ export default function Index() {
           className="text-3xl text-[#1A1A1A] mb-1"
           style={{ fontFamily: 'PlayfairDisplay_700Bold' }}
         >
-          {student.name}
+          {firstName(student.name)}
         </Text>
         <Text className="text-gray-500 mb-5">
           {formatInstrument(student.instrument)} · Acompanhe suas aulas
@@ -370,7 +400,9 @@ export default function Index() {
               </Text>
               <Text className="text-[13px] text-gray-500 mt-0.5">
                 {formatTime(nextLesson.scheduledAt)}
-                {nextLesson.teacher ? ` · ${nextLesson.teacher.user.name}` : ''}
+                {nextLesson.teacher
+                  ? ` · ${firstName(nextLesson.teacher.user.name)}`
+                  : ''}
               </Text>
             </>
           ) : (
@@ -391,6 +423,7 @@ export default function Index() {
           accentColor="#059669"
           label="Última aula"
           onPress={() => router.push('/lessons')}
+          topRight={lastLesson ? <StatusPill {...lastLessonConfig} /> : null}
         >
           {lastLesson ? (
             <>
@@ -401,12 +434,11 @@ export default function Index() {
                 {capitalize(formatFullDate(lastLesson.scheduledAt))}
               </Text>
               <Text className="text-[13px] text-gray-500 mt-0.5">
-                {lastLesson.teacher ? `${lastLesson.teacher.user.name} · ` : ''}
+                {lastLesson.teacher
+                  ? `${firstName(lastLesson.teacher.user.name)} · `
+                  : ''}
                 {formatInstrument(student.instrument)}
               </Text>
-              <View style={{ marginTop: 6, alignSelf: 'flex-start' }}>
-                <StatusPill {...lastLessonConfig} />
-              </View>
             </>
           ) : (
             <Text className="text-[13px] text-gray-400">
@@ -421,6 +453,21 @@ export default function Index() {
           accentColor="#F5F1EA"
           label={`Fatura${mostUrgentPayment?.referenceMonth ? ` · ${formatReferenceMonth(mostUrgentPayment.referenceMonth)}` : ''}`}
           onPress={() => router.push('/payments')}
+          topRight={
+            mostUrgentPayment?.status === 'OVERDUE' && paymentUrgency ? (
+              <StatusPill
+                label={paymentUrgency.label}
+                colorText={paymentUrgency.colorText}
+                colorBg={paymentUrgency.colorBg}
+              />
+            ) : mostUrgentPayment?.status === 'PENDING' ? (
+              <StatusPill
+                label="Pendente"
+                colorText="#D97706"
+                colorBg="#FFFBEB"
+              />
+            ) : null
+          }
         >
           {mostUrgentPayment ? (
             <>
@@ -433,15 +480,7 @@ export default function Index() {
               <Text className="text-[13px] text-gray-500 mt-0.5">
                 Vence {formatShortDate(mostUrgentPayment.dueDate)}
               </Text>
-              {paymentUrgency && (
-                <View style={{ marginTop: 6, alignSelf: 'flex-start' }}>
-                  <StatusPill
-                    label={paymentUrgency.label}
-                    colorText={paymentUrgency.colorText}
-                    colorBg={paymentUrgency.colorBg}
-                  />
-                </View>
-              )}
+
               {extraOpenCount > 0 && (
                 <Text className="text-[11px] text-gray-400 mt-1.5">
                   + {extraOpenCount}{' '}
@@ -453,6 +492,7 @@ export default function Index() {
               )}
               <OtherStudentsPendingNote
                 otherStudents={otherStudentsWithOpenPayments}
+                currentStudentHasOpenPayments={true}
                 onPress={() => router.push('/payments')}
               />
             </>
@@ -463,28 +503,32 @@ export default function Index() {
               </Text>
               <OtherStudentsPendingNote
                 otherStudents={otherStudentsWithOpenPayments}
+                currentStudentHasOpenPayments={false}
                 onPress={() => router.push('/payments')}
               />
             </>
           )}
         </DashboardCard>
 
-        <TouchableOpacity
+        {/* <TouchableOpacity
           className="bg-[#B08D57] p-3.5 rounded-2xl items-center mb-4"
           onPress={handleTestNotification}
         >
           <Text className="text-white font-bold">
             Disparar Notificação Teste
           </Text>
-        </TouchableOpacity>
+        </TouchableOpacity> */}
 
-        <TouchableOpacity
+        {/* <TouchableOpacity
           className="bg-black p-3.5 rounded-2xl items-center mb-4"
           onPress={handleGetPushToken}
         >
           <Text className="text-white font-bold">Obter Expo Push Token</Text>
-        </TouchableOpacity>
+        </TouchableOpacity> */}
 
+        {/* <Text style={{ color: 'red', fontWeight: 'bold' }}>
+          VERSÃO COM FIX 1.0.3
+        </Text> */}
         <Text className="text-center text-gray-400 text-xs mt-4 mb-8">
           Pianíssima · Aqui tem música
         </Text>

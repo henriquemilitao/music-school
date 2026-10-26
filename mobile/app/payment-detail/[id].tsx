@@ -24,15 +24,21 @@ import {
   formatMonthLabel,
   formatFullDate,
   formatCurrency,
+  getDisplayAmount,
 } from '../../lib/paymentFormat';
 import { paymentStatusConfig } from '../../lib/status';
 import { StatusPill } from '../../components/ui/StatusPill';
+import { firstName } from '../../lib/name';
 
 export default function PaymentDetail() {
   const { id } = useLocalSearchParams<{ id: string }>();
   const router = useRouter();
   const queryClient = useQueryClient();
 
+  // 1. Comente esta linha temporariamente
+  // useAppStateRefetch(paymentKeys.detail(id!));
+
+  // 2. Ajuste a query
   const {
     data: payment,
     isLoading,
@@ -45,11 +51,17 @@ export default function PaymentDetail() {
     },
     enabled: !!id,
     refetchOnMount: 'always',
-    refetchInterval: (query) =>
-      query.state.data?.status === 'PAID' ? false : 5000,
+    // 3. Substitua o refetchInterval por esta função segura
+    refetchInterval: (query) => {
+      const data = query.state.data;
+      if (!data || data.status === 'PAID') {
+        return false;
+      }
+      return 5000;
+    },
   });
 
-  useAppStateRefetch(paymentKeys.detail(id!));
+  // useAppStateRefetch(paymentKeys.detail(id!));
 
   useEffect(() => {
     if (payment?.status === 'PAID') {
@@ -70,14 +82,22 @@ export default function PaymentDetail() {
     return (
       <View className="flex-1 items-center justify-center bg-[#F5F1EA] px-6">
         <Text className="text-red-500 text-center">
-          Não foi possível carregar essa fatura
+          Não foi possível carregar essa fatura. Verifique sua conexão com a
+          internet e tente novamente.
         </Text>
       </View>
     );
   }
 
-  const isPaid = payment.status === 'PAID';
-  const config = paymentStatusConfig(payment.status);
+  const isPaid = payment!.status === 'PAID';
+  const isOverdue = payment!.status === 'OVERDUE';
+  const urgency = getPaymentUrgency(payment!.dueDate, payment!.status);
+
+  // pill do topo: label com dias quando atrasada, senão o padrão
+  const config =
+    isOverdue && urgency
+      ? { ...paymentStatusConfig(payment!.status), label: urgency.label }
+      : paymentStatusConfig(payment!.status);
 
   return (
     <ScrollView className="flex-1 bg-[#F5F1EA]">
@@ -99,14 +119,15 @@ export default function PaymentDetail() {
 
       <View className="px-5 pt-5 pb-2">
         <Text className="text-xs font-bold uppercase tracking-widest text-gray-400 mb-1">
-          {payment.student.name} · {formatMonthLabel(payment.referenceMonth)}
+          {firstName(payment.student.name)} ·{' '}
+          {formatMonthLabel(payment.referenceMonth)}
         </Text>
         <View className="flex-row items-end justify-between">
           <Text
             className="text-4xl"
             style={{ fontFamily: 'PlayfairDisplay_700Bold' }}
           >
-            R$ {formatCurrency(payment.amount)}
+            R$ {formatCurrency(getDisplayAmount(payment))}
           </Text>
           <StatusPill {...config} size="md" />
         </View>
@@ -134,23 +155,16 @@ export default function PaymentDetail() {
             </View>
           </View>
 
-          {!isPaid &&
-            (() => {
-              const urgency = getPaymentUrgency(
-                payment.dueDate,
-                payment.status,
-              );
-              if (!urgency) return null;
-              return (
-                <View style={{ alignSelf: 'flex-start' }}>
-                  <StatusPill
-                    label={urgency.label}
-                    colorText={urgency.colorText}
-                    colorBg={urgency.colorBg}
-                  />
-                </View>
-              );
-            })()}
+          {/* NOVO — só aparece quando PENDING (não atrasado, não pago) */}
+          {!isPaid && !isOverdue && urgency && (
+            <View style={{ alignSelf: 'flex-start' }}>
+              <StatusPill
+                label={urgency.label}
+                colorText={urgency.colorText}
+                colorBg={urgency.colorBg}
+              />
+            </View>
+          )}
 
           {isPaid && payment.paidAt && (
             <View className="flex-row items-center gap-3">
@@ -173,7 +187,7 @@ export default function PaymentDetail() {
             onPress={() => router.push(`/payment/${payment.id}`)}
           >
             <QrCode size={18} color="#fff" />
-            <Text className="text-white font-bold">Pagar agora</Text>
+            <Text className="text-white font-bold">Gerar PIX</Text>
           </TouchableOpacity>
         )}
 
@@ -201,8 +215,8 @@ export default function PaymentDetail() {
                 </Text>
               </View>
               <Text className="text-xs text-gray-500">
-                Pague a fatura mais antiga de {payment.student.name} antes
-                desta. Toque aqui para ver os detalhes dela.
+                Pague a fatura mais antiga de {firstName(payment.student.name)}{' '}
+                antes desta. Toque aqui para ver os detalhes dela.
               </Text>
             </TouchableOpacity>
           )}

@@ -19,6 +19,7 @@ import { formatInstrument } from '../../lib/instrument';
 import { lessonStatusConfig, getEffectiveLessonStatus } from '../../lib/status';
 import { StatusPill } from '../../components/ui/StatusPill';
 import { useLessonStatus } from '../../lib/useLessonStatus';
+import { firstName } from '../../lib/name';
 
 type Lesson = {
   id: string;
@@ -132,7 +133,8 @@ export default function LessonDetail() {
     return (
       <View className="flex-1 items-center justify-center bg-[#F5F1EA] px-6">
         <Text className="text-red-500 text-center">
-          Não foi possível carregar essa aula
+          Não foi possível carregar essa aula. Verifique sua conexão com a
+          internet e tente novamente.
         </Text>
       </View>
     );
@@ -195,7 +197,7 @@ export default function LessonDetail() {
             <InfoRow
               icon={User}
               label="Professor"
-              value={lesson.teacher.user.name}
+              value={firstName(lesson.teacher.user.name)}
             />
           )}
           {lesson.student.instrument && (

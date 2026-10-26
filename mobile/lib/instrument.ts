@@ -4,13 +4,15 @@
 // legível. O valor cru (VIOLAO, BATERIA...) nunca deve aparecer
 // direto numa tela — sempre passa por formatInstrument().
 
-export type InstrumentValue = 'VIOLAO' | 'BATERIA' | 'PIANO' | 'GUITARRA';
+export type InstrumentValue =
+  'VIOLAO' | 'BATERIA' | 'PIANO' | 'GUITARRA' | 'CAJON';
 
 export const INSTRUMENT_LABELS: Record<InstrumentValue, string> = {
   VIOLAO: 'Violão',
   BATERIA: 'Bateria',
   PIANO: 'Piano',
   GUITARRA: 'Guitarra',
+  CAJON: 'Cajon',
 };
 
 export const INSTRUMENT_OPTIONS: { value: InstrumentValue; label: string }[] = (

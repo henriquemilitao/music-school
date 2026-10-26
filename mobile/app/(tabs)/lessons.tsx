@@ -15,6 +15,7 @@ import { useStudent } from '../../context/StudentContext';
 import { lessonStatusConfig, getEffectiveLessonStatus } from '../../lib/status';
 import { StatusPill } from '../../components/ui/StatusPill';
 import { useLessonStatus } from '../../lib/useLessonStatus';
+import { firstName } from '../../lib/name';
 
 const RECENTLY_FINISHED_GRACE_MINUTES = 30; // precisa bater com backend e useLessonStatus
 
@@ -131,7 +132,7 @@ function UpcomingLesson({ lesson }: { lesson: Lesson }) {
         </Text>
         <Text className="text-[13px] text-gray-500 mt-0.5">
           {formatTime(lesson.scheduledAt)}
-          {lesson.teacher ? ` · ${lesson.teacher.user.name}` : ''}
+          {lesson.teacher ? ` · ${firstName(lesson.teacher.user.name)}` : ''}
         </Text>
         {showLivePill && (
           <View style={{ marginTop: 4, alignSelf: 'flex-start' }}>
@@ -170,7 +171,7 @@ function HistoryRow({ lesson }: { lesson: Lesson }) {
         </Text>
         <Text className="text-[13px] text-gray-500 mt-0.5">
           {formatTime(lesson.scheduledAt)}
-          {lesson.teacher ? ` · ${lesson.teacher.user.name}` : ''}
+          {lesson.teacher ? ` · ${firstName(lesson.teacher.user.name)}` : ''}
         </Text>
       </View>
       <View style={{ flexShrink: 0 }}>
@@ -260,10 +261,9 @@ function EmptyState({ text }: { text: string }) {
 
 export default function Lessons() {
   const [tab, setTab] = useState<'proximas' | 'historico'>('proximas');
-  const queryClient = useQueryClient();
 
   const { selectedStudentId, selectedStudent } = useStudent();
-  const { data, isLoading, error } = useQuery({
+  const { data, isLoading, error, refetch } = useQuery({
     queryKey: ['lessons', selectedStudentId],
     queryFn: async () => {
       if (!selectedStudentId) return [];
@@ -277,12 +277,10 @@ export default function Lessons() {
 
   useFocusEffect(
     useCallback(() => {
-      console.log('Lessons focou, invalidando', selectedStudentId);
-
-      queryClient.invalidateQueries({
-        queryKey: ['lessons', selectedStudentId],
-      });
-    }, [queryClient, selectedStudentId]),
+      if (selectedStudentId) {
+        refetch();
+      }
+    }, [refetch, selectedStudentId]),
   );
 
   if (isLoading) {
@@ -297,7 +295,8 @@ export default function Lessons() {
     return (
       <View className="flex-1 items-center justify-center bg-[#F5F1EA] px-6">
         <Text className="text-red-500 text-center">
-          Não foi possível carregar suas aulas
+          Não foi possível carregar suas aulas. Verifique sua conexão com a
+          internet e tente novamente.
         </Text>
       </View>
     );
@@ -335,7 +334,7 @@ export default function Lessons() {
       </Text>
       {selectedStudent && (
         <Text className="text-gray-500 text-sm mb-4">
-          {selectedStudent.name} ·{' '}
+          {firstName(selectedStudent.name)} ·{' '}
           {formatInstrument(selectedStudent.instrument)}
         </Text>
       )}

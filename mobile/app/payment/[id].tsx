@@ -33,6 +33,7 @@ import {
 } from '../../lib/paymentFormat';
 import { paymentStatusConfig } from '../../lib/status';
 import { StatusPill } from '../../components/ui/StatusPill';
+import { firstName } from '../../lib/name';
 
 // "válido até 14:47" — horário absoluto de expiração, exibido junto
 // com o countdown decrescente. O countdown sozinho cria urgência mas
@@ -60,8 +61,21 @@ export default function PaymentCheckout() {
   } = useQuery({
     queryKey: paymentKeys.detail(id!),
     queryFn: async () => {
-      const response = await api.get<Payment>(`/payments/my/${id}`);
-      return response.data;
+      // Primeiro busca em modo leitura pra saber status/elegibilidade
+      const readResponse = await api.get<Payment>(`/payments/my/${id}`);
+      const current = readResponse.data;
+
+      // Essa é a tela de checkout — é aqui (e só aqui) que geramos o
+      // PIX de fato. Só chamamos a rota de charge quando a fatura
+      // ainda está aberta e é a elegível (senão o backend rejeita com 400).
+      if (current.status !== 'PAID' && current.isEligibleForPayment) {
+        const chargeResponse = await api.post<Payment>(
+          `/payments/my/${id}/charge`,
+        );
+        return chargeResponse.data;
+      }
+
+      return current;
     },
     enabled: !!id,
     refetchOnMount: 'always',
@@ -87,6 +101,30 @@ export default function PaymentCheckout() {
     setTimeout(() => setCopied(false), 2500);
   }
 
+  const isPaid = payment?.status === 'PAID';
+  const isBlocked = !isPaid && payment?.isEligibleForPayment === false;
+
+  // "Ainda gerando o PIX de verdade": cobre tanto o load inicial
+  // (isLoading) quanto o refetch que essa MESMA tela dispara ao
+  // montar (refetchOnMount: 'always' -> POST .../charge em
+  // background). Sem isso, se essa queryKey já tinha dado em cache
+  // (ex: veio da tela de detalhes), isLoading nasce `false` e a UI
+  // mostra "QR code não foi gerado" por alguns segundos até o
+  // charge terminar — essa flag evita esse flash de erro.
+  const isGeneratingCharge =
+    (isLoading || isFetching) && !isPaid && !isBlocked && !payment?.pixQrCode;
+
+  if (isGeneratingCharge) {
+    return (
+      <View className="flex-1 items-center justify-center bg-[#F5F1EA] px-6">
+        <ActivityIndicator size="large" color="#B08D57" />
+        <Text className="text-gray-400 text-sm mt-4 text-center">
+          Gerando seu PIX...
+        </Text>
+      </View>
+    );
+  }
+
   if (isLoading) {
     return (
       <View className="flex-1 items-center justify-center bg-[#F5F1EA]">
@@ -99,14 +137,13 @@ export default function PaymentCheckout() {
     return (
       <View className="flex-1 items-center justify-center bg-[#F5F1EA] px-6">
         <Text className="text-red-500 text-center">
-          Não foi possível carregar essa fatura
+          Não foi possível carregar essa fatura. Verifique sua conexão com a
+          internet e tente novamente.
         </Text>
       </View>
     );
   }
 
-  const isPaid = payment.status === 'PAID';
-  const isBlocked = !isPaid && payment.isEligibleForPayment === false;
   const config = paymentStatusConfig(payment.status);
   const pixExpired = countdown?.isPast ?? false;
 
@@ -141,7 +178,8 @@ export default function PaymentCheckout() {
           >
             R$ {formatCurrency(payment.amount)}
           </Text>
-          <StatusPill {...config} size="md" />
+          {/* só mostra o pill quando pago — "atrasada" some, já está pagando */}
+          {isPaid && <StatusPill {...config} size="md" />}
         </View>
       </View>
 
@@ -192,37 +230,28 @@ export default function PaymentCheckout() {
               elevation: 2,
             }}
           >
-            <View className="flex-row items-center justify-between mb-1">
+            <View className="flex-row items-center justify-between mb-3">
               <View className="flex-row items-center gap-2">
                 <QrCode size={20} color="#B08D57" />
                 <Text className="text-sm font-bold">Pague via PIX</Text>
               </View>
 
               {countdown && !pixExpired && (
-                <View className="flex-row items-center gap-1.5 bg-[#F5F1EA] rounded-full px-2.5 py-1">
-                  <Timer size={13} color="#B08D57" />
-                  <Text className="text-xs font-bold text-[#B08D57]">
-                    {formatPixCountdown(countdown.minutes, countdown.seconds)}
-                  </Text>
+                <View className="items-end">
+                  <View className="flex-row items-center gap-1.5 bg-[#F5F1EA] rounded-full px-2.5 py-1">
+                    <Timer size={13} color="#B08D57" />
+                    <Text className="text-xs font-bold text-[#B08D57]">
+                      {formatPixCountdown(countdown.minutes, countdown.seconds)}
+                    </Text>
+                  </View>
+                  {payment.pixExpiresAt && (
+                    <Text className="text-[10px] text-gray-400 mt-1">
+                      Válido até {formatExpiresAtTime(payment.pixExpiresAt)}
+                    </Text>
+                  )}
                 </View>
               )}
-
-              {payment.pixExpiresAt && !pixExpired && (
-                <Text className="text-[11px] text-gray-400 text-center mb-3">
-                  Válido até{' '}
-                  {new Date(payment.pixExpiresAt).toLocaleTimeString('pt-BR', {
-                    hour: '2-digit',
-                    minute: '2-digit',
-                  })}
-                </Text>
-              )}
             </View>
-
-            {payment.pixExpiresAt && !pixExpired && (
-              <Text className="text-[11px] text-gray-400 text-right mb-3">
-                Válido até {formatExpiresAtTime(payment.pixExpiresAt)}
-              </Text>
-            )}
 
             {pixExpired ? (
               <View className="items-center py-6">
@@ -240,7 +269,7 @@ export default function PaymentCheckout() {
                     <QrCode size={16} color="#fff" />
                   )}
                   <Text className="text-white font-bold">
-                    {isFetching ? 'Gerando...' : 'Gerar novo PIX'}
+                    {isFetching ? 'Gerando novo PIX...' : 'Gerar novo PIX'}
                   </Text>
                 </TouchableOpacity>
               </View>
@@ -257,8 +286,13 @@ export default function PaymentCheckout() {
                     </View>
                   </View>
                 ) : (
-                  <Text className="text-gray-400 text-center text-sm mb-4">
-                    O QR code ainda não foi gerado para essa fatura.
+                  // Se chegou até aqui, isGeneratingCharge já é false —
+                  // ou seja, a busca/geração terminou e mesmo assim não
+                  // veio PIX. É um caso de erro de verdade (ex: falha
+                  // no gateway), não mais um estado de carregamento.
+                  <Text className="text-red-500 text-center text-sm mb-4">
+                    Não foi possível gerar o PIX dessa fatura. Tente novamente
+                    em instantes.
                   </Text>
                 )}
 
@@ -269,7 +303,7 @@ export default function PaymentCheckout() {
                     </Text>
 
                     <View className="bg-[#F5F1EA] rounded-xl p-3 mb-3">
-                      <Text className="text-xs text-gray-500" numberOfLines={2}>
+                      <Text className="text-xs text-gray-500" numberOfLines={1}>
                         {payment.pixCopyPaste}
                       </Text>
                     </View>
@@ -320,7 +354,8 @@ export default function PaymentCheckout() {
               </Text>
             </View>
             <Text className="text-xs text-gray-500">
-              Pague a fatura mais antiga de {payment.student.name} antes desta.
+              Pague a fatura mais antiga de {firstName(payment.student.name)}{' '}
+              antes desta.
               {payment.blockingPaymentId
                 ? ' Toque aqui para ver os detalhes dela.'
                 : ''}

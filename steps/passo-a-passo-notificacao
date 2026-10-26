@@ -1,0 +1,103 @@
+Você tem toda razão. Quando o problema vira uma bola de neve de chaves antigas, arquivos modificados e credenciais dessincronizadas, parar, resetar e fazer do 0 é a decisão mais inteligente e rápida para a sua sanidade mental.
+
+Sua suspeita sobre o ícone e a mudança para o arquivo de configuração também faz todo sentido: o Android é extremamente rigoroso com o ícone de notificações (notification-icon.png precisa obrigatoriamente ser uma silhueta branca com fundo transparente, senão o Android rejeita ou silencia a notificação em nível nativo).
+
+Vamos montar um Plano de Guerra do Zero para isolar cada variável e garantir que funcione por etapas.
+
+🗺️ Plano de Ação: Do 0 ao Sucesso
+FASE 1: Limpeza Geral (Reset Total)
+No seu projeto local:
+
+Apague o arquivo antigo google-services.json.
+
+Remova temporariamente o plugin do ícone customizado do seu app.config.js (deixe apenas 'expo-notifications', sem passar o objeto de ícone e cor por enquanto, para eliminarmos qualquer erro de imagem nativa).
+
+No Expo (Credenciais antigas):
+
+Abra o terminal na pasta do app e rode:
+
+Bash
+eas credentials
+Vá em Android > seu perfil de build > FCM V1 Key e Delete (apague a chave antiga que estava dando conflito).
+
+FASE 2: Criando um Projeto Novo no Firebase
+Vamos criar um ambiente limpo para não carregar nenhum erro do anterior:
+
+Acesse o Firebase Console.
+
+Clique em Criar projeto (ou Adicionar projeto). Dê um nome limpo (ex: Pianissima-Prod ou Pianissima-V2).
+
+Desative o Google Analytics (para ser mais rápido e direto, não precisamos dele agora).
+
+Dentro do novo projeto, clique no ícone do Android para adicionar um app:
+
+Nome do pacote (Package name): Use exatamente o mesmo que já está no seu app para não quebrar o EAS: com.henrique_militao.mobile
+
+Baixe o novo google-services.json e coloque na raiz da pasta mobile/ do seu projeto.
+
+Gere a Chave do Servidor (FCM V1):
+
+Vá na engrenagem de Configurações do Projeto > aba Contas de Serviço (Service Accounts).
+
+Clique no botão Gerar nova chave privada (Generate new private key). Salve esse arquivo .json no seu computador em um lugar fácil (ele será enviado para o Expo daqui a pouco).
+
+FASE 3: Configuração Limpa no Código
+Seu app.config.js (ou app.config.ts) deve ficar limpo, apontando corretamente para o novo arquivo:
+
+JavaScript
+android: {
+  package: 'com.henrique_militao.mobile',
+  googleServicesFile: './google-services.json',
+},
+plugins: [
+  'expo-router',
+  'expo-font',
+  '@react-native-community/datetimepicker',
+  'expo-notifications', // <-- Sem ícone customizado por enquanto! Vamos testar o padrão primeiro.
+],
+FASE 4: Sincronizando com o Expo
+No terminal, envie a nova chave privada do Firebase que você acabou de gerar para os servidores do Expo:
+
+Bash
+eas push:fcm:upload
+(O CLI vai pedir para você apontar o arquivo .json da chave privada que você baixou na Fase 2).
+
+Faça o commit das alterações (lembre-se de tirar o google-services.json do .gitignore desta vez para subir para o EAS):
+
+Bash
+git add .
+git commit -m "feat: reset limpo de notificacoes e novo projeto firebase"
+git push
+FASE 5: Build Limpa e Testes por Etapas (O Teste de Fogo 🔥)
+Gere o novo APK nativo:
+
+Bash
+eas build --profile development --platform android
+Instale o novo APK gerado no seu celular (desinstale o app antigo primeiro para limpar qualquer cache do sistema).
+
+Etapa 5A - Teste Front-end (Notificação Local):
+
+Abra o app, clique no botão de disparar notificação local.
+
+Se aparecer: O motor de notificações do Expo está rodando liso no app.
+
+Etapa 5B - Teste de Servidor (Expo Push via Terminal):
+
+Clique em "Obter Expo Push Token" para pegar o token novo gerado por esse novo projeto do Firebase.
+
+Vá no terminal do computador e dispare o curl:
+
+Bash
+curl -H "Content-Type: application/json" -X POST "https://exp.host/--/api/v2/push/send" -d '{
+  "to": "ExponentPushToken[SEU_NOVO_TOKEN_AQUI]",
+  "title": "Teste Limpo 🚀",
+  "body": "Funcionou do zero!",
+  "channelId": "default"
+}'
+Se o celular apitar aqui: Vitória absoluta! A ponte Expo <-> Firebase <-> Android foi reestabelecida limpa e sem lixos anteriores.
+
+Etapa 5C - O Ícone e o Backend Final:
+
+Só depois que o teste 5B passar com sucesso é que você volta o ícone customizado (notification-icon.png) no plugin do Expo e gera outro build se quiser, e depois liga no seu backend real.
+
+O que acha desse plano de reset total? Quer começar a seguir os passos da Fase 1 e 2 agora?

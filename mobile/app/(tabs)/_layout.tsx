@@ -10,10 +10,10 @@ import { useNavigationState } from '@react-navigation/native';
 import { useQueryClient } from '@tanstack/react-query';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Home, CalendarDays, Wallet } from 'lucide-react-native';
-import { TopBar } from '../../components/TopBar';
 import { StudentProvider } from '../../context/StudentContext';
 import { StudentSwitcher } from '../../components/StudentSwitcher';
 import { dashboardKeys } from '../../lib/queryKeys';
+import { StudentTopBar } from '../../components/StudentTopBar';
 
 const { Navigator } = createMaterialTopTabNavigator();
 
@@ -67,7 +67,23 @@ function TabFocusInvalidator() {
     if (!keysToInvalidate) return;
 
     keysToInvalidate.forEach((queryKey) => {
-      queryClient.invalidateQueries({ queryKey });
+      // If a single-element array is provided (e.g. ['lessons']),
+      // treat it as a prefix and invalidate any query whose
+      // first key element matches — this covers keys like
+      // ['lessons', selectedStudentId].
+      if (
+        Array.isArray(queryKey) &&
+        queryKey.length === 1 &&
+        typeof queryKey[0] === 'string'
+      ) {
+        const prefix = queryKey[0];
+        queryClient.invalidateQueries({
+          predicate: (q: any) =>
+            Array.isArray(q.queryKey) && q.queryKey[0] === prefix,
+        });
+      } else {
+        queryClient.invalidateQueries({ queryKey });
+      }
     });
   }, [routeName, queryClient]);
 
@@ -82,7 +98,7 @@ function TabsLayoutInner() {
       <TabFocusInvalidator />
 
       <View>
-        <TopBar />
+        <StudentTopBar />
         <StudentSwitcher />
       </View>
 
@@ -114,21 +130,21 @@ function TabsLayoutInner() {
         }}
       >
         <MaterialTopTabs.Screen
-          name="index"
-          options={{
-            title: TAB_LABELS.index,
-            tabBarIcon: ({ color }) => {
-              const Icon = TAB_ICONS.index;
-              return <Icon color={color} size={20} />;
-            },
-          }}
-        />
-        <MaterialTopTabs.Screen
           name="lessons"
           options={{
             title: TAB_LABELS.lessons,
             tabBarIcon: ({ color }) => {
               const Icon = TAB_ICONS.lessons;
+              return <Icon color={color} size={20} />;
+            },
+          }}
+        />
+        <MaterialTopTabs.Screen
+          name="index"
+          options={{
+            title: TAB_LABELS.index,
+            tabBarIcon: ({ color }) => {
+              const Icon = TAB_ICONS.index;
               return <Icon color={color} size={20} />;
             },
           }}

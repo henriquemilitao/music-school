@@ -1,55 +1,76 @@
-import { Tabs } from 'expo-router';
-import { Users, Wallet, CalendarClock } from 'lucide-react-native';
-import { AdminTopBar } from '../../components/AdminTopBar';
+import { View } from 'react-native';
+import { withLayoutContext } from 'expo-router';
+import {
+  createMaterialTopTabNavigator,
+  MaterialTopTabNavigationOptions,
+} from '@react-navigation/material-top-tabs';
+import { ParamListBase, TabNavigationState } from '@react-navigation/native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
+import { Users, CalendarClock } from 'lucide-react-native';
+import { AdminTopBar } from '../../components/AdminTopBar';
+
+const { Navigator } = createMaterialTopTabNavigator();
+
+export const MaterialTopTabs = withLayoutContext<
+  MaterialTopTabNavigationOptions,
+  typeof Navigator,
+  TabNavigationState<ParamListBase>,
+  any
+>(Navigator);
 
 export default function AdminTabsLayout() {
   const insets = useSafeAreaInsets();
 
   return (
-    <Tabs
-      screenOptions={{
-        headerShown: true,
-        header: () => <AdminTopBar />,
-        tabBarActiveTintColor: '#1A1A1A',
-        tabBarInactiveTintColor: '#B0AA9C',
-        tabBarStyle: {
-          backgroundColor: '#F5F1EA',
-          borderTopColor: 'rgba(0,0,0,0.06)',
-          height: 64 + insets.bottom,
-          paddingTop: 6,
-          paddingBottom: insets.bottom,
-        },
-        tabBarLabelStyle: { fontSize: 11, fontWeight: '500' },
-      }}
-    >
-      <Tabs.Screen
-        name="students"
-        options={{
-          title: 'Alunos',
-          tabBarIcon: ({ color, size }) => (
-            <Users color={color} size={size ?? 20} />
-          ),
+    <View style={{ flex: 1 }}>
+      <View>
+        <AdminTopBar />
+      </View>
+
+      <MaterialTopTabs
+        tabBarPosition="bottom"
+        screenOptions={{
+          swipeEnabled: true,
+          tabBarShowLabel: true,
+          tabBarShowIcon: true,
+          tabBarActiveTintColor: '#1A1A1A',
+          tabBarInactiveTintColor: '#B0AA9C',
+          tabBarIndicatorStyle: { height: 0 },
+          tabBarStyle: {
+            backgroundColor: '#F5F1EA',
+            borderTopWidth: 1,
+            borderTopColor: 'rgba(0,0,0,0.06)',
+            height: 64 + insets.bottom,
+            paddingBottom: insets.bottom,
+            paddingTop: 6,
+            elevation: 0,
+            shadowOpacity: 0,
+          },
+          tabBarLabelStyle: {
+            fontSize: 11,
+            fontWeight: '500',
+            textTransform: 'none',
+          },
+          tabBarIcon: () => null,
         }}
-      />
-      {/* <Tabs.Screen
-        name="finance"
-        options={{
-          title: 'Financeiro',
-          tabBarIcon: ({ color, size }) => (
-            <Wallet color={color} size={size ?? 20} />
-          ),
-        }}
-      /> */}
-      <Tabs.Screen
-        name="schedule"
-        options={{
-          title: 'Agenda',
-          tabBarIcon: ({ color, size }) => (
-            <CalendarClock color={color} size={size ?? 20} />
-          ),
-        }}
-      />
-    </Tabs>
+      >
+        <MaterialTopTabs.Screen
+          name="students"
+          options={{
+            title: 'Alunos',
+            tabBarIcon: ({ color }) => <Users color={color} size={20} />,
+          }}
+        />
+        <MaterialTopTabs.Screen
+          name="schedule"
+          options={{
+            title: 'Agenda',
+            tabBarIcon: ({ color }) => (
+              <CalendarClock color={color} size={20} />
+            ),
+          }}
+        />
+      </MaterialTopTabs>
+    </View>
   );
 }

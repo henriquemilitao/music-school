@@ -15,6 +15,7 @@ import {
   ChevronDown,
   Check,
   Lock,
+  QrCode,
 } from 'lucide-react-native';
 import { api } from '../../lib/api';
 import { getPaymentUrgency } from '../../lib/paymentUrgency';
@@ -25,10 +26,14 @@ import {
   formatDate,
   formatMonthLabel,
   formatMonthLabelFromKey,
+  formatMonthNameOnly,
+  getDisplayAmount,
 } from '../../lib/paymentFormat';
 import { StatusPill } from '../../components/ui/StatusPill';
 import { paymentStatusConfig } from '../../lib/status';
 import * as Notifications from 'expo-notifications';
+import { firstName } from '../../lib/name';
+import { studentLabel } from '../../lib/studentLabel';
 
 // Novo componente — pode ficar no topo do próprio payments.tsx,
 // ou em components/PaymentsStatusSection.tsx se preferir separar
@@ -42,6 +47,7 @@ function PaymentsStatusSection({
   allSelected,
   selectAll,
   clearSelection,
+  distinctStudentsCount,
   router,
 }: {
   openPayments: Payment[];
@@ -57,6 +63,7 @@ function PaymentsStatusSection({
   allSelected: boolean;
   selectAll: () => void;
   clearSelection: () => void;
+  distinctStudentsCount: number;
   router: ReturnType<typeof useRouter>;
 }) {
   // Estado 1: tudo em dia
@@ -96,6 +103,7 @@ function PaymentsStatusSection({
           selected={false}
           eligible
           showStudentName={false}
+          studentCount={1}
           onToggle={() => {}}
           onViewDetails={() => router.push(`/payment-detail/${payment.id}`)}
           isSingleOpen
@@ -158,7 +166,7 @@ function PaymentsStatusSection({
                   className="text-xs font-bold uppercase tracking-widest text-gray-500 flex-1"
                   numberOfLines={1}
                 >
-                  {name}
+                  {firstName(name)}
                 </Text>
               </View>
               {payments.map((payment) => (
@@ -168,6 +176,7 @@ function PaymentsStatusSection({
                   selected={selectedIds.has(payment.id)}
                   eligible={eligibilityMap.get(payment.id) ?? true}
                   showStudentName={false}
+                  studentCount={distinctStudentsCount}
                   onToggle={() => toggleSelection(payment.id)}
                   onViewDetails={() =>
                     router.push(`/payment-detail/${payment.id}`)
@@ -183,6 +192,7 @@ function PaymentsStatusSection({
               selected={selectedIds.has(payment.id)}
               eligible={eligibilityMap.get(payment.id) ?? true}
               showStudentName={false}
+              studentCount={distinctStudentsCount}
               onToggle={() => toggleSelection(payment.id)}
               onViewDetails={() => router.push(`/payment-detail/${payment.id}`)}
             />
@@ -199,6 +209,7 @@ function OpenPaymentCard({
   selected,
   eligible,
   showStudentName,
+  studentCount,
   onToggle,
   onViewDetails,
   isSingleOpen,
@@ -208,12 +219,21 @@ function OpenPaymentCard({
   selected: boolean;
   eligible: boolean;
   showStudentName: boolean;
+  studentCount: number;
   onToggle: () => void;
   onViewDetails: () => void;
   isSingleOpen?: boolean;
   onPay?: () => void;
 }) {
   const urgency = getPaymentUrgency(payment.dueDate, payment.status);
+  const isOverdue = payment.status === 'OVERDUE';
+
+  // pill do topo: usa o label da urgência (com dias) quando atrasada,
+  // senão cai no label padrão do status ("Pendente", "Paga")
+  const pillConfig =
+    isOverdue && urgency
+      ? { ...paymentStatusConfig(payment.status), label: urgency.label }
+      : paymentStatusConfig(payment.status);
 
   // quando o card tem botão de pagamento dedicado (onPay), ele não
   // tem função de seleção — nesse caso o card inteiro deve ser um
@@ -260,18 +280,17 @@ function OpenPaymentCard({
               className="text-[11px] font-bold uppercase tracking-widest text-gray-400 flex-1"
               numberOfLines={1}
             >
-              {showStudentName ? payment.student.name : 'Fatura do mês'}
+              {showStudentName
+                ? studentLabel(payment.student, studentCount)
+                : `Fatura de ${formatMonthNameOnly(payment.referenceMonth)}`}
             </Text>
-            <StatusPill {...paymentStatusConfig(payment.status)} />
+            <StatusPill {...pillConfig} />
           </View>
           <Text
             className="text-2xl"
             style={{ fontFamily: 'PlayfairDisplay_700Bold' }}
           >
             R$ {formatCurrency(payment.amount)}
-          </Text>
-          <Text className="text-gray-500 mt-1">
-            {formatMonthLabel(payment.referenceMonth)}
           </Text>
           <View className="flex-row items-center gap-1.5 mt-2">
             <Calendar size={14} color="#9CA3AF" />
@@ -282,11 +301,13 @@ function OpenPaymentCard({
 
           {!eligible && (
             <Text className="text-[11px] text-gray-400 mt-2 italic">
-              Pague as faturas mais antigas de {payment.student.name} primeiro
+              Pague as faturas mais antigas de{' '}
+              {studentLabel(payment.student, studentCount)} primeiro
             </Text>
           )}
 
-          {urgency && (
+          {/* badge de baixo só aparece se NÃO estiver atrasada */}
+          {urgency && !isOverdue && (
             <View
               style={{
                 backgroundColor: urgency.colorBg,
@@ -309,34 +330,35 @@ function OpenPaymentCard({
             </View>
           )}
 
-          <View className="flex-row items-center gap-3 mt-3">
+          <View
+            className="mt-3"
+            style={{
+              flexDirection: 'row',
+              justifyContent: isSingleOpen && onPay ? 'center' : 'flex-start',
+            }}
+          >
             <TouchableOpacity
               onPress={(e) => {
                 e.stopPropagation?.();
                 onViewDetails();
               }}
               hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
-              style={{ flexShrink: 0 }}
             >
-              <Text
-                className="text-xs font-bold text-[#B08D57] underline"
-                numberOfLines={1}
-              >
+              <Text className="text-xs font-bold text-[#B08D57] underline ">
                 Ver detalhes
               </Text>
             </TouchableOpacity>
-
-            {isSingleOpen && onPay && (
-              <TouchableOpacity
-                onPress={onPay}
-                className="flex-1 bg-[#B08D57] rounded-xl py-3 items-center"
-              >
-                <Text className="text-white font-bold text-sm">
-                  Pagar fatura
-                </Text>
-              </TouchableOpacity>
-            )}
           </View>
+
+          {isSingleOpen && onPay && (
+            <TouchableOpacity
+              onPress={onPay}
+              className="mt-3 bg-[#B08D57] rounded-xl py-3 flex-row items-center justify-center gap-2"
+            >
+              <QrCode size={18} color="#fff" />
+              <Text className="text-white font-bold text-sm">Gerar PIX</Text>
+            </TouchableOpacity>
+          )}
         </View>
       </View>
     </CardContainer>
@@ -384,10 +406,12 @@ function HistoryFilterPill({
 function HistoryRow({
   payment,
   showStudentName,
+  studentCount,
   onPress,
 }: {
   payment: Payment;
   showStudentName: boolean;
+  studentCount: number;
   onPress: () => void;
 }) {
   return (
@@ -403,7 +427,9 @@ function HistoryRow({
     >
       <View className="flex-1">
         <Text className="text-sm font-semibold">
-          {showStudentName ? `${payment.student.name} · ` : ''}
+          {showStudentName
+            ? `${studentLabel(payment.student, studentCount)} · `
+            : ''}
           {formatMonthLabel(payment.referenceMonth)}
         </Text>
         <Text className="text-xs text-gray-500 mt-0.5">
@@ -413,7 +439,7 @@ function HistoryRow({
       </View>
       <View className="items-end mr-2">
         <Text className="text-sm font-bold">
-          R$ {formatCurrency(payment.amount)}
+          R$ {formatCurrency(getDisplayAmount(payment))}
         </Text>
         <View className="mt-1">
           <StatusPill {...paymentStatusConfig(payment.status)} />
@@ -430,14 +456,16 @@ function HistoryRow({
 function HistoryMonthGroup({
   monthKey,
   payments,
+  studentCount,
   onViewDetails,
 }: {
   monthKey: string;
   payments: Payment[];
+  studentCount: number;
   onViewDetails: (id: string) => void;
 }) {
   const [open, setOpen] = useState(true);
-  const total = payments.reduce((s, p) => s + Number(p.amount), 0);
+  const total = payments.reduce((s, p) => s + Number(getDisplayAmount(p)), 0);
 
   return (
     <View
@@ -485,7 +513,7 @@ function HistoryMonthGroup({
             >
               <View style={{ flex: 1, marginRight: 8 }}>
                 <Text className="text-sm font-medium" numberOfLines={1}>
-                  {payment.student.name}
+                  {studentLabel(payment.student, studentCount)}
                 </Text>
                 <Text
                   className="text-xs text-gray-500 mt-0.5"
@@ -505,7 +533,7 @@ function HistoryMonthGroup({
                 }}
               >
                 <Text className="text-sm font-bold" style={{ flexShrink: 0 }}>
-                  R$ {formatCurrency(payment.amount)}
+                  R$ {formatCurrency(getDisplayAmount(payment))}
                 </Text>
                 <View className="mt-1">
                   <StatusPill {...paymentStatusConfig(payment.status)} />
@@ -602,11 +630,16 @@ export default function Payments() {
   // aqui do que em openPayments, ex: aluno que já pagou tudo).
   const historyStudents = useMemo(() => {
     if (!data) return [];
-    const map = new Map<string, string>();
+    const map = new Map<string, { name: string; instrument: string | null }>();
     for (const p of data) {
-      if (!map.has(p.studentId)) map.set(p.studentId, p.student.name);
+      if (!map.has(p.studentId)) {
+        map.set(p.studentId, {
+          name: p.student.name,
+          instrument: p.student.instrument,
+        });
+      }
     }
-    return Array.from(map.entries()).map(([id, name]) => ({ id, name }));
+    return Array.from(map.entries()).map(([id, s]) => ({ id, ...s }));
   }, [data]);
 
   const showHistoryFilter = historyStudents.length > 1; // <-- NOVO
@@ -623,7 +656,8 @@ export default function Payments() {
   const historyByMonth = useMemo(() => {
     const groups: Record<string, Payment[]> = {};
     filteredHistory.forEach((p) => {
-      (groups[p.referenceMonth] ??= []).push(p);
+      const monthKey = p.referenceMonth.slice(0, 7); // "2026-09" mesmo se vier ISO completo
+      (groups[monthKey] ??= []).push(p);
     });
     return Object.keys(groups)
       .sort()
@@ -698,7 +732,8 @@ export default function Payments() {
     return (
       <View className="flex-1 items-center justify-center bg-[#F5F1EA] px-6">
         <Text className="text-red-500 text-center">
-          Não foi possível carregar suas faturas
+          Não foi possível carregar suas faturas. Verifique sua conexão com a
+          internet e tente novamente.
         </Text>
       </View>
     );
@@ -749,6 +784,7 @@ export default function Payments() {
           allSelected={allSelected}
           selectAll={selectAll}
           clearSelection={clearSelection}
+          distinctStudentsCount={distinctStudents.size}
           router={router}
         />
 
@@ -786,7 +822,7 @@ export default function Payments() {
               {historyStudents.map((s) => (
                 <HistoryFilterPill
                   key={s.id}
-                  label={s.name}
+                  label={studentLabel(s, historyStudents.length)}
                   active={historyFilter === s.id}
                   onPress={() => setHistoryFilter(s.id)}
                 />
@@ -809,6 +845,7 @@ export default function Payments() {
                 key={monthKey}
                 monthKey={monthKey}
                 payments={payments}
+                studentCount={historyStudents.length}
                 onViewDetails={(id) => router.push(`/payment-detail/${id}`)}
               />
             ))
@@ -822,6 +859,7 @@ export default function Payments() {
                   key={payment.id}
                   payment={payment}
                   showStudentName={false}
+                  studentCount={historyStudents.length}
                   onPress={() => router.push(`/payment-detail/${payment.id}`)}
                 />
               ))}
@@ -857,11 +895,15 @@ export default function Payments() {
             </Text>
           </View>
           <TouchableOpacity
-            className="bg-[#B08D57] rounded-xl py-4 items-center"
+            className="bg-[#B08D57] rounded-xl py-3 flex-row items-center justify-center gap-2"
             onPress={handlePaySelected}
           >
+            <QrCode size={18} color="#fff" />
             <Text className="text-white font-bold">
-              {selectedIds.size === 1 ? 'Pagar fatura' : 'Pagar faturas'}
+              {/* {selectedIds.size === 1
+                ? 'Gerar PIX da fatura'
+                : 'Gerar PIX das faturas'} */}
+              Gerar PIX
             </Text>
           </TouchableOpacity>
         </View>

@@ -43,9 +43,6 @@ function PushTokenRegistrar() {
       sendTokenToBackend(pushToken);
     });
 
-    // Escuta mudanças de token em tempo real — cobre o caso de o
-    // token ser invalidado/renovado pelo FCM depois que o app já
-    // está aberto (rebuild anterior, troca de credenciais, etc).
     const unsubscribe = subscribeToPushTokenChanges((newToken) => {
       sendTokenToBackend(newToken);
     });
@@ -60,6 +57,19 @@ function AuthGate({ children }: { children: React.ReactNode }) {
   const { user, isLoading } = useAuth();
   const pathname = usePathname();
 
+  // Rotas acessíveis sem estar logado — todas dentro do grupo (auth).
+  // usePathname() retorna a URL "resolvida" (sem o nome do grupo entre
+  // parênteses), por isso continua sendo /login, /forgot-password etc.
+  const PUBLIC_ROUTES = [
+    '/login',
+    '/forgot-password',
+    '/verify-code',
+    '/reset-password',
+    '/set-password',
+    '/delete-account',
+  ];
+  const isPublicRoute = PUBLIC_ROUTES.includes(pathname);
+
   if (isLoading) {
     return (
       <View className="flex-1 items-center justify-center bg-[#F5F1EA]">
@@ -68,12 +78,10 @@ function AuthGate({ children }: { children: React.ReactNode }) {
     );
   }
 
-  if (!user && pathname !== '/login') {
-    return <Redirect href="/login" />;
+  if (!user && !isPublicRoute) {
+    return <Redirect href="/(auth)/login" />;
   }
 
-  // Redireciona pro grupo certo baseado no role, se o usuário
-  // estiver tentando acessar a raiz "/" (ex: logo após o login)
   if (user && pathname === '/') {
     if (user.role === 'ADMIN') {
       return <Redirect href="/(admin)/students" />;

@@ -10,6 +10,7 @@ import { useEffect } from 'react';
 import { useStudent } from '../context/StudentContext';
 import { formatInstrument } from '../lib/instrument';
 import { usePathname } from 'expo-router';
+import { firstName } from '../lib/name';
 
 const SWITCHER_HEIGHT = 56; // altura aproximada do conteúdo (ajuste conforme seu design)
 const ROUTES_WITH_SWITCHER = ['/', '/lessons'];
@@ -105,7 +106,7 @@ export function StudentSwitcher() {
                   color: active ? '#fff' : '#1A1A1A',
                 }}
               >
-                {student.name}
+                {firstName(student.name)}
               </Text>
 
               {instrument ? (
