@@ -77,6 +77,7 @@ export function TextField({
           borderColor,
           backgroundColor: '#F5F1EA',
           alignItems: multiline ? 'flex-start' : 'center',
+          minHeight: multiline ? undefined : 48,
         }}
       >
         {prefix ? (

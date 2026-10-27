@@ -4,15 +4,13 @@
 // Revisão). No fim chama POST /users/full, que cria o usuário, o aluno, a
 // matrícula (aulas + 1ª mensalidade) e envia o e-mail de convite.
 
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useState } from 'react';
 import {
   View,
   Text,
   ScrollView,
   TouchableOpacity,
   ActivityIndicator,
-  KeyboardAvoidingView,
-  BackHandler,
 } from 'react-native';
 import { Stack, useNavigation, useRouter } from 'expo-router';
 import { usePreventRemove } from '@react-navigation/native';
@@ -23,7 +21,7 @@ import { api } from '../lib/api';
 import { confirmAsync } from '../lib/confirm';
 import { firstName } from '../lib/name';
 import { adminLessonKeys } from '../lib/queryKeys';
-import { useKeyboardVisible } from '../lib/useKeyboardVisible';
+import { useKeyboardOverlap } from '../lib/useKeyboardOverlap';
 import {
   EMPTY_FORM,
   LAST_STEP,
@@ -68,7 +66,7 @@ export default function NewStudentScreen() {
   const navigation = useNavigation();
   const queryClient = useQueryClient();
   const insets = useSafeAreaInsets();
-  const keyboardVisible = useKeyboardVisible();
+  const keyboardOverlap = useKeyboardOverlap();
 
   const [form, setForm] = useState<NewStudentForm>(EMPTY_FORM);
   const [step, setStep] = useState(0);
@@ -189,29 +187,36 @@ export default function NewStudentScreen() {
     createStudent.mutate();
   }
 
-  function handleBack() {
-    if (!isDone && step > 0) return goToStep(step - 1);
+  // Pular para qualquer etapa (bolinhas do topo). Voltar é livre; avançar
+  // só passa se as etapas do caminho estiverem válidas — se alguma não
+  // estiver, cai nela mostrando o que falta.
+  function handleSelectStep(target: number) {
+    if (target === step || isSubmitting) return;
+    if (target > step) {
+      for (let i = step; i < target; i++) {
+        const stepErrors = validateStep(i, form);
+        if (Object.keys(stepErrors).length) {
+          setErrors(stepErrors);
+          goToStep(i);
+          return;
+        }
+      }
+    }
+    setErrors({});
+    goToStep(target);
+  }
+
+  // Botão "Voltar" do rodapé: etapa anterior.
+  function handlePreviousStep() {
+    if (step > 0) goToStep(step - 1);
+  }
+
+  // Seta do topo (e botão voltar do Android): sai do cadastro. Se houver
+  // dados preenchidos, o usePreventRemove abaixo pergunta antes.
+  function handleLeave() {
     if (router.canGoBack()) router.back();
     else router.replace('/(admin)/students');
   }
-
-  // Botão voltar do Android: volta de etapa; na primeira etapa segue o
-  // fluxo normal (e o usePreventRemove abaixo pergunta se descarta).
-  useEffect(() => {
-    if (isDone) return;
-    const subscription = BackHandler.addEventListener(
-      'hardwareBackPress',
-      () => {
-        if (step > 0) {
-          setStep(step - 1);
-          setSubmitError(null);
-          return true;
-        }
-        return false;
-      },
-    );
-    return () => subscription.remove();
-  }, [isDone, step]);
 
   usePreventRemove(isDirty && !createStudent.isPending, ({ data }) => {
     void confirmAsync(DISCARD_FORM).then((discard) => {
@@ -232,9 +237,14 @@ export default function NewStudentScreen() {
   const isLast = step === LAST_STEP;
 
   return (
-    <KeyboardAvoidingView className="flex-1 bg-[#F5F1EA]" behavior="padding">
+    // O espaço do teclado é aplicado aqui, no fim da tela: o rodapé sobe
+    // junto com o teclado e, com o teclado fechado, o padding é zero.
+    <View
+      className="flex-1 bg-[#F5F1EA]"
+      style={{ paddingBottom: keyboardOverlap }}
+    >
       <Stack.Screen options={{ headerShown: false }} />
-      <ScreenHeader title="Novo aluno" onBack={handleBack} />
+      <ScreenHeader title="Novo aluno" onBack={handleLeave} />
 
       <ScrollView
         ref={setScrollRef}
@@ -260,7 +270,11 @@ export default function NewStudentScreen() {
           />
         ) : (
           <View className="gap-4">
-            <StepIndicator labels={STEP_LABELS} current={step} />
+            <StepIndicator
+              labels={STEP_LABELS}
+              current={step}
+              onSelect={handleSelectStep}
+            />
 
             {Object.keys(errors).length > 0 && (
               <InlineFeedback
@@ -303,12 +317,12 @@ export default function NewStudentScreen() {
           style={{
             borderTopWidth: 1,
             borderTopColor: 'rgba(0,0,0,0.05)',
-            paddingBottom: keyboardVisible ? 12 : insets.bottom + 12,
+            paddingBottom: keyboardOverlap > 0 ? 12 : insets.bottom + 12,
           }}
         >
           {step > 0 && (
             <TouchableOpacity
-              onPress={handleBack}
+              onPress={handlePreviousStep}
               disabled={isSubmitting}
               className="items-center justify-center rounded-xl px-5 h-12 bg-white"
               style={{
@@ -346,6 +360,6 @@ export default function NewStudentScreen() {
           </TouchableOpacity>
         </View>
       )}
-    </KeyboardAvoidingView>
+    </View>
   );
 }

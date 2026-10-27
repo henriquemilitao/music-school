@@ -1,5 +1,5 @@
 import { View, Text, TouchableOpacity } from 'react-native';
-import { Mail } from 'lucide-react-native';
+import { Check, Mail } from 'lucide-react-native';
 import { Card } from '../../ui/Card';
 import { TextField } from '../../form/FormField';
 import { maskPhone, type HolderType } from '../../../lib/newStudent';
@@ -41,11 +41,12 @@ export function AccessStep({ form, errors, onChange }: StepProps) {
             <TouchableOpacity
               key={option.value}
               onPress={() => onChange({ holder: option.value })}
+              activeOpacity={0.8}
               className="flex-row items-center gap-3 rounded-xl px-4 py-3.5"
               style={{
-                backgroundColor: selected ? '#FBF6EC' : '#fff',
-                borderWidth: selected ? 1.5 : 1,
-                borderColor: selected ? '#B08D57' : 'rgba(0,0,0,0.08)',
+                backgroundColor: selected ? '#B08D57' : '#fff',
+                borderWidth: 1,
+                borderColor: selected ? '#B08D57' : 'rgba(0,0,0,0.1)',
               }}
               accessibilityRole="radio"
               accessibilityState={{ selected }}
@@ -53,19 +54,28 @@ export function AccessStep({ form, errors, onChange }: StepProps) {
               <View
                 className="w-5 h-5 rounded-full items-center justify-center"
                 style={{
-                  borderWidth: 2,
-                  borderColor: selected ? '#B08D57' : '#D4CFC4',
+                  backgroundColor: selected ? '#fff' : 'transparent',
+                  borderWidth: selected ? 0 : 2,
+                  borderColor: '#D4CFC4',
                 }}
               >
                 {selected && (
-                  <View className="w-2.5 h-2.5 rounded-full bg-[#B08D57]" />
+                  <Check size={12} color="#B08D57" strokeWidth={3} />
                 )}
               </View>
               <View className="flex-1">
-                <Text className="text-sm font-semibold text-[#1A1A1A]">
+                <Text
+                  className="text-sm font-semibold"
+                  style={{ color: selected ? '#fff' : '#1A1A1A' }}
+                >
                   {option.title}
                 </Text>
-                <Text className="text-xs text-gray-500 mt-0.5">
+                <Text
+                  className="text-xs mt-0.5"
+                  style={{
+                    color: selected ? 'rgba(255,255,255,0.9)' : '#6B7280',
+                  }}
+                >
                   {option.text}
                 </Text>
               </View>

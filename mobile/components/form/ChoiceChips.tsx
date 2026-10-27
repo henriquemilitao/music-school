@@ -25,9 +25,9 @@ export function ChoiceChips<T extends string | number | null>({
             onPress={() => onChange(option.value)}
             className="rounded-full px-4 py-2.5"
             style={{
-              backgroundColor: selected ? '#1A1A1A' : '#F5F1EA',
+              backgroundColor: selected ? '#B08D57' : '#F5F1EA',
               borderWidth: 1,
-              borderColor: selected ? '#1A1A1A' : 'rgba(0,0,0,0.08)',
+              borderColor: selected ? '#B08D57' : 'rgba(0,0,0,0.08)',
             }}
             accessibilityRole="radio"
             accessibilityState={{ selected }}

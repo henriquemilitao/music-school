@@ -148,6 +148,51 @@ export function weekdayName(dateText: string): string | null {
   return WEEKDAYS[new Date(Date.UTC(y, m - 1, d)).getUTCDay()];
 }
 
+const WEEKDAYS_SHORT = ['dom', 'seg', 'ter', 'qua', 'qui', 'sex', 'sáb'];
+
+// "02/11/2026" -> "seg, 02/11/2026" (null se a data for inválida)
+export function dateWithWeekdayShort(dateText: string): string | null {
+  const iso = parseDate(dateText);
+  if (!iso) return null;
+  const [y, m, d] = iso.split('-').map(Number);
+  const day = new Date(Date.UTC(y, m - 1, d)).getUTCDay();
+  return `${WEEKDAYS_SHORT[day]}, ${dateText}`;
+}
+
+// "02/11/2026" -> "02/11/2026 (segunda-feira)"
+export function dateWithWeekdayLong(dateText: string): string {
+  const weekday = weekdayName(dateText);
+  return weekday ? `${dateText} (${weekday})` : dateText;
+}
+
+// Date (do seletor) <-> "DD/MM/AAAA", sempre pelo calendário local.
+export function dateToText(date: Date): string {
+  const dd = String(date.getDate()).padStart(2, '0');
+  const mm = String(date.getMonth() + 1).padStart(2, '0');
+  return `${dd}/${mm}/${date.getFullYear()}`;
+}
+
+export function textToDate(text: string): Date | null {
+  const iso = parseDate(text);
+  if (!iso) return null;
+  const [y, m, d] = iso.split('-').map(Number);
+  return new Date(y, m - 1, d);
+}
+
+// "20/03/2015" -> "11 anos" | "7 meses" | "1 ano" (null se inválida)
+export function ageText(birthText: string, now = new Date()): string | null {
+  const birth = textToDate(birthText);
+  if (!birth) return null;
+  let months =
+    (now.getFullYear() - birth.getFullYear()) * 12 +
+    (now.getMonth() - birth.getMonth());
+  if (now.getDate() < birth.getDate()) months -= 1;
+  if (months < 0) return null;
+  if (months < 12) return months === 1 ? '1 mês' : `${months} meses`;
+  const years = Math.floor(months / 12);
+  return years === 1 ? '1 ano' : `${years} anos`;
+}
+
 function isFutureDate(iso: string): boolean {
   const today = new Date();
   const todayIso = `${today.getFullYear()}-${String(

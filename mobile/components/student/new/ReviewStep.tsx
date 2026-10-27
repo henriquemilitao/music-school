@@ -4,6 +4,8 @@ import { Mail } from 'lucide-react-native';
 import { Card } from '../../ui/Card';
 import { formatInstrument } from '../../../lib/instrument';
 import {
+  ageText,
+  dateWithWeekdayLong,
   formatMoneyDigits,
   weekdayName,
   type NewStudentForm,
@@ -68,7 +70,14 @@ export function ReviewStep({ form, teacherName, onEdit }: ReviewStepProps) {
       <Section title="Aluno" step={0} onEdit={onEdit}>
         <Line label="Nome" value={form.studentName.trim()} />
         <Line label="Instrumento" value={formatInstrument(form.instrument)} />
-        <Line label="Nascimento" value={form.birthDate || '—'} />
+        <Line
+          label="Nascimento"
+          value={
+            form.birthDate
+              ? `${form.birthDate} (${ageText(form.birthDate) ?? '—'})`
+              : '—'
+          }
+        />
         {form.notes.trim() ? (
           <Line label="Observações" value={form.notes.trim()} />
         ) : null}
@@ -80,14 +89,19 @@ export function ReviewStep({ form, teacherName, onEdit }: ReviewStepProps) {
           label="Aulas"
           value={`${weekday ? `Toda ${weekday}` : '—'} às ${form.startTime} · ${form.durationMinutes} min`}
         />
-        <Line label="Primeira aula" value={form.firstLessonDate} />
+        <Line
+          label="Primeira aula"
+          value={dateWithWeekdayLong(form.firstLessonDate)}
+        />
         <Line
           label="Mensalidade"
           value={`R$ ${formatMoneyDigits(form.monthlyAmountDigits)}`}
         />
         <Line
           label="1º vencimento"
-          value={form.firstPaymentDueDate || form.firstLessonDate}
+          value={dateWithWeekdayLong(
+            form.firstPaymentDueDate || form.firstLessonDate,
+          )}
         />
         <Line
           label="1ª mensalidade"

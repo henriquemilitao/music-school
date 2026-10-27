@@ -154,7 +154,7 @@ export function SuccessView({
       <View className="gap-2.5 pt-1">
         <TouchableOpacity
           onPress={onOpenStudent}
-          className="items-center justify-center rounded-xl bg-[#1A1A1A] h-12"
+          className="items-center justify-center rounded-xl bg-[#B08D57] h-12"
           accessibilityRole="button"
         >
           <Text className="text-white font-semibold">Ver aluno</Text>
