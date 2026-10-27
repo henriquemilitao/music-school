@@ -23,6 +23,7 @@ import {
 import { api } from '../../lib/api';
 import { formatInstrument } from '../../lib/instrument';
 import { firstName } from '../../lib/name';
+import { SegmentedControl } from '../../components/ui/SegmentedControl';
 
 // ─── Tipos ────────────────────────────────────────────────────────────
 
@@ -31,6 +32,8 @@ type Student = {
   name: string;
   instrument: string | null;
   age: number | null;
+  // Ativo = tem matrícula ativa. Quem encerrou fica "inativo".
+  isActive: boolean;
   user: { id: string; name: string; email: string };
 };
 
@@ -41,11 +44,33 @@ type PendingPayment = {
 };
 
 type Enrollment = {
+  isActive: boolean;
   student: { id: string };
   teacher: { user: { name: string } } | null;
 };
 
 type StatusFilter = 'ALL' | 'OK' | 'PENDING' | 'OVERDUE';
+
+// Quais alunos a lista mostra. Padrão: só quem tem matrícula ativa.
+type ScopeFilter = 'ACTIVE' | 'INACTIVE' | 'ALL';
+
+const SCOPE_OPTIONS: { key: ScopeFilter; label: string }[] = [
+  { key: 'ACTIVE', label: 'Ativos' },
+  { key: 'INACTIVE', label: 'Inativos' },
+  { key: 'ALL', label: 'Todos' },
+];
+
+const EMPTY_MESSAGE: Record<ScopeFilter, string> = {
+  ACTIVE: 'Nenhum aluno ativo encontrado',
+  INACTIVE: 'Nenhum aluno inativo',
+  ALL: 'Nenhum aluno encontrado',
+};
+
+const TOTAL_LABEL: Record<ScopeFilter, string> = {
+  ACTIVE: 'Ativos',
+  INACTIVE: 'Inativos',
+  ALL: 'Total',
+};
 
 type StudentWithStatus = Student & {
   status: 'OK' | 'PENDING' | 'OVERDUE';
@@ -182,15 +207,29 @@ function StudentRow({
         <Text className="text-xs font-medium text-gray-400">{index}</Text>
       </View>
       <View className="flex-1">
-        <Text className="text-sm font-medium">{firstName(student.name)}</Text>
+        <View className="flex-row items-center gap-2">
+          <Text className="text-sm font-medium flex-shrink" numberOfLines={1}>
+            {firstName(student.name)}
+          </Text>
+          {!student.isActive && (
+            <View className="rounded-full px-2 py-0.5 bg-gray-100">
+              <Text className="text-[10px] font-bold text-gray-500">
+                Inativo
+              </Text>
+            </View>
+          )}
+        </View>
         <Text className="text-[13px] text-gray-500 mt-0.5">
           {formatInstrument(student.instrument)}
           {student.teacherName ? ` · ${student.teacherName}` : ''}
         </Text>
       </View>
-      <View className="mr-2">
-        <StatusBadge status={student.status} />
-      </View>
+      {/* "Em dia" não diz nada de quem já saiu: só mostra se houver pendência */}
+      {(student.isActive || student.status !== 'OK') && (
+        <View className="mr-2">
+          <StatusBadge status={student.status} />
+        </View>
+      )}
       <ChevronRight size={16} color="#D4CFC4" />
     </TouchableOpacity>
   );
@@ -236,6 +275,7 @@ export default function AdminStudents() {
   const router = useRouter();
   const [search, setSearch] = useState('');
   const queryClient = useQueryClient();
+  const [scope, setScope] = useState<ScopeFilter>('ACTIVE');
   const [statusFilter, setStatusFilter] = useState<StatusFilter>('ALL');
   const [instrumentFilter, setInstrumentFilter] = useState<string | null>(null);
   const [teacherFilter, setTeacherFilter] = useState<string | null>(null);
@@ -287,18 +327,27 @@ export default function AdminStudents() {
     }
   });
 
+  // A lista vem da mais nova pra mais antiga: a matrícula ativa sempre
+  // vence; sem ela, vale a mais recente (aluno inativo).
   const teacherByStudentId = new Map<string, string>();
   enrollments?.forEach((e) => {
-    if (e.teacher?.user.name) {
+    if (!e.teacher?.user.name) return;
+    if (e.isActive || !teacherByStudentId.has(e.student.id)) {
       teacherByStudentId.set(e.student.id, firstName(e.teacher.user.name));
     }
   });
 
-  const withStatus: StudentWithStatus[] = (students ?? []).map((s) => ({
-    ...s,
-    status: pendingMap.get(s.id) ?? ('OK' as const),
-    teacherName: teacherByStudentId.get(s.id) ?? null,
-  }));
+  // Tudo abaixo (cartões de resumo, chips, busca) vale só para o recorte
+  // escolhido em Ativos / Inativos / Todos.
+  const withStatus: StudentWithStatus[] = (students ?? [])
+    .filter((s) =>
+      scope === 'ALL' ? true : scope === 'ACTIVE' ? s.isActive : !s.isActive,
+    )
+    .map((s) => ({
+      ...s,
+      status: pendingMap.get(s.id) ?? ('OK' as const),
+      teacherName: teacherByStudentId.get(s.id) ?? null,
+    }));
 
   // Listas de opções pros chips, derivadas dos próprios dados
   const instrumentOptions = Array.from(
@@ -339,6 +388,13 @@ export default function AdminStudents() {
     setStatusFilter('ALL');
     setInstrumentFilter(null);
     setTeacherFilter(null);
+  }
+
+  // Trocar o recorte zera os demais filtros: os chips de instrumento e
+  // professor mudam junto com a lista.
+  function changeScope(next: ScopeFilter) {
+    setScope(next);
+    clearFilters();
   }
 
   function toggleStatusFilter(value: StatusFilter) {
@@ -427,11 +483,19 @@ export default function AdminStudents() {
         </TouchableOpacity>
       </View>
 
+      <View className="mb-4">
+        <SegmentedControl
+          options={SCOPE_OPTIONS}
+          value={scope}
+          onChange={changeScope}
+        />
+      </View>
+
       {/* Cards de resumo — clicáveis, funcionam como filtro de status */}
       <View className="flex-row gap-2.5 mb-2.5">
         <ResumoCard
           icon={Users}
-          label="Total"
+          label={TOTAL_LABEL[scope]}
           value={counts.total}
           bg="#F3F4F6"
           color="#4B5563"
@@ -559,7 +623,7 @@ export default function AdminStudents() {
             }}
           >
             <Text className="text-sm text-gray-400">
-              Nenhum aluno encontrado
+              {EMPTY_MESSAGE[scope]}
             </Text>
           </View>
         ) : (

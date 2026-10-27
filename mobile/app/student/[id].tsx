@@ -1,81 +1,50 @@
 import { useCallback, useState } from 'react';
 import {
-  View,
-  Text,
-  ScrollView,
   ActivityIndicator,
-  TouchableOpacity,
   Alert,
+  Text,
+  TouchableOpacity,
+  View,
 } from 'react-native';
-import { useSafeAreaInsets } from 'react-native-safe-area-context';
-import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
-import {
-  useLocalSearchParams,
-  useRouter,
-  Stack,
-  useFocusEffect,
-} from 'expo-router';
-import {
-  ArrowLeft,
-  Music2,
-  CalendarClock,
-  CreditCard,
-  Check,
-  X,
-  ChevronDown,
-  Cake,
-  Phone,
-  Mail,
-  UserRound,
-  Music,
-  Clock,
-  Wallet,
-  CalendarCheck2,
-  IdCard,
-  ChevronRight,
-} from 'lucide-react-native';
+import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
+import { useFocusEffect, useLocalSearchParams, useRouter } from 'expo-router';
+import { Ellipsis, Music2, Trash2, UserMinus } from 'lucide-react-native';
 import { api } from '../../lib/api';
 import { formatInstrument } from '../../lib/instrument';
-import { formatCurrency, formatDate } from '../../lib/paymentFormat';
 import { firstName } from '../../lib/name';
 import { adminLessonKeys } from '../../lib/queryKeys';
-import { NotesIndicator } from '../../components/lesson/NotesIndicator';
+import { Card } from '../../components/ui/Card';
+import { DetailScreen } from '../../components/ui/DetailScreen';
+import { SegmentedControl } from '../../components/ui/SegmentedControl';
+import {
+  ActionMenu,
+  type ActionMenuItem,
+} from '../../components/ui/ActionMenu';
+import { Badge } from '../../components/student/detail/Badge';
+import {
+  EnrollmentCard,
+  type EnrollmentSummary,
+} from '../../components/student/detail/EnrollmentCard';
+import {
+  LessonMonthGroup,
+  lessonMonthKey,
+  type StudentLesson,
+} from '../../components/student/detail/LessonMonthGroup';
+import {
+  PaymentsList,
+  type StudentPayment,
+} from '../../components/student/detail/PaymentsList';
+import {
+  StudentProfileCard,
+  type StudentProfile,
+} from '../../components/student/detail/StudentProfileCard';
 
 // ─── Tipos ────────────────────────────────────────────────────────────
 
-type StudentDetail = {
+type StudentDetail = StudentProfile & {
   id: string;
-  name: string;
   instrument: string | null;
-  birthDate: string | null;
-  age: number | null;
-  notes: string | null;
-  user: { name: string; email: string; phone: string | null };
-};
-
-type Enrollment = {
-  id: string;
-  weekDay: number;
-  startTime: string;
-  monthlyAmount: string;
-  firstPaymentDueDate: string;
-  teacher: { user: { name: string } } | null;
-} | null;
-
-type Lesson = {
-  id: string;
-  scheduledAt: string;
-  status: 'SCHEDULED' | 'COMPLETED' | 'CANCELLED';
-  isMakeup: boolean;
-  notes: string | null;
-};
-
-type Payment = {
-  id: string;
-  amount: string;
-  dueDate: string;
-  status: 'PENDING' | 'PAID' | 'OVERDUE';
-  referenceMonth: string;
+  isActive: boolean;
 };
 
 // Status agregado — vem de um endpoint leve, não da lista completa de faturas
@@ -85,91 +54,11 @@ type PaymentStatusSummary = {
 
 type TabKey = 'geral' | 'aulas' | 'faturas';
 
-const WEEKDAYS = [
-  'Domingo',
-  'Segunda',
-  'Terça',
-  'Quarta',
-  'Quinta',
-  'Sexta',
-  'Sábado',
+const TABS: { key: TabKey; label: string }[] = [
+  { key: 'geral', label: 'Visão geral' },
+  { key: 'aulas', label: 'Aulas' },
+  { key: 'faturas', label: 'Faturas' },
 ];
-
-// ─── Helpers de formatação ────────────────────────────────────────────
-
-function capitalize(s: string) {
-  return s.charAt(0).toUpperCase() + s.slice(1);
-}
-
-// Ex: "Sábado, 5 de julho" — dia da semana + dia + mês
-function formatWeekdayDate(iso: string) {
-  const date = new Date(iso);
-  return capitalize(
-    date.toLocaleDateString('pt-BR', {
-      weekday: 'long',
-      day: 'numeric',
-      month: 'long',
-    }),
-  );
-}
-
-// Ex: "12 de março de 2015"
-function formatFullDate(iso: string) {
-  const date = new Date(iso);
-  return capitalize(
-    date.toLocaleDateString('pt-BR', {
-      day: 'numeric',
-      month: 'long',
-      year: 'numeric',
-    }),
-  );
-}
-
-// Ex: "10 de julho de 2014 (12 anos)" — data de nascimento + idade juntos
-function formatBirthDateWithAge(birthDate: string | null, age: number | null) {
-  if (!birthDate) return '—';
-  const dateLabel = formatFullDate(birthDate);
-  return age != null ? `${dateLabel} (${age} anos)` : dateLabel;
-}
-
-// Garante o "R$" na frente independente de como formatCurrency formata
-// o número — evita depender de detalhe de implementação daquele helper.
-function formatCurrencyBRL(value: string | number) {
-  const num = typeof value === 'string' ? Number(value) : value;
-  return new Intl.NumberFormat('pt-BR', {
-    style: 'currency',
-    currency: 'BRL',
-  }).format(num);
-}
-
-function formatMonthKey(iso: string) {
-  const date = new Date(iso);
-  return `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}`;
-}
-
-function formatMonthLabel(monthKey: string) {
-  const [year, month] = monthKey.split('-').map(Number);
-  const date = new Date(year, month - 1, 1);
-  return capitalize(
-    date.toLocaleDateString('pt-BR', { month: 'long', year: 'numeric' }),
-  );
-}
-
-function lessonStatusConfig(status: Lesson['status']) {
-  if (status === 'COMPLETED')
-    return { label: 'Realizada', bg: '#ECFDF5', text: '#059669' };
-  if (status === 'CANCELLED')
-    return { label: 'Cancelada', bg: '#FEF2F2', text: '#DC2626' };
-  return { label: 'Agendada', bg: '#FFFBEB', text: '#D97706' };
-}
-
-function paymentStatusConfig(status: Payment['status']) {
-  if (status === 'PAID')
-    return { label: 'Paga', bg: '#ECFDF5', text: '#059669' };
-  if (status === 'OVERDUE')
-    return { label: 'Atrasada', bg: '#FEF2F2', text: '#DC2626' };
-  return { label: 'Pendente', bg: '#FFFBEB', text: '#D97706' };
-}
 
 // Status agregado da matrícula (Em dia / Pendente / Atrasado)
 function matriculaStatusConfig(status: PaymentStatusSummary['status']) {
@@ -180,92 +69,6 @@ function matriculaStatusConfig(status: PaymentStatusSummary['status']) {
   return { label: 'Em dia', bg: '#ECFDF5', text: '#059669' };
 }
 
-// ─── Componentes pequenos ─────────────────────────────────────────────
-
-function Badge({
-  label,
-  bg,
-  color,
-}: {
-  label: string;
-  bg: string;
-  color: string;
-}) {
-  return (
-    <View className="rounded-full px-2.5 py-1" style={{ backgroundColor: bg }}>
-      <Text className="text-[11px] font-bold" style={{ color }}>
-        {label}
-      </Text>
-    </View>
-  );
-}
-
-// InfoBloco aceita um ícone opcional e a opção `full` (ocupa a linha
-// inteira do card, usado sempre que o valor pode ser longo — nome,
-// e-mail, data de nascimento — pra não quebrar de forma estranha).
-function InfoBloco({
-  label,
-  valor,
-  icon: Icon,
-  full,
-}: {
-  label: string;
-  valor: string;
-  icon?: React.ComponentType<{ size?: number; color?: string }>;
-  full?: boolean;
-}) {
-  return (
-    <View className={full ? 'w-full mb-3' : 'w-1/2 mb-3 pr-2'}>
-      <View className="flex-row items-center gap-1.5">
-        {Icon && <Icon size={12} color="#B08D57" />}
-        <Text className="text-xs text-gray-400">{label}</Text>
-      </View>
-      <Text
-        className="text-sm font-medium mt-0.5"
-        numberOfLines={1}
-        ellipsizeMode="tail"
-      >
-        {valor}
-      </Text>
-    </View>
-  );
-}
-
-function Card({ children }: { children: React.ReactNode }) {
-  return (
-    <View
-      className="bg-white rounded-2xl p-5 mb-2.5"
-      style={{
-        shadowColor: '#000',
-        shadowOpacity: 0.06,
-        shadowRadius: 8,
-        elevation: 2,
-      }}
-    >
-      {children}
-    </View>
-  );
-}
-
-function CardHeader({
-  title,
-  status,
-}: {
-  title: string;
-  status?: { label: string; bg: string; text: string };
-}) {
-  return (
-    <View className="flex-row items-center justify-between mb-3">
-      <Text className="text-xs font-bold uppercase tracking-widest text-[#B08D57]">
-        {title}
-      </Text>
-      {status && (
-        <Badge label={status.label} bg={status.bg} color={status.text} />
-      )}
-    </View>
-  );
-}
-
 function EmptyState({ text }: { text: string }) {
   return (
     <View className="items-center py-8">
@@ -274,146 +77,14 @@ function EmptyState({ text }: { text: string }) {
   );
 }
 
-// Uma linha de aula dentro do grupo do mês — toque abre o detalhe da aula
-function LessonRow({
-  lesson,
-  isFirst,
-  onOpen,
-  onCancel,
-}: {
-  lesson: Lesson;
-  isFirst: boolean;
-  onOpen: () => void;
-  onCancel: () => void;
-}) {
-  const cfg = lessonStatusConfig(lesson.status);
-  return (
-    <TouchableOpacity
-      onPress={onOpen}
-      className="flex-row items-center justify-between py-2.5"
-      style={
-        !isFirst
-          ? { borderTopWidth: 1, borderTopColor: 'rgba(0,0,0,0.04)' }
-          : undefined
-      }
-    >
-      <View className="flex-row items-center gap-2.5 flex-1">
-        <View className="w-9 h-9 rounded-xl bg-[#F3EADD] items-center justify-center">
-          <CalendarClock size={16} color="#B08D57" />
-        </View>
-        <View className="flex-1">
-          <Text className="text-sm font-medium">
-            {formatWeekdayDate(lesson.scheduledAt)}
-          </Text>
-          {lesson.isMakeup && (
-            <Text className="text-[11px] text-[#B08D57] mt-0.5">Reposição</Text>
-          )}
-          {lesson.notes && <NotesIndicator />}
-        </View>
-      </View>
-      <View className="flex-row items-center gap-2">
-        <Badge label={cfg.label} bg={cfg.bg} color={cfg.text} />
-        {lesson.status === 'SCHEDULED' && (
-          <TouchableOpacity
-            onPress={onCancel}
-            className="w-7 h-7 items-center justify-center rounded-full bg-red-50"
-          >
-            <X size={14} color="#DC2626" />
-          </TouchableOpacity>
-        )}
-        <ChevronRight size={16} color="#D4CFC4" />
-      </View>
-    </TouchableOpacity>
-  );
-}
-
-// Grupo de aulas de um mês, em formato sanfona
-function LessonMonthGroup({
-  monthKey,
-  lessons,
-  defaultOpen,
-  onOpenLesson,
-  onCancelLesson,
-}: {
-  monthKey: string;
-  lessons: Lesson[];
-  defaultOpen: boolean;
-  onOpenLesson: (lessonId: string) => void;
-  onCancelLesson: (lessonId: string) => void;
-}) {
-  const [open, setOpen] = useState(defaultOpen);
-
-  return (
-    <View
-      className="bg-white rounded-2xl overflow-hidden mb-2.5"
-      style={{
-        shadowColor: '#000',
-        shadowOpacity: 0.04,
-        shadowRadius: 4,
-        elevation: 1,
-      }}
-    >
-      <TouchableOpacity
-        className="flex-row items-center justify-between px-4 py-3"
-        onPress={() => setOpen(!open)}
-      >
-        <Text
-          className="text-sm font-semibold"
-          style={{ fontFamily: 'PlayfairDisplay_600SemiBold' }}
-        >
-          {formatMonthLabel(monthKey)}
-        </Text>
-        <View className="flex-row items-center gap-2">
-          <View className="rounded-full px-2 py-0.5 bg-[#F5F1EA]">
-            <Text className="text-xs font-medium text-gray-500">
-              {lessons.length}
-            </Text>
-          </View>
-          <ChevronDown
-            size={16}
-            color="#9CA3AF"
-            style={{ transform: [{ rotate: open ? '180deg' : '0deg' }] }}
-          />
-        </View>
-      </TouchableOpacity>
-      {open && (
-        <View className="px-4 pb-2">
-          {lessons.map((lesson, i) => (
-            <LessonRow
-              key={lesson.id}
-              lesson={lesson}
-              isFirst={i === 0}
-              onOpen={() => onOpenLesson(lesson.id)}
-              onCancel={() =>
-                Alert.alert(
-                  'Cancelar aula',
-                  'Confirma o cancelamento desta aula?',
-                  [
-                    { text: 'Voltar', style: 'cancel' },
-                    {
-                      text: 'Cancelar aula',
-                      style: 'destructive',
-                      onPress: () => onCancelLesson(lesson.id),
-                    },
-                  ],
-                )
-              }
-            />
-          ))}
-        </View>
-      )}
-    </View>
-  );
-}
-
 // ─── Tela principal ───────────────────────────────────────────────────
 
 export default function AdminStudentDetail() {
-  const insets = useSafeAreaInsets();
   const { id } = useLocalSearchParams<{ id: string }>();
   const router = useRouter();
   const queryClient = useQueryClient();
   const [tab, setTab] = useState<TabKey>('geral');
+  const [menuOpen, setMenuOpen] = useState(false);
 
   const { data: student, isLoading: loadingStudent } = useQuery({
     queryKey: ['admin-student', id],
@@ -427,15 +98,16 @@ export default function AdminStudentDetail() {
   const { data: enrollment, isLoading: loadingEnrollment } = useQuery({
     queryKey: ['admin-student-enrollment', id],
     queryFn: async () => {
-      const response = await api.get<Enrollment>(`/enrollments/student/${id}`);
+      const response = await api.get<EnrollmentSummary | null>(
+        `/enrollments/student/${id}`,
+      );
       return response.data;
     },
     enabled: !!id,
   });
 
   // Status agregado de pagamento — endpoint leve (não traz a lista de
-  // faturas inteira, só o status já calculado no backend). Roda sempre
-  // que a tela abre, porque é barato e alimenta o badge da Visão Geral.
+  // faturas inteira, só o status já calculado no backend).
   const { data: paymentStatus, isLoading: loadingPaymentStatus } = useQuery({
     queryKey: ['admin-student-payment-status', id],
     queryFn: async () => {
@@ -450,19 +122,20 @@ export default function AdminStudentDetail() {
   const { data: lessons, isLoading: loadingLessons } = useQuery({
     queryKey: adminLessonKeys.byStudent(id),
     queryFn: async () => {
-      const response = await api.get<Lesson[]>(`/lessons/student/${id}`);
+      const response = await api.get<StudentLesson[]>(`/lessons/student/${id}`);
       return response.data;
     },
     enabled: !!id && tab === 'aulas',
   });
 
-  // Lista completa de faturas — só carregada quando o admin realmente
-  // abre a aba "Faturas" (lazy), evitando trazer N faturas por aluno
-  // toda vez que a tela de detalhe é aberta.
+  // Lista completa de faturas — só carregada quando o admin abre a aba
+  // "Faturas", pra não trazer N faturas por aluno a cada abertura.
   const { data: payments, isLoading: loadingPayments } = useQuery({
     queryKey: ['admin-student-payments', id],
     queryFn: async () => {
-      const response = await api.get<Payment[]>(`/payments/student/${id}`);
+      const response = await api.get<StudentPayment[]>(
+        `/payments/student/${id}`,
+      );
       return response.data;
     },
     enabled: !!id && tab === 'faturas',
@@ -477,24 +150,18 @@ export default function AdminStudentDetail() {
         queryKey: ['admin-student-payment-status', id],
       });
       queryClient.invalidateQueries({
-        queryKey: ['admin-student-lessons', id],
+        queryKey: adminLessonKeys.byStudent(id),
       });
     }, [queryClient, id]),
   );
 
-  const updateLesson = useMutation({
-    mutationFn: async ({
-      lessonId,
-      status,
-      cancelReason,
-    }: {
-      lessonId: string;
-      status: 'CANCELLED';
-      cancelReason: string;
-    }) => {
-      return api.patch(`/lessons/${lessonId}`, { status, cancelReason });
-    },
-    onSuccess: (_, { lessonId }) => {
+  const cancelLesson = useMutation({
+    mutationFn: (lessonId: string) =>
+      api.patch(`/lessons/${lessonId}`, {
+        status: 'CANCELLED',
+        cancelReason: 'Cancelada pelo admin',
+      }),
+    onSuccess: (_, lessonId) => {
       queryClient.invalidateQueries({
         queryKey: adminLessonKeys.byStudent(id),
       });
@@ -509,9 +176,8 @@ export default function AdminStudentDetail() {
   });
 
   const confirmPayment = useMutation({
-    mutationFn: async (paymentId: string) => {
-      return api.patch(`/payments/${paymentId}/confirm`, {});
-    },
+    mutationFn: (paymentId: string) =>
+      api.patch(`/payments/${paymentId}/confirm`, {}),
     onSuccess: () => {
       queryClient.invalidateQueries({
         queryKey: ['admin-student-payments', id],
@@ -527,22 +193,26 @@ export default function AdminStudentDetail() {
 
   if (loadingStudent || loadingEnrollment) {
     return (
-      <View className="flex-1 items-center justify-center bg-[#F5F1EA]">
-        <ActivityIndicator size="large" color="#B08D57" />
-      </View>
+      <DetailScreen title="Detalhes do aluno">
+        <View className="py-24 items-center">
+          <ActivityIndicator size="large" color="#B08D57" />
+        </View>
+      </DetailScreen>
     );
   }
 
   if (!student) {
     return (
-      <View className="flex-1 items-center justify-center bg-[#F5F1EA] px-6">
-        <Text className="text-sm text-gray-400">Aluno não encontrado</Text>
-      </View>
+      <DetailScreen title="Detalhes do aluno">
+        <View className="py-24 items-center px-6">
+          <Text className="text-sm text-gray-400">Aluno não encontrado</Text>
+        </View>
+      </DetailScreen>
     );
   }
 
   // Agrupa as aulas por mês, mais recente primeiro
-  const lessonGroups: Record<string, Lesson[]> = {};
+  const lessonGroups: Record<string, StudentLesson[]> = {};
   (lessons ?? [])
     .slice()
     .sort(
@@ -550,218 +220,107 @@ export default function AdminStudentDetail() {
         new Date(b.scheduledAt).getTime() - new Date(a.scheduledAt).getTime(),
     )
     .forEach((lesson) => {
-      const key = formatMonthKey(lesson.scheduledAt);
-      (lessonGroups[key] ??= []).push(lesson);
+      (lessonGroups[lessonMonthKey(lesson.scheduledAt)] ??= []).push(lesson);
     });
   const lessonMonthKeys = Object.keys(lessonGroups).sort().reverse();
 
-  const matriculaStatus = paymentStatus
-    ? matriculaStatusConfig(paymentStatus.status)
-    : undefined;
+  const matriculaStatus =
+    enrollment && paymentStatus
+      ? matriculaStatusConfig(paymentStatus.status)
+      : undefined;
+
+  const menuItems: ActionMenuItem[] = [
+    ...(enrollment
+      ? [
+          {
+            key: 'end',
+            label: 'Encerrar matrícula',
+            description:
+              'Para as aulas a partir de uma data e mantém o histórico',
+            icon: UserMinus,
+            onPress: () => router.push(`/enrollment-end/${id}`),
+          },
+        ]
+      : []),
+    {
+      key: 'delete',
+      label: 'Excluir aluno e dados',
+      description: 'Apaga tudo de forma definitiva',
+      icon: Trash2,
+      destructive: true,
+      onPress: () => router.push(`/student-delete/${id}`),
+    },
+  ];
 
   return (
-    <ScrollView
-      className="flex-1 bg-[#F5F1EA]"
-      contentContainerStyle={{ paddingBottom: insets.bottom }}
-    >
-      <Stack.Screen options={{ headerShown: false }} />
-
-      {/* Header no mesmo padrão de lesson/[id] e payment/[id] */}
-      <View
-        className="flex-row items-center px-4 pt-14 pb-3 bg-[#F5F1EA]"
-        style={{ borderBottomWidth: 1, borderBottomColor: 'rgba(0,0,0,0.04)' }}
+    <>
+      <DetailScreen
+        title="Detalhes do aluno"
+        headerRight={
+          <TouchableOpacity
+            className="w-9 h-9 rounded-full bg-white items-center justify-center"
+            style={{ borderWidth: 1, borderColor: 'rgba(0,0,0,0.05)' }}
+            onPress={() => setMenuOpen(true)}
+            hitSlop={8}
+            accessibilityRole="button"
+            accessibilityLabel="Mais ações"
+          >
+            <Ellipsis size={18} color="#1A1A1A" />
+          </TouchableOpacity>
+        }
       >
-        <TouchableOpacity
-          className="w-9 h-9 rounded-full bg-white items-center justify-center mr-3"
-          style={{ borderWidth: 1, borderColor: 'rgba(0,0,0,0.05)' }}
-          onPress={() => router.back()}
-        >
-          <ArrowLeft size={18} color="#1A1A1A" />
-        </TouchableOpacity>
-        <Text className="text-base font-semibold">Detalhes do aluno</Text>
-      </View>
-
-      {/* Identificação do aluno */}
-      <View className="px-5 pt-5 pb-4">
-        <View className="flex-row items-center gap-3 mb-3">
-          <View className="w-12 h-12 rounded-xl bg-[#B08D57] items-center justify-center">
-            <Music2 size={22} color="#1A1A1A" />
-          </View>
-          <View className="flex-1">
-            <Text
-              className="text-2xl"
-              style={{ fontFamily: 'PlayfairDisplay_700Bold' }}
-            >
-              {firstName(student.name)}
-            </Text>
-            <Text className="text-sm text-gray-500 mt-0.5">
-              {formatInstrument(student.instrument)}
-              {student.age ? ` · ${student.age} anos` : ''}
-            </Text>
-          </View>
-        </View>
-      </View>
-
-      {/* Tabs */}
-      <View className="px-5">
-        <View
-          className="flex-row bg-white rounded-full p-1 mb-4"
-          style={{ borderWidth: 1, borderColor: 'rgba(0,0,0,0.05)' }}
-        >
-          {(
-            [
-              { key: 'geral', label: 'Visão geral' },
-              { key: 'aulas', label: 'Aulas' },
-              { key: 'faturas', label: 'Faturas' },
-            ] as { key: TabKey; label: string }[]
-          ).map((t) => (
-            <TouchableOpacity
-              key={t.key}
-              onPress={() => setTab(t.key)}
-              className={`flex-1 rounded-full py-2 items-center ${
-                tab === t.key ? 'bg-[#B08D57]' : ''
-              }`}
-            >
-              <Text
-                className={`text-sm font-medium ${
-                  tab === t.key ? 'text-white' : 'text-gray-500'
-                }`}
-              >
-                {t.label}
-              </Text>
-            </TouchableOpacity>
-          ))}
-        </View>
-      </View>
-
-      <View className="px-5 pb-10">
-        {tab === 'geral' && (
-          <>
-            {/* ── Dados cadastrais: aluno + responsável ── */}
-            <Card>
-              <CardHeader title="Dados cadastrais" />
-
-              <Text className="text-[11px] font-semibold text-gray-400 uppercase tracking-wide mb-2">
-                Aluno
-              </Text>
-              <View className="flex-row flex-wrap mb-1">
-                <InfoBloco
-                  label="Nome completo"
-                  valor={student.name}
-                  icon={IdCard}
-                  full
-                />
-                <InfoBloco
-                  label="Data de nascimento"
-                  valor={formatBirthDateWithAge(student.birthDate, student.age)}
-                  icon={Cake}
-                  full
-                />
+        {/* Identificação do aluno */}
+        <View className="px-5 pt-5 pb-4">
+          <View className="flex-row items-center gap-3">
+            <View className="w-12 h-12 rounded-xl bg-[#B08D57] items-center justify-center">
+              <Music2 size={22} color="#1A1A1A" />
+            </View>
+            <View className="flex-1">
+              <View className="flex-row items-center gap-2">
+                <Text
+                  className="text-2xl flex-shrink"
+                  numberOfLines={1}
+                  style={{ fontFamily: 'PlayfairDisplay_700Bold' }}
+                >
+                  {firstName(student.name)}
+                </Text>
+                {!student.isActive && (
+                  <Badge label="Inativo" bg="#F3F4F6" color="#6B7280" />
+                )}
               </View>
+              <Text className="text-sm text-gray-500 mt-0.5">
+                {formatInstrument(student.instrument)}
+                {student.age ? ` · ${student.age} anos` : ''}
+              </Text>
+            </View>
+          </View>
+        </View>
 
-              <View
-                className="my-3"
-                style={{
-                  borderTopWidth: 1,
-                  borderTopColor: 'rgba(0,0,0,0.06)',
-                }}
+        {/* Abas */}
+        <View className="px-5 mb-4">
+          <SegmentedControl options={TABS} value={tab} onChange={setTab} />
+        </View>
+
+        <View className="px-5 pb-10">
+          {tab === 'geral' && (
+            <>
+              <StudentProfileCard
+                student={student}
+                onEdit={() => router.push(`/student-edit/${id}`)}
               />
+              <EnrollmentCard
+                enrollment={enrollment ?? null}
+                instrument={student.instrument}
+                status={matriculaStatus}
+                loadingStatus={loadingPaymentStatus}
+                ended={!student.isActive}
+                onEdit={() => router.push(`/enrollment-edit/${id}`)}
+              />
+            </>
+          )}
 
-              <Text className="text-[11px] font-semibold text-gray-400 uppercase tracking-wide mb-2">
-                Responsável
-              </Text>
-              <View className="flex-row flex-wrap">
-                <InfoBloco
-                  label="Nome"
-                  valor={student.user.name}
-                  icon={UserRound}
-                  full
-                />
-                <InfoBloco
-                  label="Telefone"
-                  valor={student.user.phone ?? '—'}
-                  icon={Phone}
-                  full
-                />
-                <InfoBloco
-                  label="E-mail"
-                  valor={student.user.email}
-                  icon={Mail}
-                  full
-                />
-              </View>
-            </Card>
-
-            {/* ── Matrícula: instrumento, aula, valor e status de pagamento ── */}
-            <Card>
-              <CardHeader title="Matrícula" status={matriculaStatus} />
-
-              {enrollment ? (
-                <>
-                  <View className="flex-row flex-wrap mb-1">
-                    <InfoBloco
-                      label="Instrumento"
-                      valor={formatInstrument(student.instrument)}
-                      icon={Music}
-                    />
-                    <InfoBloco
-                      label="Professor"
-                      valor={enrollment.teacher?.user.name ?? '—'}
-                      icon={UserRound}
-                    />
-                    <InfoBloco
-                      label="Dia da aula"
-                      valor={WEEKDAYS[enrollment.weekDay]}
-                      icon={CalendarClock}
-                    />
-                    <InfoBloco
-                      label="Horário"
-                      valor={enrollment.startTime}
-                      icon={Clock}
-                    />
-                  </View>
-
-                  <View
-                    className="my-3"
-                    style={{
-                      borderTopWidth: 1,
-                      borderTopColor: 'rgba(0,0,0,0.06)',
-                    }}
-                  />
-
-                  <View className="flex-row flex-wrap">
-                    <InfoBloco
-                      label="Valor mensal"
-                      valor={formatCurrencyBRL(enrollment.monthlyAmount)}
-                      icon={Wallet}
-                    />
-                    <InfoBloco
-                      label="Vencimento"
-                      valor={`Todo dia ${new Date(
-                        enrollment.firstPaymentDueDate,
-                      ).getDate()}`}
-                      icon={CalendarCheck2}
-                    />
-                  </View>
-
-                  {loadingPaymentStatus && (
-                    <ActivityIndicator
-                      size="small"
-                      color="#B08D57"
-                      style={{ marginTop: 4 }}
-                    />
-                  )}
-                </>
-              ) : (
-                <EmptyState text="Nenhuma matrícula ativa" />
-              )}
-            </Card>
-          </>
-        )}
-
-        {tab === 'aulas' && (
-          <>
-            {loadingLessons ? (
+          {tab === 'aulas' &&
+            (loadingLessons ? (
               <Card>
                 <ActivityIndicator color="#B08D57" />
               </Card>
@@ -779,90 +338,34 @@ export default function AdminStudentDetail() {
                   onOpenLesson={(lessonId) =>
                     router.push(`/admin-lesson/${lessonId}`)
                   }
-                  onCancelLesson={(lessonId) =>
-                    updateLesson.mutate({
-                      lessonId,
-                      status: 'CANCELLED',
-                      cancelReason: 'Cancelada pelo admin',
-                    })
-                  }
+                  onCancelLesson={(lessonId) => cancelLesson.mutate(lessonId)}
                 />
               ))
-            )}
-          </>
-        )}
+            ))}
 
-        {tab === 'faturas' && (
-          <Card>
-            {loadingPayments ? (
-              <ActivityIndicator color="#B08D57" />
-            ) : !payments || payments.length === 0 ? (
-              <EmptyState text="Nenhuma fatura encontrada" />
-            ) : (
-              <View className="gap-2.5">
-                {payments.map((payment, i) => {
-                  const cfg = paymentStatusConfig(payment.status);
-                  return (
-                    <View
-                      key={payment.id}
-                      className="py-2.5"
-                      style={
-                        i > 0
-                          ? {
-                              borderTopWidth: 1,
-                              borderTopColor: 'rgba(0,0,0,0.04)',
-                            }
-                          : undefined
-                      }
-                    >
-                      <View className="flex-row items-center justify-between">
-                        <View className="flex-row items-center gap-2.5">
-                          <View className="w-9 h-9 rounded-xl bg-[#F3EADD] items-center justify-center">
-                            <CreditCard size={16} color="#B08D57" />
-                          </View>
-                          <View>
-                            <Text className="text-sm font-medium">
-                              {formatCurrencyBRL(payment.amount)}
-                            </Text>
-                            <Text className="text-[13px] text-gray-500 mt-0.5">
-                              Venc. {formatDate(payment.dueDate)}
-                            </Text>
-                          </View>
-                        </View>
-                        <Badge label={cfg.label} bg={cfg.bg} color={cfg.text} />
-                      </View>
-                      {payment.status !== 'PAID' && (
-                        <TouchableOpacity
-                          onPress={() =>
-                            Alert.alert(
-                              'Confirmar pagamento',
-                              'Confirma que essa fatura foi paga manualmente?',
-                              [
-                                { text: 'Voltar', style: 'cancel' },
-                                {
-                                  text: 'Confirmar',
-                                  onPress: () =>
-                                    confirmPayment.mutate(payment.id),
-                                },
-                              ],
-                            )
-                          }
-                          className="flex-row items-center gap-1.5 self-start mt-2.5 bg-[#B08D57] rounded-full px-3.5 py-2"
-                        >
-                          <Check size={12} color="#fff" />
-                          <Text className="text-white text-xs font-medium">
-                            Confirmar pagamento
-                          </Text>
-                        </TouchableOpacity>
-                      )}
-                    </View>
-                  );
-                })}
-              </View>
-            )}
-          </Card>
-        )}
-      </View>
-    </ScrollView>
+          {tab === 'faturas' && (
+            <Card>
+              {loadingPayments ? (
+                <ActivityIndicator color="#B08D57" />
+              ) : !payments || payments.length === 0 ? (
+                <EmptyState text="Nenhuma fatura encontrada" />
+              ) : (
+                <PaymentsList
+                  payments={payments}
+                  onConfirm={(paymentId) => confirmPayment.mutate(paymentId)}
+                />
+              )}
+            </Card>
+          )}
+        </View>
+      </DetailScreen>
+
+      <ActionMenu
+        visible={menuOpen}
+        onClose={() => setMenuOpen(false)}
+        items={menuItems}
+        title={firstName(student.name)}
+      />
+    </>
   );
 }
