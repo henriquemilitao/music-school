@@ -7,6 +7,7 @@ import {
 import { PrismaService } from '../prisma/prisma.service';
 import { CreateEnrollmentDto } from './dto/create-enrollment.dto';
 import { Enrollment } from '@prisma/client';
+import { addMonthsKeepingAnchor, onlyAfter } from './enrollment-schedule.util';
 
 @Injectable()
 export class EnrollmentsService {
@@ -282,7 +283,18 @@ export class EnrollmentsService {
 
         // Só gera se estiver dentro da janela configurada (padrão:
         // 10 dias ou menos até vencer).
-        if (daysRemaining <= daysBeforeStart) {
+        //
+        // Rede de segurança: se o admin empurrou o dia do vencimento pra
+        // bem mais tarde, o gatilho acima poderia demorar e o ciclo de
+        // aulas já ter começado sem aulas criadas. Nesse caso (o próximo
+        // ciclo de aulas começa em até 1 dia) gera na hora, independente
+        // do vencimento. Em matrículas normais isso nunca muda o momento
+        // da geração.
+        const oneDayMs = 1000 * 60 * 60 * 24;
+        const lessonsStartSoon =
+          nextLessonPeriodStart.getTime() <= Date.now() + oneDayMs;
+
+        if (daysRemaining <= daysBeforeStart || lessonsStartSoon) {
           await this.generatePeriod({
             enrollmentId: enrollment.id,
             lessonPeriodStart: nextLessonPeriodStart,
@@ -389,10 +401,25 @@ export class EnrollmentsService {
     // Monta a lista de datas/horários de cada aula desse ciclo.
     // NOVO — repassa o offset pra buildLessonsForPeriod poder montar
     // a hora de cada aula convertida corretamente
-    const lessons = this.buildLessonsForPeriod(
+    const candidateLessons = this.buildLessonsForPeriod(
       enrollment,
       lessonPeriodStart,
       timezoneOffsetHours,
+    );
+
+    // Trava de segurança: só cria aulas DEPOIS da última aula regular que
+    // essa matrícula já tem (reposições ficam de fora — são pontuais e
+    // podem estar bem à frente). Assim, mexer no dia da aula ou no dia do
+    // vencimento nunca duplica nem cria aulas "no passado" de aulas que já
+    // existem; só acrescenta o que falta no final.
+    const lastRegularLesson = await this.prisma.lesson.findFirst({
+      where: { enrollmentId, isMakeup: false },
+      orderBy: { scheduledAt: 'desc' },
+      select: { scheduledAt: true },
+    });
+    const lessons = onlyAfter(
+      candidateLessons,
+      lastRegularLesson?.scheduledAt ?? null,
     );
     // Chave de idempotência do Payment: combina aluno + período de
     // aulas. Isso é o que impede, no upsert abaixo, que uma fatura
@@ -653,26 +680,9 @@ export class EnrollmentsService {
     referenceDate: Date,
     monthsToAdd: number,
   ): Date {
-    const targetYear = referenceDate.getUTCFullYear();
-    // getUTCMonth() é 0-indexado (0=janeiro), então somamos
-    // monthsToAdd direto nele — o JS já sabe "estourar" pro ano
-    // seguinte sozinho se o resultado passar de 11 (dezembro).
-    const targetMonth = referenceDate.getUTCMonth() + monthsToAdd;
-
-    // Truque clássico: "dia 0 do mês seguinte ao de destino" É o
-    // último dia do mês de destino. Isso descobre quantos dias tem
-    // aquele mês (28, 29, 30 ou 31) sem precisar de tabela nem checar
-    // ano bissexto manualmente — o Date do JS já resolve isso sozinho.
-    const lastDayOfTargetMonth = new Date(
-      Date.UTC(targetYear, targetMonth + 1, 0),
-    ).getUTCDate();
-
-    // Se o dia-âncora (ex: 31) não existir no mês de destino (ex:
-    // fevereiro só tem 28/29), usa o último dia válido daquele mês
-    // em vez de "estourar" pro mês seguinte.
-    const finalDay = Math.min(anchorDay, lastDayOfTargetMonth);
-
-    return new Date(Date.UTC(targetYear, targetMonth, finalDay));
+    // A conta em si vive em enrollment-schedule.util (pura e testada);
+    // também é usada pelo encerramento de matrícula.
+    return addMonthsKeepingAnchor(anchorDay, referenceDate, monthsToAdd);
   }
 
   // ───────────────────────────────────────────────────────────

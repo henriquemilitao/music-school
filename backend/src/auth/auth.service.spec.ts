@@ -1,3 +1,5 @@
+/* eslint-disable @typescript-eslint/no-unsafe-assignment --
+   mocks do Prisma: os retornos são objetos de teste, não tipos reais */
 import { Test } from '@nestjs/testing';
 import { ServiceUnavailableException } from '@nestjs/common';
 import { JwtService } from '@nestjs/jwt';

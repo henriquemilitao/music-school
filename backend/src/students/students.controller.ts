@@ -3,8 +3,10 @@ import {
   Get,
   Post,
   Patch,
+  Delete,
   Param,
   Body,
+  Query,
   UseGuards,
 } from '@nestjs/common';
 import { ApiTags, ApiOperation, ApiBearerAuth } from '@nestjs/swagger';
@@ -12,6 +14,8 @@ import { Role } from '@prisma/client';
 import { StudentsService } from './students.service';
 import { CreateStudentDto } from './dto/create-student.dto';
 import { UpdateStudentDto } from './dto/update-student.dto';
+import { UpdateStudentProfileDto } from './dto/update-student-profile.dto';
+import { DeleteStudentQueryDto } from './dto/delete-student-query.dto';
 import { JwtAuthGuard } from '../auth/jwt-auth.guard';
 import { RolesGuard } from '../auth/roles.guard';
 import { Roles } from '../auth/roles.decorator';
@@ -53,6 +57,39 @@ export class StudentsController {
   @ApiOperation({ summary: 'Criar aluno vinculado a um usuário (admin)' })
   create(@Body() dto: CreateStudentDto, @CurrentUser() user: AuthUser) {
     return this.studentsService.create(dto, user.schoolId);
+  }
+
+  // PATCH /students/:id/profile — admin edita dados do aluno + responsável
+  @Patch(':id/profile')
+  @Roles(Role.ADMIN)
+  @ApiOperation({
+    summary: 'Editar dados cadastrais do aluno e do responsável',
+  })
+  updateProfile(
+    @Param('id') id: string,
+    @Body() dto: UpdateStudentProfileDto,
+    @CurrentUser() user: AuthUser,
+  ) {
+    return this.studentsService.updateProfile(id, dto, user.schoolId);
+  }
+
+  // DELETE /students/:id?confirmName=... — exclusão DEFINITIVA de tudo
+  @Delete(':id')
+  @Roles(Role.ADMIN)
+  @ApiOperation({
+    summary:
+      'Excluir aluno e todos os dados (aulas, faturas, matrículas) — exige o nome do aluno',
+  })
+  deletePermanently(
+    @Param('id') id: string,
+    @Query() query: DeleteStudentQueryDto,
+    @CurrentUser() user: AuthUser,
+  ) {
+    return this.studentsService.deletePermanently(
+      id,
+      query.confirmName,
+      user.schoolId,
+    );
   }
 
   // PATCH /students/:id — admin ou dono atualiza
