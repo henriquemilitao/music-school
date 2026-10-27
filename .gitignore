@@ -2,6 +2,7 @@ node_modules/
 dist/
 .env
 .env.prod
+.envrc
 *.log
 .DS_Store
 coverage/
@@ -14,3 +15,8 @@ coverage/
 backups/
 *.dump
 *.sql.gz
+
+
+postgresql://postgres:QwtuSqJPzREcaigzUIPwIguFtTEGAlAG@postgres.railway.internal:5432/railway?connection_limit=10
+postgresql://postgres:tpUXEMzKLvJoRhJByyYKhnCmdUfTlxEf@postgres.railway.internal:5432/railway?connection_limit=10
+postgresql://postgres:QwtuSqJPzREcaigzUIPwIguFtTEGAlAG@postgres.railway.internal:5432/railway

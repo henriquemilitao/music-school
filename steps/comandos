@@ -77,6 +77,14 @@ eas update --channel production --message "Primeiro nome apenas aparecendo para 
 e o de production:
 eas update --channel production --message "Sua mensagem de ajuste aqui"
 
+1. Só mudou código JS/TS ou visual, sem biblioteca nativa nova (atualização OTA, sem Play Store)
+
+bash
+cd mobile
+eas update --channel production --message "anotações da aula"
+ou
+npm run update:preview -- --message "ajustes criação de aluno/user"
+
 
 CONFIGURAR NOTIFICAÇOES:
 1 = No terminal, rode o comando: eas credentials

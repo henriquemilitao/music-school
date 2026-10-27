@@ -3,6 +3,7 @@ import { CalendarDays } from 'lucide-react-native';
 import { FormField } from './FormField';
 import { DatePickerTrigger } from './DatePickerTrigger';
 import { dateWithWeekdayShort } from '../../lib/newStudent';
+import { FIELD_HEIGHT, FIELD_PADDING_X } from './fieldMetrics';
 
 type DateFieldProps = {
   label: string;
@@ -35,8 +36,10 @@ export function DateField({
           <TouchableOpacity
             onPress={open}
             activeOpacity={0.7}
-            className="flex-row items-center justify-between rounded-xl px-3.5 h-12"
+            className="flex-row items-center justify-between rounded-xl"
             style={{
+              height: FIELD_HEIGHT,
+              paddingHorizontal: FIELD_PADDING_X,
               borderWidth: error ? 1.5 : 1,
               borderColor: error ? '#FCA5A5' : 'rgba(0,0,0,0.08)',
               backgroundColor: '#F5F1EA',
@@ -47,7 +50,10 @@ export function DateField({
           >
             <Text
               className="text-[15px] flex-1"
-              style={{ color: display ? '#1A1A1A' : '#B0AA9C' }}
+              style={{
+                color: display ? '#1A1A1A' : '#B0AA9C',
+                includeFontPadding: false,
+              }}
               numberOfLines={1}
             >
               {display ?? placeholder}

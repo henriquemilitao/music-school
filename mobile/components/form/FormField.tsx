@@ -1,6 +1,7 @@
 import { ReactNode, Ref, useState } from 'react';
 import { View, Text, TextInput, TextInputProps } from 'react-native';
 import { AlertCircle } from 'lucide-react-native';
+import { FIELD_HEIGHT, FIELD_PADDING_X } from './fieldMetrics';
 
 type FormFieldProps = {
   label: string;
@@ -74,15 +75,15 @@ export function TextField({
   return (
     <FormField label={label} required={required} error={error} hint={hint}>
       <View
-        className="flex-row rounded-xl px-4"
+        className="flex-row rounded-xl"
         style={{
           borderWidth: focused || error ? 1.5 : 1,
           borderColor,
           backgroundColor: '#F5F1EA',
           alignItems: multiline ? 'flex-start' : 'center',
-          // Altura fixa (igual à do DateField) — no Android o TextInput tem
-          // folgas próprias que deixavam o campo mais alto que o de data.
-          height: multiline ? undefined : 48,
+          paddingHorizontal: FIELD_PADDING_X,
+          height: multiline ? undefined : FIELD_HEIGHT,
+          overflow: 'hidden',
         }}
       >
         {prefix ? (
