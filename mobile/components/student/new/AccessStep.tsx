@@ -1,4 +1,5 @@
-import { View, Text, TouchableOpacity } from 'react-native';
+import { useRef } from 'react';
+import { View, Text, TextInput, TouchableOpacity } from 'react-native';
 import { Check, Mail } from 'lucide-react-native';
 import { Card } from '../../ui/Card';
 import { TextField } from '../../form/FormField';
@@ -20,6 +21,10 @@ const HOLDER_OPTIONS: { value: HolderType; title: string; text: string }[] = [
 
 // Etapa 3 — quem acessa o app (usuário). O convite vai para este e-mail.
 export function AccessStep({ form, errors, onChange }: StepProps) {
+  // "Próximo" no teclado pula de campo em campo; o telefone (último) fecha.
+  const emailRef = useRef<TextInput>(null);
+  const phoneRef = useRef<TextInput>(null);
+
   return (
     <Card className="gap-5">
       <View>
@@ -94,6 +99,9 @@ export function AccessStep({ form, errors, onChange }: StepProps) {
           placeholder="Ex: Maria Silva"
           autoCapitalize="words"
           maxLength={120}
+          returnKeyType="next"
+          submitBehavior="submit"
+          onSubmitEditing={() => emailRef.current?.focus()}
         />
       )}
 
@@ -109,6 +117,10 @@ export function AccessStep({ form, errors, onChange }: StepProps) {
         autoCapitalize="none"
         autoCorrect={false}
         autoComplete="email"
+        inputRef={emailRef}
+        returnKeyType="next"
+        submitBehavior="submit"
+        onSubmitEditing={() => phoneRef.current?.focus()}
       />
 
       <TextField
@@ -120,6 +132,8 @@ export function AccessStep({ form, errors, onChange }: StepProps) {
         placeholder="(00) 00000-0000"
         keyboardType="phone-pad"
         maxLength={15}
+        inputRef={phoneRef}
+        returnKeyType="done"
       />
 
       <View

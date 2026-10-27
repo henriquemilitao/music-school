@@ -1,4 +1,4 @@
-import { ReactNode, useState } from 'react';
+import { ReactNode, Ref, useState } from 'react';
 import { View, Text, TextInput, TextInputProps } from 'react-native';
 import { AlertCircle } from 'lucide-react-native';
 
@@ -49,6 +49,8 @@ type TextFieldProps = Omit<TextInputProps, 'style'> & {
   hint?: string;
   // Texto fixo à esquerda do campo (ex: "R$").
   prefix?: string;
+  // Pra focar este campo a partir de outro (ao apertar "próximo" no teclado).
+  inputRef?: Ref<TextInput>;
 };
 
 export function TextField({
@@ -58,6 +60,7 @@ export function TextField({
   hint,
   prefix,
   multiline,
+  inputRef,
   ...inputProps
 }: TextFieldProps) {
   const [focused, setFocused] = useState(false);
@@ -77,16 +80,17 @@ export function TextField({
           borderColor,
           backgroundColor: '#F5F1EA',
           alignItems: multiline ? 'flex-start' : 'center',
-          minHeight: multiline ? undefined : 48,
+          // Altura fixa (igual à do DateField) — no Android o TextInput tem
+          // folgas próprias que deixavam o campo mais alto que o de data.
+          height: multiline ? undefined : 48,
         }}
       >
         {prefix ? (
-          <Text className="text-[#1A1A1A] mr-1.5 py-3 font-medium">
-            {prefix}
-          </Text>
+          <Text className="text-[#1A1A1A] mr-1.5 font-medium">{prefix}</Text>
         ) : null}
         <TextInput
           {...inputProps}
+          ref={inputRef}
           multiline={multiline}
           textAlignVertical={multiline ? 'top' : 'center'}
           placeholderTextColor="#B0AA9C"
@@ -99,8 +103,16 @@ export function TextField({
             inputProps.onBlur?.(e);
           }}
           accessibilityLabel={label}
-          className="flex-1 py-3 text-[#1A1A1A]"
-          style={multiline ? { minHeight: 88 } : undefined}
+          className="flex-1 text-[#1A1A1A]"
+          style={
+            multiline
+              ? { minHeight: 88, paddingVertical: 12 }
+              : {
+                  paddingVertical: 0,
+                  height: '100%',
+                  includeFontPadding: false,
+                }
+          }
         />
       </View>
     </FormField>

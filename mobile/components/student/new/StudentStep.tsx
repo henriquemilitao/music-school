@@ -1,4 +1,5 @@
-import { View, Text } from 'react-native';
+import { useRef } from 'react';
+import { View, Text, TextInput } from 'react-native';
 import { Card } from '../../ui/Card';
 import { TextField, FormField } from '../../form/FormField';
 import { ChoiceChips } from '../../form/ChoiceChips';
@@ -8,6 +9,8 @@ import type { StepProps } from './types';
 
 // Etapa 1 — quem é o aluno.
 export function StudentStep({ form, errors, onChange }: StepProps) {
+  const birthRef = useRef<TextInput>(null);
+
   return (
     <Card className="gap-5">
       <View>
@@ -33,6 +36,8 @@ export function StudentStep({ form, errors, onChange }: StepProps) {
         autoComplete="off"
         maxLength={120}
         returnKeyType="next"
+        submitBehavior="submit"
+        onSubmitEditing={() => birthRef.current?.focus()}
       />
 
       <FormField label="Instrumento" hint="Pode ser definido depois.">
@@ -56,6 +61,7 @@ export function StudentStep({ form, errors, onChange }: StepProps) {
         placeholder="DD/MM/AAAA"
         keyboardType="number-pad"
         maxLength={10}
+        inputRef={birthRef}
       />
 
       <TextField
