@@ -16,6 +16,7 @@ import { RolesGuard } from './roles.guard';
 import { Roles } from './roles.decorator';
 import { Role } from '@prisma/client';
 import { ForgotPasswordDto } from './dto/forgot-password.dto';
+import { FirstAccessDto } from './dto/first-access.dto';
 import { ResetPasswordDto } from './dto/reset-password.dto';
 import { ValidateResetCodeDto } from './dto/validate-reset-code.dto';
 
@@ -45,6 +46,17 @@ export class AuthController {
   @ApiOperation({ summary: 'Define a senha a partir de um token de convite' })
   setPassword(@Body() dto: SetPasswordDto) {
     return this.authService.setPassword(dto.token, dto.password);
+  }
+
+  // ── Primeiro acesso: o próprio usuário pede o link pra criar a senha ──
+
+  @Post('first-access')
+  @ApiOperation({
+    summary:
+      'Envia o link de criação de senha pro e-mail cadastrado (primeiro acesso)',
+  })
+  firstAccess(@Body() dto: FirstAccessDto) {
+    return this.authService.requestFirstAccess(dto.email);
   }
 
   // ── Esqueci minha senha (fluxo por código — app mobile) ──────────

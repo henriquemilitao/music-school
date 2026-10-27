@@ -7,7 +7,6 @@ import { useCallback, useEffect, useState } from 'react';
 import {
   View,
   Text,
-  ScrollView,
   ActivityIndicator,
   TouchableOpacity,
   KeyboardAvoidingView,
@@ -54,6 +53,7 @@ import { useKeyboardVisible } from '../../lib/useKeyboardVisible';
 import { useLessonStatus } from '../../lib/useLessonStatus';
 import { Card } from '../../components/ui/Card';
 import { InfoRow } from '../../components/ui/InfoRow';
+import { DetailScreen } from '../../components/ui/DetailScreen';
 import { ScreenHeader } from '../../components/ui/ScreenHeader';
 import { StatusPill } from '../../components/ui/StatusPill';
 import { LessonNotesCard } from '../../components/lesson/LessonNotesCard';
@@ -355,13 +355,7 @@ export default function AdminLessonDetail() {
   );
 
   return (
-    <ScrollView
-      className="flex-1 bg-[#F5F1EA]"
-      contentContainerStyle={{ paddingBottom: insets.bottom }}
-    >
-      <Stack.Screen options={{ headerShown: false }} />
-      <ScreenHeader title="Detalhes da aula" />
-
+    <DetailScreen title="Detalhes da aula">
       <View className="px-5 pt-5 pb-6">
         <Text
           className="text-2xl"
@@ -430,6 +424,6 @@ export default function AdminLessonDetail() {
           <NotesEmptyState onWrite={startEditing} />
         )}
       </View>
-    </ScrollView>
+    </DetailScreen>
   );
 }

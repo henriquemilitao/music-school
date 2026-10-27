@@ -67,6 +67,15 @@ export default function Login() {
         setErrorMessage(
           'Não foi possível fazer login. Verifique sua conexão com a internet.',
         );
+      } else if (
+        String(error?.response?.data?.message ?? '').startsWith(
+          'Conta ainda não ativada',
+        )
+      ) {
+        // E-mail cadastrado pela escola, mas a senha nunca foi criada
+        setErrorMessage(
+          'Você ainda não criou sua senha. Toque em “Crie sua senha” abaixo.',
+        );
       } else {
         setErrorMessage('Email ou senha inválidos');
       }
@@ -209,6 +218,25 @@ export default function Login() {
           >
             <Text className="text-white font-bold text-base">
               {isSubmitting ? 'Entrando...' : 'Entrar'}
+            </Text>
+          </TouchableOpacity>
+        </View>
+
+        <View className="flex-row justify-center flex-wrap mt-5">
+          <Text className="text-sm text-gray-500">
+            Seu e-mail já foi cadastrado?{' '}
+          </Text>
+          <TouchableOpacity
+            onPress={() =>
+              router.push({
+                pathname: '/(auth)/first-access',
+                params: email.trim() ? { email: email.trim() } : {},
+              })
+            }
+            hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+          >
+            <Text className="text-sm font-bold" style={{ color: '#B08D57' }}>
+              Crie sua senha
             </Text>
           </TouchableOpacity>
         </View>

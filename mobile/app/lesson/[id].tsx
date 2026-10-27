@@ -1,5 +1,4 @@
-import { View, Text, ScrollView, ActivityIndicator } from 'react-native';
-import { useSafeAreaInsets } from 'react-native-safe-area-context';
+import { View, Text, ActivityIndicator } from 'react-native';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { useLocalSearchParams, Stack, useFocusEffect } from 'expo-router';
 import { Clock, User, Music, StickyNote } from 'lucide-react-native';
@@ -12,6 +11,7 @@ import {
 } from '../../lib/lessonFormat';
 import { lessonStatusConfig, getEffectiveLessonStatus } from '../../lib/status';
 import { StatusPill } from '../../components/ui/StatusPill';
+import { DetailScreen } from '../../components/ui/DetailScreen';
 import { ScreenHeader } from '../../components/ui/ScreenHeader';
 import { Card } from '../../components/ui/Card';
 import { InfoRow } from '../../components/ui/InfoRow';
@@ -33,7 +33,6 @@ type Lesson = {
 };
 
 export default function LessonDetail() {
-  const insets = useSafeAreaInsets();
   const { id } = useLocalSearchParams<{ id: string }>();
   const queryClient = useQueryClient();
 
@@ -99,13 +98,7 @@ export default function LessonDetail() {
   const config = lessonStatusConfig(effectiveStatus, lesson.isMakeup);
 
   return (
-    <ScrollView
-      className="flex-1 bg-[#F5F1EA]"
-      contentContainerStyle={{ paddingBottom: insets.bottom }}
-    >
-      <Stack.Screen options={{ headerShown: false }} />
-      <ScreenHeader title="Detalhes da aula" />
-
+    <DetailScreen title="Detalhes da aula">
       <View className="px-5 pt-5 pb-6">
         <Text
           className="text-2xl"
@@ -163,6 +156,6 @@ export default function LessonDetail() {
           />
         )}
       </View>
-    </ScrollView>
+    </DetailScreen>
   );
 }

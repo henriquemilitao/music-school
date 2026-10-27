@@ -2,6 +2,7 @@ import {
   Injectable,
   UnauthorizedException,
   BadRequestException,
+  ServiceUnavailableException,
 } from '@nestjs/common';
 import { JwtService } from '@nestjs/jwt';
 import { ConfigService } from '@nestjs/config';
@@ -14,6 +15,13 @@ import { EmailService } from 'src/email/email.service';
 const INVITE_EXPIRATION_MS = 1000 * 60 * 60 * 24 * 7; // 7 dias
 const RESET_PASSWORD_EXPIRATION_MS = 1000 * 60 * 15; // 15 minutos — código curto, janela menor que o link antigo (30min)
 const MAX_RESET_ATTEMPTS = 5; // trava o código depois de 5 tentativas erradas
+const FIRST_ACCESS_COOLDOWN_MS = 1000 * 60; // intervalo mínimo entre e-mails de "criar senha" pro mesmo usuário
+
+// Resultado do "Criar minha senha" (primeiro acesso) na tela de login.
+//  - SENT:           link de criação de senha enviado por e-mail
+//  - NOT_REGISTERED: e-mail não existe na escola (pedir pra escola cadastrar)
+//  - ALREADY_ACTIVE: a pessoa já tem senha (usar login / esqueci minha senha)
+export type FirstAccessStatus = 'SENT' | 'NOT_REGISTERED' | 'ALREADY_ACTIVE';
 
 @Injectable()
 export class AuthService {
@@ -106,6 +114,74 @@ export class AuthService {
     });
 
     return { status: 'ok', inviteLink };
+  }
+
+  // ─────────────────────────────────────────────
+  // PRIMEIRO ACESSO — o próprio usuário pede o link de criação de senha
+  // (sem depender do admin reenviar convite).
+  //
+  // Diferente do "esqueci minha senha", aqui a resposta DIZ se o e-mail
+  // está cadastrado: pais já informaram o e-mail pra escola e precisam
+  // saber se o problema é "falta criar a senha" ou "escola não cadastrou".
+  // O vazamento de existência de e-mail é uma escolha de produto; o abuso
+  // é contido pelo rate limit global por IP + intervalo mínimo por usuário.
+  // ─────────────────────────────────────────────
+  async requestFirstAccess(
+    email: string,
+  ): Promise<{ status: FirstAccessStatus }> {
+    const user = await this.prisma.user.findFirst({
+      where: { email: { equals: email.trim(), mode: 'insensitive' } },
+    });
+
+    if (!user || !user.isActive || user.deletedAt) {
+      return { status: 'NOT_REGISTERED' };
+    }
+
+    if (user.passwordHash) {
+      return { status: 'ALREADY_ACTIVE' };
+    }
+
+    // Já mandamos um link há poucos segundos (o admin acabou de cadastrar
+    // ou a pessoa tocou duas vezes)? Não reenvia — só confirma.
+    const lastInvite = await this.prisma.accountInvite.findFirst({
+      where: { userId: user.id, usedAt: null },
+      orderBy: { createdAt: 'desc' },
+      select: { createdAt: true },
+    });
+    if (
+      lastInvite &&
+      Date.now() - lastInvite.createdAt.getTime() < FIRST_ACCESS_COOLDOWN_MS
+    ) {
+      return { status: 'SENT' };
+    }
+
+    // Só o link mais novo vale (mesmo comportamento do resendInvite).
+    await this.invalidatePendingInvites(user.id);
+    const inviteLink = await this.createInvite(user.id);
+
+    const sent = await this.emailService.sendInviteEmail({
+      to: user.email,
+      name: user.name,
+      inviteLink,
+    });
+
+    if (!sent) {
+      // Sem e-mail entregue, o convite não serve pra nada — invalida pra
+      // não travar a próxima tentativa no intervalo mínimo.
+      await this.invalidatePendingInvites(user.id);
+      throw new ServiceUnavailableException(
+        'Não foi possível enviar o e-mail agora. Tente novamente em instantes.',
+      );
+    }
+
+    return { status: 'SENT' };
+  }
+
+  private invalidatePendingInvites(userId: string) {
+    return this.prisma.accountInvite.updateMany({
+      where: { userId, usedAt: null },
+      data: { usedAt: new Date() },
+    });
   }
 
   async validateInviteToken(rawToken: string) {

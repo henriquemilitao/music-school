@@ -3,16 +3,13 @@ import {
   View,
   Text,
   Image,
-  ScrollView,
   ActivityIndicator,
   TouchableOpacity,
 } from 'react-native';
-import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
-import { useLocalSearchParams, useRouter, Stack } from 'expo-router';
+import { useLocalSearchParams, useRouter } from 'expo-router';
 import * as Clipboard from 'expo-clipboard';
 import {
-  ArrowLeft,
   Calendar,
   CheckCircle2,
   Copy,
@@ -21,6 +18,7 @@ import {
   AlertTriangle,
   Timer,
 } from 'lucide-react-native';
+import { DetailScreen } from '../../components/ui/DetailScreen';
 import { api } from '../../lib/api';
 import type { Payment } from '../../lib/types/payment';
 import { useCountdown } from '../../lib/useCountdown';
@@ -48,7 +46,6 @@ function formatExpiresAtTime(iso: string) {
 }
 
 export default function PaymentCheckout() {
-  const insets = useSafeAreaInsets();
   const { id } = useLocalSearchParams<{ id: string }>();
   const router = useRouter();
   const [copied, setCopied] = useState(false);
@@ -150,28 +147,7 @@ export default function PaymentCheckout() {
   const pixExpired = countdown?.isPast ?? false;
 
   return (
-    <ScrollView
-      className="flex-1 bg-[#F5F1EA]"
-      contentContainerStyle={{ paddingBottom: insets.bottom }}
-    >
-      <Stack.Screen options={{ headerShown: false }} />
-
-      <View
-        className="flex-row items-center px-4 pt-14 pb-3 bg-[#F5F1EA]"
-        style={{ borderBottomWidth: 1, borderBottomColor: 'rgba(0,0,0,0.04)' }}
-      >
-        <TouchableOpacity
-          className="w-9 h-9 rounded-full bg-white items-center justify-center mr-3"
-          style={{ borderWidth: 1, borderColor: 'rgba(0,0,0,0.05)' }}
-          onPress={() => router.back()}
-        >
-          <ArrowLeft size={18} color="#1A1A1A" />
-        </TouchableOpacity>
-        <Text className="text-base font-semibold">
-          {isPaid ? 'Fatura paga' : 'Pagar com PIX'}
-        </Text>
-      </View>
-
+    <DetailScreen title={isPaid ? 'Fatura paga' : 'Pagar com PIX'}>
       <View className="px-5 pt-5 pb-8">
         <Text className="text-xs font-bold uppercase tracking-widest text-gray-400 mb-1">
           Fatura · {formatMonthLabel(payment.referenceMonth)}
@@ -368,6 +344,6 @@ export default function PaymentCheckout() {
           </TouchableOpacity>
         )}
       </View>
-    </ScrollView>
+    </DetailScreen>
   );
 }

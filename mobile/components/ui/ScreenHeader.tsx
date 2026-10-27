@@ -1,6 +1,7 @@
 import { ReactNode } from 'react';
 import { View, Text, TouchableOpacity } from 'react-native';
 import { useRouter } from 'expo-router';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { ArrowLeft } from 'lucide-react-native';
 
 type ScreenHeaderProps = {
@@ -16,6 +17,7 @@ type ScreenHeaderProps = {
 // visual que lesson/[id], student/[id] e payment/[id] já usavam.
 export function ScreenHeader({ title, onBack, right }: ScreenHeaderProps) {
   const router = useRouter();
+  const insets = useSafeAreaInsets();
 
   function handleBack() {
     if (onBack) return onBack();
@@ -25,8 +27,14 @@ export function ScreenHeader({ title, onBack, right }: ScreenHeaderProps) {
 
   return (
     <View
-      className="flex-row items-center px-4 pt-14 pb-3 bg-[#F5F1EA]"
-      style={{ borderBottomWidth: 1, borderBottomColor: 'rgba(0,0,0,0.04)' }}
+      className="flex-row items-center px-4 pb-3 bg-[#F5F1EA]"
+      style={{
+        // Nunca menos que o padrão antigo (56) e sempre abaixo da status bar
+        // — importante agora que o header fica fixo no topo.
+        paddingTop: Math.max(insets.top + 12, 56),
+        borderBottomWidth: 1,
+        borderBottomColor: 'rgba(0,0,0,0.04)',
+      }}
     >
       <TouchableOpacity
         className="w-9 h-9 rounded-full bg-white items-center justify-center mr-3"

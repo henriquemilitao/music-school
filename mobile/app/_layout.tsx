@@ -62,6 +62,7 @@ function AuthGate({ children }: { children: React.ReactNode }) {
   // parênteses), por isso continua sendo /login, /forgot-password etc.
   const PUBLIC_ROUTES = [
     '/login',
+    '/first-access',
     '/forgot-password',
     '/verify-code',
     '/reset-password',
