@@ -57,7 +57,7 @@ describe('LessonsService — edição pelo admin', () => {
     cancelReason: null,
   };
 
-  const dataOf = (call: jest.Mock['mock']['calls'][number]) =>
+  const dataOf = (call: unknown[]) =>
     (call[0] as { data: Record<string, unknown> }).data;
 
   beforeEach(async () => {
