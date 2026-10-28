@@ -7,7 +7,6 @@ import {
 import { PrismaService } from '../prisma/prisma.service';
 import { CreateLessonDto } from './dto/create-lesson.dto';
 import { UpdateLessonDto } from './dto/update-lesson.dto';
-import { CancelLessonDto } from './dto/cancel-lesson.dto';
 import {
   BulkDeleteLessonsDto,
   BulkUpdateLessonsDto,
@@ -17,21 +16,12 @@ import { calculateAge } from '../common/utils/age.util';
 import { getSchoolTimezoneOffset } from '../common/utils/school-timezone.util';
 import { shiftLesson } from './lesson-schedule.util';
 
-// Resumo de uma aula ligada à outra por reposição (quem repõe / quem foi reposta)
-const LESSON_LINK_SELECT = {
-  id: true,
-  scheduledAt: true,
-  status: true,
-} satisfies Prisma.LessonSelect;
-
 // Formato do detalhe da aula na visão do admin. O PATCH devolve o mesmo
 // formato, assim o app atualiza a tela direto com a resposta do save.
 const LESSON_DETAIL_INCLUDE = {
   student: { include: { user: { select: { name: true, email: true } } } },
   teacher: { include: { user: { select: { name: true } } } },
   enrollment: { select: { id: true, weekDay: true, startTime: true } },
-  makeupFor: { select: LESSON_LINK_SELECT },
-  makeups: { select: LESSON_LINK_SELECT, orderBy: { scheduledAt: 'asc' } },
 } satisfies Prisma.LessonInclude;
 
 // Quando o status muda, o motivo do cancelamento acompanha: sair de
@@ -60,7 +50,7 @@ function resolveStatusChange(
 export class LessonsService {
   constructor(private prisma: PrismaService) {}
 
-  // ─── Admin: cria aula avulsa ou de reposição ──────────────────────────
+  // ─── Admin: cria aula avulsa ──────────────────────────────────────────
   async create(dto: CreateLessonDto, schoolId: string) {
     const student = await this.prisma.student.findFirst({
       where: { id: dto.studentId, user: { schoolId } },
@@ -79,14 +69,6 @@ export class LessonsService {
       }
     }
 
-    if (dto.makeupForLessonId) {
-      await this.assertMakeupTarget(
-        dto.makeupForLessonId,
-        dto.studentId,
-        schoolId,
-      );
-    }
-
     return this.prisma.lesson.create({
       data: {
         schoolId,
@@ -96,9 +78,7 @@ export class LessonsService {
         instrument: dto.instrument,
         scheduledAt: new Date(dto.scheduledAt),
         durationMinutes: dto.durationMinutes ?? 60,
-        // apontar pra uma aula cancelada já diz que é reposição
-        isMakeup: dto.isMakeup ?? !!dto.makeupForLessonId,
-        makeupForLessonId: dto.makeupForLessonId,
+        isMakeup: dto.isMakeup ?? false,
         notes: dto.notes || null,
         notesUpdatedAt: dto.notes ? new Date() : null,
         status: LessonStatus.SCHEDULED,
@@ -171,26 +151,6 @@ export class LessonsService {
 
     if (dto.teacherId) await this.assertTeacher(dto.teacherId, schoolId);
 
-    // Reposição: apontar pra uma aula implica isMakeup; desmarcar isMakeup
-    // desfaz o vínculo (e não dá pra pedir os dois ao mesmo tempo).
-    if (dto.isMakeup === false && typeof dto.makeupForLessonId === 'string') {
-      throw new BadRequestException(
-        'Uma aula que repõe outra precisa ser marcada como reposição',
-      );
-    }
-    if (typeof dto.makeupForLessonId === 'string') {
-      await this.assertMakeupTarget(
-        dto.makeupForLessonId,
-        lesson.studentId,
-        schoolId,
-        lesson.id,
-      );
-    }
-    const isMakeup =
-      typeof dto.makeupForLessonId === 'string' ? true : dto.isMakeup;
-    const makeupForLessonId =
-      dto.isMakeup === false ? null : dto.makeupForLessonId;
-
     // Anotações: undefined = não veio no body (não mexe); "" ou null =
     // apagar. O DTO já faz o trim. notesUpdatedAt só muda quando o texto
     // muda de verdade — salvar o mesmo texto de novo não "atualiza" a data
@@ -206,8 +166,6 @@ export class LessonsService {
         durationMinutes: dto.durationMinutes,
         teacherId: dto.teacherId,
         instrument: dto.instrument,
-        isMakeup,
-        makeupForLessonId,
         ...(notesChanged
           ? { notes: nextNotes, notesUpdatedAt: nextNotes ? new Date() : null }
           : {}),
@@ -216,60 +174,7 @@ export class LessonsService {
     });
   }
 
-  // ─── Admin: cancela a aula, já marcando a reposição (opcional) ───────
-  // Cancelamento e reposição entram na mesma transação: ou fica tudo
-  // certo, ou nada muda.
-  async cancel(lessonId: string, dto: CancelLessonDto, schoolId: string) {
-    const lesson = await this.prisma.lesson.findFirst({
-      where: { id: lessonId, schoolId },
-    });
-    if (!lesson) throw new NotFoundException('Aula não encontrada');
-    if (lesson.status === LessonStatus.CANCELLED) {
-      throw new BadRequestException('Esta aula já está cancelada');
-    }
-    if (dto.makeup?.teacherId) {
-      await this.assertTeacher(dto.makeup.teacherId, schoolId);
-    }
-
-    return this.prisma.$transaction(async (tx) => {
-      await tx.lesson.update({
-        where: { id: lessonId },
-        data: {
-          status: LessonStatus.CANCELLED,
-          cancelReason: dto.cancelReason || null,
-        },
-      });
-
-      const makeup = dto.makeup
-        ? await tx.lesson.create({
-            data: {
-              schoolId,
-              studentId: lesson.studentId,
-              enrollmentId: lesson.enrollmentId,
-              teacherId: dto.makeup.teacherId ?? lesson.teacherId,
-              instrument: dto.makeup.instrument ?? lesson.instrument,
-              scheduledAt: new Date(dto.makeup.scheduledAt),
-              durationMinutes:
-                dto.makeup.durationMinutes ?? lesson.durationMinutes,
-              isMakeup: true,
-              makeupForLessonId: lesson.id,
-              status: LessonStatus.SCHEDULED,
-            },
-            include: LESSON_DETAIL_INCLUDE,
-          })
-        : null;
-
-      const cancelled = await tx.lesson.findUniqueOrThrow({
-        where: { id: lessonId },
-        include: LESSON_DETAIL_INCLUDE,
-      });
-      return { lesson: cancelled, makeup };
-    });
-  }
-
   // ─── Admin: exclui a aula (some do histórico) ────────────────────────
-  // Se alguma reposição apontava pra ela, o vínculo é desfeito (a reposição
-  // continua existindo) — é o ON DELETE SET NULL do banco.
   async remove(lessonId: string, schoolId: string) {
     const lesson = await this.prisma.lesson.findFirst({
       where: { id: lessonId, schoolId },
@@ -355,27 +260,6 @@ export class LessonsService {
     if (!teacher) throw new NotFoundException('Professor não encontrado');
   }
 
-  // A aula reposta precisa ser do mesmo aluno (e não a própria aula)
-  private async assertMakeupTarget(
-    targetId: string,
-    studentId: string,
-    schoolId: string,
-    selfId?: string,
-  ) {
-    if (targetId === selfId) {
-      throw new BadRequestException('Uma aula não pode repor ela mesma');
-    }
-    const target = await this.prisma.lesson.findFirst({
-      where: { id: targetId, studentId, schoolId },
-      select: { id: true },
-    });
-    if (!target) {
-      throw new BadRequestException(
-        'A aula a repor precisa ser do mesmo aluno',
-      );
-    }
-  }
-
   // ─── Aluno: lista aulas dos seus students ────────────────────────────
   async findMyLessons(
     userId: string,
@@ -459,11 +343,6 @@ export class LessonsService {
       include: {
         teacher: { include: { user: { select: { name: true } } } },
         student: { include: { user: { select: { name: true } } } },
-        makeupFor: { select: LESSON_LINK_SELECT },
-        makeups: {
-          select: LESSON_LINK_SELECT,
-          orderBy: { scheduledAt: 'asc' },
-        },
       },
       orderBy: {
         scheduledAt: status === LessonStatus.COMPLETED ? 'desc' : 'asc',

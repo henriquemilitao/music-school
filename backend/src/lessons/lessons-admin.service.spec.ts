@@ -8,7 +8,6 @@ import { LessonStatus } from '@prisma/client';
 import { LessonsService } from './lessons.service';
 import { PrismaService } from '../prisma/prisma.service';
 import { BulkUpdateLessonsDto } from './dto/bulk-lessons.dto';
-import { CancelLessonDto } from './dto/cancel-lesson.dto';
 import { UpdateLessonDto } from './dto/update-lesson.dto';
 
 const schoolId = 'school-1';
@@ -148,54 +147,24 @@ describe('LessonsService — edição pelo admin', () => {
       });
     });
 
-    describe('reposição', () => {
-      it('apontar pra uma aula do mesmo aluno marca como reposição', async () => {
-        prisma.lesson.findFirst
-          .mockResolvedValueOnce(baseLesson) // a aula editada
-          .mockResolvedValueOnce({ id: L2 }); // a aula reposta
-        await service.update(L1, { makeupForLessonId: L2 }, schoolId);
-
-        expect(prisma.lesson.findFirst).toHaveBeenLastCalledWith({
-          where: { id: L2, studentId: 'stu-1', schoolId },
-          select: { id: true },
-        });
-        expect(dataOf(prisma.lesson.update.mock.calls[0])).toMatchObject({
-          isMakeup: true,
-          makeupForLessonId: L2,
-        });
+    it('reagendar uma aula cancelada: nova data + agendada, sem sobrar motivo', async () => {
+      prisma.lesson.findFirst.mockResolvedValue({
+        ...baseLesson,
+        status: LessonStatus.CANCELLED,
+        cancelReason: 'Feriado',
       });
-
-      it('recusa repor aula de outro aluno ou a própria aula', async () => {
-        prisma.lesson.findFirst
-          .mockResolvedValueOnce(baseLesson)
-          .mockResolvedValueOnce(null);
-        await expect(
-          service.update(L1, { makeupForLessonId: L2 }, schoolId),
-        ).rejects.toBeInstanceOf(BadRequestException);
-
-        prisma.lesson.findFirst.mockResolvedValue(baseLesson);
-        await expect(
-          service.update(L1, { makeupForLessonId: L1 }, schoolId),
-        ).rejects.toBeInstanceOf(BadRequestException);
-        expect(prisma.lesson.update).not.toHaveBeenCalled();
-      });
-
-      it('desmarcar reposição desfaz o vínculo', async () => {
-        await service.update(L1, { isMakeup: false }, schoolId);
-        expect(dataOf(prisma.lesson.update.mock.calls[0])).toMatchObject({
-          isMakeup: false,
-          makeupForLessonId: null,
-        });
-      });
-
-      it('não aceita "não é reposição" junto com "repõe outra aula"', async () => {
-        await expect(
-          service.update(
-            L1,
-            { isMakeup: false, makeupForLessonId: L2 },
-            schoolId,
-          ),
-        ).rejects.toBeInstanceOf(BadRequestException);
+      await service.update(
+        L1,
+        {
+          status: LessonStatus.SCHEDULED,
+          scheduledAt: '2026-11-11T19:00:00.000Z',
+        },
+        schoolId,
+      );
+      expect(dataOf(prisma.lesson.update.mock.calls[0])).toMatchObject({
+        status: LessonStatus.SCHEDULED,
+        scheduledAt: new Date('2026-11-11T19:00:00.000Z'),
+        cancelReason: null,
       });
     });
   });
@@ -206,9 +175,8 @@ describe('LessonsService — edição pelo admin', () => {
       prisma.lesson.create.mockImplementation((args: unknown) => args);
     });
 
-    it('cria a aula com instrumento, professor e vínculo de reposição', async () => {
+    it('cria a aula com instrumento, professor e matrícula', async () => {
       prisma.enrollment.findFirst.mockResolvedValue({ id: 'enr-1' });
-      prisma.lesson.findFirst.mockResolvedValue({ id: L2 });
 
       await service.create(
         {
@@ -217,7 +185,6 @@ describe('LessonsService — edição pelo admin', () => {
           teacherId: TEACHER,
           instrument: 'VIOLAO',
           scheduledAt: '2026-11-04T19:00:00.000Z',
-          makeupForLessonId: L2,
         },
         schoolId,
       );
@@ -226,14 +193,13 @@ describe('LessonsService — edição pelo admin', () => {
         studentId: 'stu-1',
         enrollmentId: 'enr-1',
         instrument: 'VIOLAO',
-        isMakeup: true,
-        makeupForLessonId: L2,
+        isMakeup: false,
         durationMinutes: 60,
         status: LessonStatus.SCHEDULED,
       });
     });
 
-    it('aula extra comum não é reposição', async () => {
+    it('aula extra não é marcada como reposição', async () => {
       await service.create(
         { studentId: 'stu-1', scheduledAt: '2026-11-04T19:00:00.000Z' },
         schoolId,
@@ -256,91 +222,6 @@ describe('LessonsService — edição pelo admin', () => {
         ),
       ).rejects.toBeInstanceOf(BadRequestException);
       expect(prisma.lesson.create).not.toHaveBeenCalled();
-    });
-  });
-
-  describe('cancel', () => {
-    beforeEach(() => {
-      tx.lesson.update.mockResolvedValue({});
-      tx.lesson.create.mockImplementation((args: unknown) =>
-        Promise.resolve({ id: 'makeup-1', ...(args as { data: object }).data }),
-      );
-      tx.lesson.findUniqueOrThrow.mockResolvedValue({
-        id: L1,
-        status: LessonStatus.CANCELLED,
-      });
-    });
-
-    it('cancela sem reposição (sem criar nada)', async () => {
-      const result = await service.cancel(
-        L1,
-        { cancelReason: 'Feriado' },
-        schoolId,
-      );
-
-      expect(tx.lesson.update).toHaveBeenCalledWith({
-        where: { id: L1 },
-        data: { status: LessonStatus.CANCELLED, cancelReason: 'Feriado' },
-      });
-      expect(tx.lesson.create).not.toHaveBeenCalled();
-      expect(result.makeup).toBeNull();
-    });
-
-    it('cancela e cria a reposição herdando professor, duração e matrícula', async () => {
-      prisma.lesson.findFirst.mockResolvedValue({
-        ...baseLesson,
-        instrument: 'PIANO',
-        durationMinutes: 45,
-      });
-
-      const result = await service.cancel(
-        L1,
-        { makeup: { scheduledAt: '2026-11-09T19:00:00.000Z' } },
-        schoolId,
-      );
-
-      expect(tx.lesson.create.mock.calls[0]).toBeDefined();
-      expect(dataOf(tx.lesson.create.mock.calls[0])).toMatchObject({
-        studentId: 'stu-1',
-        enrollmentId: 'enr-1',
-        teacherId: TEACHER,
-        instrument: 'PIANO',
-        durationMinutes: 45,
-        scheduledAt: new Date('2026-11-09T19:00:00.000Z'),
-        isMakeup: true,
-        makeupForLessonId: L1,
-        status: LessonStatus.SCHEDULED,
-      });
-      expect(result.makeup).toMatchObject({ id: 'makeup-1' });
-    });
-
-    it('a reposição pode ter professor, duração e instrumento diferentes', async () => {
-      await service.cancel(
-        L1,
-        {
-          makeup: {
-            scheduledAt: '2026-11-09T19:00:00.000Z',
-            durationMinutes: 30,
-            instrument: 'BAIXO',
-          },
-        },
-        schoolId,
-      );
-      expect(dataOf(tx.lesson.create.mock.calls[0])).toMatchObject({
-        durationMinutes: 30,
-        instrument: 'BAIXO',
-      });
-    });
-
-    it('não cancela de novo uma aula já cancelada', async () => {
-      prisma.lesson.findFirst.mockResolvedValue({
-        ...baseLesson,
-        status: LessonStatus.CANCELLED,
-      });
-      await expect(service.cancel(L1, {}, schoolId)).rejects.toBeInstanceOf(
-        BadRequestException,
-      );
-      expect(prisma.$transaction).not.toHaveBeenCalled();
     });
   });
 
@@ -500,18 +381,6 @@ describe('DTOs de edição de aulas — validação', () => {
     await expect(validate(UpdateLessonDto, body)).rejects.toBeInstanceOf(
       BadRequestException,
     );
-  });
-
-  it('cancelamento aceita reposição aninhada e valida os campos dela', async () => {
-    const ok = await validate(CancelLessonDto, {
-      cancelReason: 'Feriado',
-      makeup: { scheduledAt: '2026-11-09T19:00:00.000Z', durationMinutes: 45 },
-    });
-    expect(ok.makeup?.durationMinutes).toBe(45);
-
-    await expect(
-      validate(CancelLessonDto, { makeup: { scheduledAt: 'x' } }),
-    ).rejects.toBeInstanceOf(BadRequestException);
   });
 
   describe('lote', () => {

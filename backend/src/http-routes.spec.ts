@@ -52,7 +52,6 @@ describe('Rotas HTTP usadas pelo app (admin)', () => {
   const lessonsService = {
     create: jest.fn(),
     update: jest.fn(),
-    cancel: jest.fn(),
     remove: jest.fn(),
     bulkUpdate: jest.fn(),
     bulkDelete: jest.fn(),
@@ -351,36 +350,30 @@ describe('Rotas HTTP usadas pelo app (admin)', () => {
       expect(b.statusCode).toBe(400);
     });
 
-    it('POST /lessons cria aula extra/reposição vinculada', async () => {
+    it('POST /lessons cria aula extra', async () => {
       const res = await call('POST', '/lessons', {
         studentId: STUDENT,
         scheduledAt: '2026-11-04T19:00:00.000Z',
         instrument: 'VIOLAO',
-        isMakeup: true,
-        makeupForLessonId: LESSON,
       });
       expect(res.statusCode).toBe(201);
       expect(lessonsService.create).toHaveBeenCalled();
     });
 
-    it('POST /lessons/:id/cancel cancela sem e com reposição', async () => {
-      const sem = await call('POST', `/lessons/${LESSON}/cancel`, {
+    it('PATCH /lessons/:id cancela e reagenda a mesma aula', async () => {
+      const cancela = await call('PATCH', `/lessons/${LESSON}`, {
+        status: 'CANCELLED',
         cancelReason: 'Feriado',
       });
-      const com = await call('POST', `/lessons/${LESSON}/cancel`, {
-        makeup: {
-          scheduledAt: '2026-11-09T19:00:00.000Z',
-          durationMinutes: 45,
-        },
+      const reagenda = await call('PATCH', `/lessons/${LESSON}`, {
+        status: 'SCHEDULED',
+        scheduledAt: '2026-11-11T19:00:00.000Z',
       });
-      const invalida = await call('POST', `/lessons/${LESSON}/cancel`, {
-        makeup: { scheduledAt: 'depois' },
-      });
+      const antigo = await call('POST', `/lessons/${LESSON}/cancel`, {});
 
-      expect(sem.statusCode).toBe(201);
-      expect(com.statusCode).toBe(201);
-      expect(invalida.statusCode).toBe(400);
-      expect(lessonsService.cancel).toHaveBeenCalledTimes(2);
+      expect(cancela.statusCode).toBe(200);
+      expect(reagenda.statusCode).toBe(200);
+      expect(antigo.statusCode).toBe(404);
     });
 
     it('DELETE /lessons/:id exclui a aula', async () => {

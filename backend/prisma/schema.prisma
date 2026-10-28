@@ -283,21 +283,11 @@ model Lesson {
   isMakeup     Boolean @default(false) // true = aula de reposição
   cancelReason String? // motivo do cancelamento
 
-  // Reposição: a aula de reposição aponta pra aula cancelada que ela repõe.
-  // Opcional — pode haver reposição sem dizer de qual aula (isMakeup = true e
-  // makeupForLessonId = null) e aula cancelada sem reposição prevista (nenhuma
-  // aula aponta pra ela). Se a aula original for excluída, o vínculo some, a
-  // reposição continua existindo.
-  makeupForLessonId String?
-  makeupFor         Lesson?  @relation("LessonMakeup", fields: [makeupForLessonId], references: [id], onDelete: SetNull)
-  makeups           Lesson[] @relation("LessonMakeup")
-
   createdAt DateTime @default(now())
 
   @@index([studentId, status])
   @@index([schoolId, scheduledAt])
   @@index([status, scheduledAt])
-  @@index([makeupForLessonId])
   @@map("lessons")
 }
 

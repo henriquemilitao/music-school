@@ -19,7 +19,6 @@ import { LessonStatus, Role } from '@prisma/client';
 import { LessonsService } from './lessons.service';
 import { CreateLessonDto } from './dto/create-lesson.dto';
 import { UpdateLessonDto } from './dto/update-lesson.dto';
-import { CancelLessonDto } from './dto/cancel-lesson.dto';
 import {
   BulkDeleteLessonsDto,
   BulkUpdateLessonsDto,
@@ -69,10 +68,10 @@ export class LessonsController {
 
   // ─── Rotas do admin ───────────────────────────────────────────────────
 
-  // POST /lessons — cria aula avulsa ou de reposição
+  // POST /lessons — cria aula avulsa
   @Post()
   @Roles(Role.ADMIN)
-  @ApiOperation({ summary: 'Criar aula avulsa ou de reposição (admin)' })
+  @ApiOperation({ summary: 'Criar aula avulsa (admin)' })
   create(@Body() dto: CreateLessonDto, @CurrentUser() user: AuthUser) {
     return this.lessonsService.create(dto, user.schoolId);
   }
@@ -132,7 +131,8 @@ export class LessonsController {
   }
 
   // PATCH /lessons/:id — edita a aula (status, dia/hora, duração, professor,
-  // instrumento, reposição, anotações)
+  // instrumento, anotações). Cancelar é só mandar status CANCELLED; reagendar
+  // uma aula cancelada é mandar a nova data com status SCHEDULED.
   @Patch(':id')
   @Roles(Role.ADMIN)
   @ApiOperation({
@@ -145,20 +145,6 @@ export class LessonsController {
     @CurrentUser() user: AuthUser,
   ) {
     return this.lessonsService.update(id, dto, user.schoolId);
-  }
-
-  // POST /lessons/:id/cancel — cancela e (opcional) já cria a reposição
-  @Post(':id/cancel')
-  @Roles(Role.ADMIN)
-  @ApiOperation({
-    summary: 'Cancelar aula, com reposição opcional na mesma operação (admin)',
-  })
-  cancel(
-    @Param('id') id: string,
-    @Body() dto: CancelLessonDto,
-    @CurrentUser() user: AuthUser,
-  ) {
-    return this.lessonsService.cancel(id, dto, user.schoolId);
   }
 
   // DELETE /lessons/:id — exclui a aula

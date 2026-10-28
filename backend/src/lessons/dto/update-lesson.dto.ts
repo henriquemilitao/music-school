@@ -1,5 +1,4 @@
 import {
-  IsBoolean,
   IsDateString,
   IsEnum,
   IsInt,
@@ -91,19 +90,4 @@ export class UpdateLessonDto {
   @IsOptional()
   @IsEnum(Instrument)
   instrument?: Instrument | null;
-
-  @ApiPropertyOptional({ description: 'true = aula de reposição' })
-  @IsOptional()
-  @IsBoolean()
-  isMakeup?: boolean;
-
-  @ApiPropertyOptional({
-    description:
-      'Aula (do mesmo aluno) que esta aula repõe. Implica isMakeup. null = sem vínculo.',
-    nullable: true,
-    type: String,
-  })
-  @IsOptional()
-  @IsUUID()
-  makeupForLessonId?: string | null;
 }

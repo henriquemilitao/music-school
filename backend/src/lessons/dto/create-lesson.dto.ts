@@ -64,14 +64,6 @@ export class CreateLessonDto {
   isMakeup?: boolean;
 
   @ApiPropertyOptional({
-    description:
-      'Aula cancelada (do mesmo aluno) que esta aula repõe. Implica isMakeup.',
-  })
-  @IsOptional()
-  @IsUUID()
-  makeupForLessonId?: string;
-
-  @ApiPropertyOptional({
     description: 'Anotações da aula (visíveis pro aluno)',
     maxLength: LESSON_NOTES_MAX_LENGTH,
   })
