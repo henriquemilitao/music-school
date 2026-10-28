@@ -142,12 +142,13 @@ export class PaymentsController {
     return this.paymentsService.findMyBundleById(id, user.id);
   }
 
-  // GET /payments/:id — busca por id
+  // GET /payments/:id — detalhe da fatura (admin): período, forma e autor
+  // da confirmação
   @Get(':id')
   @Roles(Role.ADMIN)
-  @ApiOperation({ summary: 'Buscar pagamento por id (admin)' })
+  @ApiOperation({ summary: 'Detalhe de uma fatura (admin)' })
   findOne(@Param('id') id: string, @CurrentUser() user: AuthUser) {
-    return this.paymentsService.findOne(id, user.schoolId);
+    return this.paymentsService.findAdminDetail(id, user.schoolId);
   }
 
   // POST /payments/:id/checkout — gera/regera o link de cobrança no gateway
@@ -178,6 +179,17 @@ export class PaymentsController {
       user.id,
       user.schoolId,
     );
+  }
+
+  // PATCH /payments/:id/unconfirm — desfaz a confirmação de pagamento
+  @Patch(':id/unconfirm')
+  @Roles(Role.ADMIN)
+  @ApiOperation({
+    summary:
+      'Desfazer pagamento: a fatura volta a ficar pendente ou atrasada, conforme o vencimento',
+  })
+  unconfirm(@Param('id') id: string, @CurrentUser() user: AuthUser) {
+    return this.paymentsService.unconfirm(id, user.schoolId, user.id);
   }
 
   private currentMonthKey(): string {

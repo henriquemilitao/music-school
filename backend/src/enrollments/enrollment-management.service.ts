@@ -9,6 +9,7 @@ import {
   NotFoundException,
 } from '@nestjs/common';
 import { Enrollment, Prisma } from '@prisma/client';
+import { getSchoolTimezoneOffset } from '../common/utils/school-timezone.util';
 import { PrismaService } from '../prisma/prisma.service';
 import { EnrollmentsService } from './enrollments.service';
 import { UpdateEnrollmentDto } from './dto/update-enrollment.dto';
@@ -470,12 +471,8 @@ export class EnrollmentManagementService {
     return enrollment;
   }
 
-  private async getTimezoneOffset(schoolId: string) {
-    const school = await this.prisma.school.findUniqueOrThrow({
-      where: { id: schoolId },
-      select: { timezoneOffsetHours: true },
-    });
-    return school.timezoneOffsetHours;
+  private getTimezoneOffset(schoolId: string) {
+    return getSchoolTimezoneOffset(this.prisma, schoolId);
   }
 
   private hasScheduleChange(

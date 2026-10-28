@@ -3,6 +3,7 @@ import {
   Get,
   Post,
   Patch,
+  Delete,
   Param,
   Body,
   Query,
@@ -18,6 +19,11 @@ import { LessonStatus, Role } from '@prisma/client';
 import { LessonsService } from './lessons.service';
 import { CreateLessonDto } from './dto/create-lesson.dto';
 import { UpdateLessonDto } from './dto/update-lesson.dto';
+import { CancelLessonDto } from './dto/cancel-lesson.dto';
+import {
+  BulkDeleteLessonsDto,
+  BulkUpdateLessonsDto,
+} from './dto/bulk-lessons.dto';
 import { JwtAuthGuard } from '../auth/jwt-auth.guard';
 import { RolesGuard } from '../auth/roles.guard';
 import { Roles } from '../auth/roles.decorator';
@@ -71,6 +77,24 @@ export class LessonsController {
     return this.lessonsService.create(dto, user.schoolId);
   }
 
+  // PATCH /lessons/bulk — edita várias aulas de uma vez (status, professor,
+  // instrumento, duração, dia e horário). Declarada antes de ':id' pra
+  // "bulk" não ser lido como id.
+  @Patch('bulk')
+  @Roles(Role.ADMIN)
+  @ApiOperation({ summary: 'Editar várias aulas de uma vez (admin)' })
+  bulkUpdate(@Body() dto: BulkUpdateLessonsDto, @CurrentUser() user: AuthUser) {
+    return this.lessonsService.bulkUpdate(dto, user.schoolId);
+  }
+
+  // POST /lessons/bulk-delete — exclui várias aulas de uma vez
+  @Post('bulk-delete')
+  @Roles(Role.ADMIN)
+  @ApiOperation({ summary: 'Excluir várias aulas de uma vez (admin)' })
+  bulkDelete(@Body() dto: BulkDeleteLessonsDto, @CurrentUser() user: AuthUser) {
+    return this.lessonsService.bulkDelete(dto, user.schoolId);
+  }
+
   // GET /lessons?month=2026-07 — lista aulas da escola por mês
   @Get()
   @Roles(Role.ADMIN)
@@ -107,11 +131,13 @@ export class LessonsController {
     return this.lessonsService.findOne(id, user.schoolId);
   }
 
-  // PATCH /lessons/:id — atualiza status, anotações ou cancela
+  // PATCH /lessons/:id — edita a aula (status, dia/hora, duração, professor,
+  // instrumento, reposição, anotações)
   @Patch(':id')
   @Roles(Role.ADMIN)
   @ApiOperation({
-    summary: 'Atualizar aula: status, anotações, cancelamento (admin)',
+    summary:
+      'Editar aula: status, data/hora, duração, professor, instrumento...',
   })
   update(
     @Param('id') id: string,
@@ -119,6 +145,28 @@ export class LessonsController {
     @CurrentUser() user: AuthUser,
   ) {
     return this.lessonsService.update(id, dto, user.schoolId);
+  }
+
+  // POST /lessons/:id/cancel — cancela e (opcional) já cria a reposição
+  @Post(':id/cancel')
+  @Roles(Role.ADMIN)
+  @ApiOperation({
+    summary: 'Cancelar aula, com reposição opcional na mesma operação (admin)',
+  })
+  cancel(
+    @Param('id') id: string,
+    @Body() dto: CancelLessonDto,
+    @CurrentUser() user: AuthUser,
+  ) {
+    return this.lessonsService.cancel(id, dto, user.schoolId);
+  }
+
+  // DELETE /lessons/:id — exclui a aula
+  @Delete(':id')
+  @Roles(Role.ADMIN)
+  @ApiOperation({ summary: 'Excluir aula (admin)' })
+  remove(@Param('id') id: string, @CurrentUser() user: AuthUser) {
+    return this.lessonsService.remove(id, user.schoolId);
   }
 
   // GET /lessons/student/:id?status=SCHEDULED — aulas de um aluno da escola.

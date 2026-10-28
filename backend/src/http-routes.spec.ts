@@ -12,6 +12,10 @@ import { EnrollmentsController } from './enrollments/enrollments.controller';
 import { EnrollmentManagementService } from './enrollments/enrollment-management.service';
 import { EnrollmentRenewalCron } from './enrollments/enrollment-renewal.cron';
 import { EnrollmentsService } from './enrollments/enrollments.service';
+import { LessonsController } from './lessons/lessons.controller';
+import { LessonsService } from './lessons/lessons.service';
+import { PaymentsController } from './payments/payments.controller';
+import { PaymentsService } from './payments/payments.service';
 import { StudentsController } from './students/students.controller';
 import { StudentsService } from './students/students.service';
 
@@ -45,6 +49,20 @@ describe('Rotas HTTP usadas pelo app (admin)', () => {
     deletePermanently: jest.fn(),
   };
   const authService = { requestFirstAccess: jest.fn() };
+  const lessonsService = {
+    create: jest.fn(),
+    update: jest.fn(),
+    cancel: jest.fn(),
+    remove: jest.fn(),
+    bulkUpdate: jest.fn(),
+    bulkDelete: jest.fn(),
+    findOne: jest.fn(),
+  };
+  const paymentsService = {
+    findAdminDetail: jest.fn(),
+    unconfirm: jest.fn(),
+    confirmManually: jest.fn(),
+  };
 
   const asAdmin = {
     canActivate: (context: ExecutionContext) => {
@@ -60,7 +78,13 @@ describe('Rotas HTTP usadas pelo app (admin)', () => {
 
   beforeAll(async () => {
     const moduleRef = await Test.createTestingModule({
-      controllers: [EnrollmentsController, StudentsController, AuthController],
+      controllers: [
+        EnrollmentsController,
+        StudentsController,
+        AuthController,
+        LessonsController,
+        PaymentsController,
+      ],
       providers: [
         {
           provide: EnrollmentManagementService,
@@ -70,6 +94,8 @@ describe('Rotas HTTP usadas pelo app (admin)', () => {
         { provide: EnrollmentRenewalCron, useValue: {} },
         { provide: StudentsService, useValue: studentsService },
         { provide: AuthService, useValue: authService },
+        { provide: LessonsService, useValue: lessonsService },
+        { provide: PaymentsService, useValue: paymentsService },
       ],
     })
       .overrideGuard(JwtAuthGuard)
@@ -109,6 +135,8 @@ describe('Rotas HTTP usadas pelo app (admin)', () => {
     studentsService.updateProfile.mockResolvedValue({ id: STUDENT });
     studentsService.deletePermanently.mockResolvedValue({ deleted: true });
     authService.requestFirstAccess.mockResolvedValue({ status: 'SENT' });
+    for (const fn of Object.values(lessonsService)) fn.mockResolvedValue({});
+    for (const fn of Object.values(paymentsService)) fn.mockResolvedValue({});
   });
 
   const call = (
@@ -280,6 +308,147 @@ describe('Rotas HTTP usadas pelo app (admin)', () => {
         deletePaymentIds: ['nao-e-uuid'],
       });
       expect(res.statusCode).toBe(400);
+    });
+  });
+
+  describe('Aulas (admin)', () => {
+    const LESSON_B = uuid(6);
+
+    it('PATCH /lessons/:id edita data, duração, professor, instrumento e status', async () => {
+      const body = {
+        status: 'COMPLETED',
+        scheduledAt: '2026-11-04T19:00:00.000Z',
+        durationMinutes: 45,
+        teacherId: TEACHER,
+        instrument: 'PIANO',
+      };
+      const res = await call('PATCH', `/lessons/${LESSON}`, body);
+
+      expect(res.statusCode).toBe(200);
+      expect(lessonsService.update).toHaveBeenCalledWith(
+        LESSON,
+        body,
+        'school-1',
+      );
+    });
+
+    it('PATCH /lessons/:id aceita null pra limpar professor e instrumento', async () => {
+      const res = await call('PATCH', `/lessons/${LESSON}`, {
+        teacherId: null,
+        instrument: null,
+      });
+      expect(res.statusCode).toBe(200);
+    });
+
+    it('PATCH /lessons/:id recusa duração e instrumento inválidos', async () => {
+      const a = await call('PATCH', `/lessons/${LESSON}`, {
+        durationMinutes: 3,
+      });
+      const b = await call('PATCH', `/lessons/${LESSON}`, {
+        instrument: 'TUBA',
+      });
+      expect(a.statusCode).toBe(400);
+      expect(b.statusCode).toBe(400);
+    });
+
+    it('POST /lessons cria aula extra/reposição vinculada', async () => {
+      const res = await call('POST', '/lessons', {
+        studentId: STUDENT,
+        scheduledAt: '2026-11-04T19:00:00.000Z',
+        instrument: 'VIOLAO',
+        isMakeup: true,
+        makeupForLessonId: LESSON,
+      });
+      expect(res.statusCode).toBe(201);
+      expect(lessonsService.create).toHaveBeenCalled();
+    });
+
+    it('POST /lessons/:id/cancel cancela sem e com reposição', async () => {
+      const sem = await call('POST', `/lessons/${LESSON}/cancel`, {
+        cancelReason: 'Feriado',
+      });
+      const com = await call('POST', `/lessons/${LESSON}/cancel`, {
+        makeup: {
+          scheduledAt: '2026-11-09T19:00:00.000Z',
+          durationMinutes: 45,
+        },
+      });
+      const invalida = await call('POST', `/lessons/${LESSON}/cancel`, {
+        makeup: { scheduledAt: 'depois' },
+      });
+
+      expect(sem.statusCode).toBe(201);
+      expect(com.statusCode).toBe(201);
+      expect(invalida.statusCode).toBe(400);
+      expect(lessonsService.cancel).toHaveBeenCalledTimes(2);
+    });
+
+    it('DELETE /lessons/:id exclui a aula', async () => {
+      const res = await call('DELETE', `/lessons/${LESSON}`);
+      expect(res.statusCode).toBe(200);
+      expect(lessonsService.remove).toHaveBeenCalledWith(LESSON, 'school-1');
+    });
+
+    it('PATCH /lessons/bulk não é confundida com /lessons/:id', async () => {
+      const body = {
+        lessonIds: [LESSON, LESSON_B],
+        changes: { shiftDays: 2, startTime: '16:30', status: 'SCHEDULED' },
+      };
+      const res = await call('PATCH', '/lessons/bulk', body);
+
+      expect(res.statusCode).toBe(200);
+      expect(lessonsService.bulkUpdate).toHaveBeenCalledWith(body, 'school-1');
+      expect(lessonsService.update).not.toHaveBeenCalled();
+    });
+
+    it('PATCH /lessons/bulk recusa corpo inválido', async () => {
+      const semAulas = await call('PATCH', '/lessons/bulk', {
+        lessonIds: [],
+        changes: { shiftDays: 1 },
+      });
+      const horaRuim = await call('PATCH', '/lessons/bulk', {
+        lessonIds: [LESSON],
+        changes: { startTime: '25:99' },
+      });
+      expect(semAulas.statusCode).toBe(400);
+      expect(horaRuim.statusCode).toBe(400);
+    });
+
+    it('POST /lessons/bulk-delete exclui várias aulas', async () => {
+      const res = await call('POST', '/lessons/bulk-delete', {
+        lessonIds: [LESSON, LESSON_B],
+      });
+      expect(res.statusCode).toBe(201);
+      expect(lessonsService.bulkDelete).toHaveBeenCalledWith(
+        { lessonIds: [LESSON, LESSON_B] },
+        'school-1',
+      );
+    });
+  });
+
+  describe('Faturas (admin)', () => {
+    it('GET /payments/:id devolve o detalhe', async () => {
+      const res = await call('GET', `/payments/${PAYMENT}`);
+      expect(res.statusCode).toBe(200);
+      expect(paymentsService.findAdminDetail).toHaveBeenCalledWith(
+        PAYMENT,
+        'school-1',
+      );
+    });
+
+    it('PATCH /payments/:id/unconfirm desfaz o pagamento', async () => {
+      const res = await call('PATCH', `/payments/${PAYMENT}/unconfirm`);
+      expect(res.statusCode).toBe(200);
+      expect(paymentsService.unconfirm).toHaveBeenCalledWith(
+        PAYMENT,
+        'school-1',
+        'admin-1',
+      );
+    });
+
+    it('PATCH /payments/:id/confirm continua confirmando', async () => {
+      const res = await call('PATCH', `/payments/${PAYMENT}/confirm`, {});
+      expect(res.statusCode).toBe(200);
     });
   });
 

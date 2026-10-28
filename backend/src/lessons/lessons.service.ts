@@ -7,8 +7,22 @@ import {
 import { PrismaService } from '../prisma/prisma.service';
 import { CreateLessonDto } from './dto/create-lesson.dto';
 import { UpdateLessonDto } from './dto/update-lesson.dto';
+import { CancelLessonDto } from './dto/cancel-lesson.dto';
+import {
+  BulkDeleteLessonsDto,
+  BulkUpdateLessonsDto,
+} from './dto/bulk-lessons.dto';
 import { LessonStatus, Prisma } from '@prisma/client';
 import { calculateAge } from '../common/utils/age.util';
+import { getSchoolTimezoneOffset } from '../common/utils/school-timezone.util';
+import { shiftLesson } from './lesson-schedule.util';
+
+// Resumo de uma aula ligada à outra por reposição (quem repõe / quem foi reposta)
+const LESSON_LINK_SELECT = {
+  id: true,
+  scheduledAt: true,
+  status: true,
+} satisfies Prisma.LessonSelect;
 
 // Formato do detalhe da aula na visão do admin. O PATCH devolve o mesmo
 // formato, assim o app atualiza a tela direto com a resposta do save.
@@ -16,7 +30,31 @@ const LESSON_DETAIL_INCLUDE = {
   student: { include: { user: { select: { name: true, email: true } } } },
   teacher: { include: { user: { select: { name: true } } } },
   enrollment: { select: { id: true, weekDay: true, startTime: true } },
+  makeupFor: { select: LESSON_LINK_SELECT },
+  makeups: { select: LESSON_LINK_SELECT, orderBy: { scheduledAt: 'asc' } },
 } satisfies Prisma.LessonInclude;
+
+// Quando o status muda, o motivo do cancelamento acompanha: sair de
+// CANCELLED apaga o motivo; em CANCELLED o motivo é opcional (e só muda se
+// vier no body).
+function resolveStatusChange(
+  current: LessonStatus,
+  status?: LessonStatus,
+  cancelReason?: string | null,
+): Pick<Prisma.LessonUncheckedUpdateInput, 'status' | 'cancelReason'> {
+  const next = status ?? current;
+  if (next === LessonStatus.CANCELLED) {
+    return {
+      status,
+      cancelReason:
+        cancelReason === undefined ? undefined : cancelReason || null,
+    };
+  }
+  return {
+    status,
+    cancelReason: status !== undefined && status !== current ? null : undefined,
+  };
+}
 
 @Injectable()
 export class LessonsService {
@@ -29,23 +67,43 @@ export class LessonsService {
     });
     if (!student) throw new NotFoundException('Aluno não encontrado');
 
+    if (dto.teacherId) await this.assertTeacher(dto.teacherId, schoolId);
+
+    if (dto.enrollmentId) {
+      const enrollment = await this.prisma.enrollment.findFirst({
+        where: { id: dto.enrollmentId, studentId: dto.studentId, schoolId },
+        select: { id: true },
+      });
+      if (!enrollment) {
+        throw new BadRequestException('Matrícula não pertence a este aluno');
+      }
+    }
+
+    if (dto.makeupForLessonId) {
+      await this.assertMakeupTarget(
+        dto.makeupForLessonId,
+        dto.studentId,
+        schoolId,
+      );
+    }
+
     return this.prisma.lesson.create({
       data: {
         schoolId,
         studentId: dto.studentId,
         teacherId: dto.teacherId,
         enrollmentId: dto.enrollmentId,
+        instrument: dto.instrument,
         scheduledAt: new Date(dto.scheduledAt),
         durationMinutes: dto.durationMinutes ?? 60,
-        isMakeup: dto.isMakeup ?? false,
+        // apontar pra uma aula cancelada já diz que é reposição
+        isMakeup: dto.isMakeup ?? !!dto.makeupForLessonId,
+        makeupForLessonId: dto.makeupForLessonId,
         notes: dto.notes || null,
         notesUpdatedAt: dto.notes ? new Date() : null,
         status: LessonStatus.SCHEDULED,
       },
-      include: {
-        student: { include: { user: { select: { name: true } } } },
-        teacher: { include: { user: { select: { name: true } } } },
-      },
+      include: LESSON_DETAIL_INCLUDE,
     });
   }
 
@@ -104,17 +162,34 @@ export class LessonsService {
     });
   }
 
-  // ─── Admin: atualiza status/anotações/cancelamento ────────────────────
+  // ─── Admin: edita a aula (qualquer campo, todos opcionais) ───────────
   async update(lessonId: string, dto: UpdateLessonDto, schoolId: string) {
     const lesson = await this.prisma.lesson.findFirst({
       where: { id: lessonId, schoolId },
     });
     if (!lesson) throw new NotFoundException('Aula não encontrada');
 
-    // se está cancelando, exige motivo
-    if (dto.status === LessonStatus.CANCELLED && !dto.cancelReason) {
-      throw new BadRequestException('Informe o motivo do cancelamento');
+    if (dto.teacherId) await this.assertTeacher(dto.teacherId, schoolId);
+
+    // Reposição: apontar pra uma aula implica isMakeup; desmarcar isMakeup
+    // desfaz o vínculo (e não dá pra pedir os dois ao mesmo tempo).
+    if (dto.isMakeup === false && typeof dto.makeupForLessonId === 'string') {
+      throw new BadRequestException(
+        'Uma aula que repõe outra precisa ser marcada como reposição',
+      );
     }
+    if (typeof dto.makeupForLessonId === 'string') {
+      await this.assertMakeupTarget(
+        dto.makeupForLessonId,
+        lesson.studentId,
+        schoolId,
+        lesson.id,
+      );
+    }
+    const isMakeup =
+      typeof dto.makeupForLessonId === 'string' ? true : dto.isMakeup;
+    const makeupForLessonId =
+      dto.isMakeup === false ? null : dto.makeupForLessonId;
 
     // Anotações: undefined = não veio no body (não mexe); "" ou null =
     // apagar. O DTO já faz o trim. notesUpdatedAt só muda quando o texto
@@ -126,14 +201,179 @@ export class LessonsService {
     return this.prisma.lesson.update({
       where: { id: lessonId },
       data: {
-        status: dto.status,
-        cancelReason: dto.cancelReason,
+        ...resolveStatusChange(lesson.status, dto.status, dto.cancelReason),
+        scheduledAt: dto.scheduledAt ? new Date(dto.scheduledAt) : undefined,
+        durationMinutes: dto.durationMinutes,
+        teacherId: dto.teacherId,
+        instrument: dto.instrument,
+        isMakeup,
+        makeupForLessonId,
         ...(notesChanged
           ? { notes: nextNotes, notesUpdatedAt: nextNotes ? new Date() : null }
           : {}),
       },
       include: LESSON_DETAIL_INCLUDE,
     });
+  }
+
+  // ─── Admin: cancela a aula, já marcando a reposição (opcional) ───────
+  // Cancelamento e reposição entram na mesma transação: ou fica tudo
+  // certo, ou nada muda.
+  async cancel(lessonId: string, dto: CancelLessonDto, schoolId: string) {
+    const lesson = await this.prisma.lesson.findFirst({
+      where: { id: lessonId, schoolId },
+    });
+    if (!lesson) throw new NotFoundException('Aula não encontrada');
+    if (lesson.status === LessonStatus.CANCELLED) {
+      throw new BadRequestException('Esta aula já está cancelada');
+    }
+    if (dto.makeup?.teacherId) {
+      await this.assertTeacher(dto.makeup.teacherId, schoolId);
+    }
+
+    return this.prisma.$transaction(async (tx) => {
+      await tx.lesson.update({
+        where: { id: lessonId },
+        data: {
+          status: LessonStatus.CANCELLED,
+          cancelReason: dto.cancelReason || null,
+        },
+      });
+
+      const makeup = dto.makeup
+        ? await tx.lesson.create({
+            data: {
+              schoolId,
+              studentId: lesson.studentId,
+              enrollmentId: lesson.enrollmentId,
+              teacherId: dto.makeup.teacherId ?? lesson.teacherId,
+              instrument: dto.makeup.instrument ?? lesson.instrument,
+              scheduledAt: new Date(dto.makeup.scheduledAt),
+              durationMinutes:
+                dto.makeup.durationMinutes ?? lesson.durationMinutes,
+              isMakeup: true,
+              makeupForLessonId: lesson.id,
+              status: LessonStatus.SCHEDULED,
+            },
+            include: LESSON_DETAIL_INCLUDE,
+          })
+        : null;
+
+      const cancelled = await tx.lesson.findUniqueOrThrow({
+        where: { id: lessonId },
+        include: LESSON_DETAIL_INCLUDE,
+      });
+      return { lesson: cancelled, makeup };
+    });
+  }
+
+  // ─── Admin: exclui a aula (some do histórico) ────────────────────────
+  // Se alguma reposição apontava pra ela, o vínculo é desfeito (a reposição
+  // continua existindo) — é o ON DELETE SET NULL do banco.
+  async remove(lessonId: string, schoolId: string) {
+    const lesson = await this.prisma.lesson.findFirst({
+      where: { id: lessonId, schoolId },
+      select: { id: true },
+    });
+    if (!lesson) throw new NotFoundException('Aula não encontrada');
+
+    await this.prisma.lesson.delete({ where: { id: lessonId } });
+    return { id: lessonId };
+  }
+
+  // ─── Admin: edita várias aulas de uma vez ────────────────────────────
+  // Todas as aulas recebem as mesmas alterações. Dia e horário são
+  // relativos: "+2 dias" leva cada aula pra 2 dias depois da sua data, e o
+  // horário novo vale (na hora da escola) pra todas.
+  async bulkUpdate(dto: BulkUpdateLessonsDto, schoolId: string) {
+    const { lessonIds, changes } = dto;
+    if (Object.values(changes).every((value) => value === undefined)) {
+      throw new BadRequestException('Escolha pelo menos uma alteração');
+    }
+
+    const lessons = await this.findOwnedLessons(lessonIds, schoolId);
+    if (changes.teacherId)
+      await this.assertTeacher(changes.teacherId, schoolId);
+
+    const movesSchedule =
+      changes.shiftDays !== undefined || changes.startTime !== undefined;
+    const offset = movesSchedule
+      ? await getSchoolTimezoneOffset(this.prisma, schoolId)
+      : 0;
+
+    await this.prisma.$transaction(
+      lessons.map((lesson) =>
+        this.prisma.lesson.update({
+          where: { id: lesson.id },
+          data: {
+            ...resolveStatusChange(
+              lesson.status,
+              changes.status,
+              changes.cancelReason,
+            ),
+            teacherId: changes.teacherId,
+            instrument: changes.instrument,
+            durationMinutes: changes.durationMinutes,
+            scheduledAt: movesSchedule
+              ? shiftLesson(lesson.scheduledAt, changes, offset)
+              : undefined,
+          },
+          select: { id: true },
+        }),
+      ),
+    );
+
+    return { updatedCount: lessons.length };
+  }
+
+  // ─── Admin: exclui várias aulas de uma vez ───────────────────────────
+  async bulkDelete(dto: BulkDeleteLessonsDto, schoolId: string) {
+    await this.findOwnedLessons(dto.lessonIds, schoolId);
+    const { count } = await this.prisma.lesson.deleteMany({
+      where: { id: { in: dto.lessonIds }, schoolId },
+    });
+    return { deletedCount: count };
+  }
+
+  // Todas as aulas precisam existir e ser desta escola — senão nada é feito
+  private async findOwnedLessons(lessonIds: string[], schoolId: string) {
+    const lessons = await this.prisma.lesson.findMany({
+      where: { id: { in: lessonIds }, schoolId },
+      select: { id: true, scheduledAt: true, status: true },
+    });
+    if (lessons.length !== lessonIds.length) {
+      throw new NotFoundException('Alguma das aulas não foi encontrada');
+    }
+    return lessons;
+  }
+
+  private async assertTeacher(teacherId: string, schoolId: string) {
+    const teacher = await this.prisma.teacher.findFirst({
+      where: { id: teacherId, user: { schoolId } },
+      select: { id: true },
+    });
+    if (!teacher) throw new NotFoundException('Professor não encontrado');
+  }
+
+  // A aula reposta precisa ser do mesmo aluno (e não a própria aula)
+  private async assertMakeupTarget(
+    targetId: string,
+    studentId: string,
+    schoolId: string,
+    selfId?: string,
+  ) {
+    if (targetId === selfId) {
+      throw new BadRequestException('Uma aula não pode repor ela mesma');
+    }
+    const target = await this.prisma.lesson.findFirst({
+      where: { id: targetId, studentId, schoolId },
+      select: { id: true },
+    });
+    if (!target) {
+      throw new BadRequestException(
+        'A aula a repor precisa ser do mesmo aluno',
+      );
+    }
   }
 
   // ─── Aluno: lista aulas dos seus students ────────────────────────────
@@ -219,6 +459,11 @@ export class LessonsService {
       include: {
         teacher: { include: { user: { select: { name: true } } } },
         student: { include: { user: { select: { name: true } } } },
+        makeupFor: { select: LESSON_LINK_SELECT },
+        makeups: {
+          select: LESSON_LINK_SELECT,
+          orderBy: { scheduledAt: 'asc' },
+        },
       },
       orderBy: {
         scheduledAt: status === LessonStatus.COMPLETED ? 'desc' : 'asc',

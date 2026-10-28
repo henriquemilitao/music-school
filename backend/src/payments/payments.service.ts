@@ -1,5 +1,6 @@
 import {
   Injectable,
+  Logger,
   NotFoundException,
   BadRequestException,
   Inject,
@@ -8,6 +9,7 @@ import { PrismaService } from '../prisma/prisma.service';
 import { ConfirmPaymentDto } from './dto/confirm-payment.dto';
 import { PAYMENT_PROVIDER } from './payments.constants';
 import type { PaymentProvider } from './providers/payment-provider.interface';
+import { paymentPeriod } from './payment-period.util';
 import * as crypto from 'crypto';
 
 @Injectable()
@@ -16,6 +18,8 @@ export class PaymentsService {
     private prisma: PrismaService,
     @Inject(PAYMENT_PROVIDER) private provider: PaymentProvider,
   ) {}
+
+  private readonly logger = new Logger(PaymentsService.name);
 
   private readonly PIX_EXPIRATION_SECONDS = 15 * 60; // 15 minutos
 
@@ -251,10 +255,17 @@ export class PaymentsService {
     });
     if (!student) throw new NotFoundException('Aluno não encontrado');
 
-    return this.prisma.payment.findMany({
+    const payments = await this.prisma.payment.findMany({
       where: { studentId },
       orderBy: { dueDate: 'desc' },
+      include: { enrollment: { select: { firstLessonDate: true } } },
     });
+
+    // Cada fatura sai com o período de aulas que cobre (início e último dia)
+    return payments.map(({ enrollment, ...payment }) => ({
+      ...payment,
+      ...paymentPeriod(payment, enrollment),
+    }));
   }
 
   async getStudentPaymentStatus(
@@ -374,6 +385,79 @@ export class PaymentsService {
         paymentMethod: 'MANUAL_PIX',
         proofUrl: dto.proofUrl,
         confirmedBy: adminUserId,
+      },
+    });
+  }
+
+  // ─── Admin: detalhe de uma fatura (período, quem/como confirmou) ──────
+  async findAdminDetail(paymentId: string, schoolId: string) {
+    const payment = await this.prisma.payment.findFirst({
+      where: { id: paymentId, schoolId },
+      include: {
+        student: {
+          select: { id: true, name: true, instrument: true },
+        },
+        enrollment: { select: { firstLessonDate: true } },
+        paymentBundle: { select: { id: true, status: true, amount: true } },
+      },
+    });
+    if (!payment) throw new NotFoundException('Pagamento não encontrado');
+
+    const confirmedByUser = payment.confirmedBy
+      ? await this.prisma.user.findUnique({
+          where: { id: payment.confirmedBy },
+          select: { name: true },
+        })
+      : null;
+
+    const { enrollment, ...rest } = payment;
+    return {
+      ...rest,
+      ...paymentPeriod(payment, enrollment),
+      confirmedByName: confirmedByUser?.name ?? null,
+    };
+  }
+
+  // ─── Admin: desfaz uma confirmação (caiu no clique errado, o dinheiro
+  // não entrou...). A fatura volta a ficar em aberto: ATRASADA se o
+  // vencimento já passou, senão PENDENTE.
+  async unconfirm(paymentId: string, schoolId: string, adminUserId: string) {
+    const payment = await this.prisma.payment.findFirst({
+      where: { id: paymentId, schoolId },
+      include: { paymentBundle: { select: { status: true } } },
+    });
+    if (!payment) throw new NotFoundException('Pagamento não encontrado');
+
+    if (payment.status !== 'PAID') {
+      throw new BadRequestException('Esta fatura não está paga');
+    }
+    // Pagamento agregado pago cobre várias faturas de uma vez: desfazer só
+    // uma deixaria o agregado e as outras faturas inconsistentes.
+    if (payment.paymentBundle?.status === 'PAID') {
+      throw new BadRequestException(
+        'Esta fatura foi paga junto com outras (pagamento agregado) e não pode ser desfeita sozinha',
+      );
+    }
+
+    const now = new Date();
+    const todayStart = new Date(
+      Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate()),
+    );
+
+    this.logger.warn(
+      `Pagamento ${paymentId} desfeito por ${adminUserId} ` +
+        `(forma: ${payment.paymentMethod}, pago em: ${payment.paidAt?.toISOString() ?? '?'})`,
+    );
+
+    return this.prisma.payment.update({
+      where: { id: paymentId },
+      data: {
+        status: payment.dueDate < todayStart ? 'OVERDUE' : 'PENDING',
+        paidAt: null,
+        paymentMethod: 'GATEWAY',
+        proofUrl: null,
+        confirmedBy: null,
+        webhookReceivedAt: null,
       },
     });
   }
