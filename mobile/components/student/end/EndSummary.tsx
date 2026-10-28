@@ -1,5 +1,6 @@
 import { Text, View } from 'react-native';
-import { Ban, History, Receipt } from 'lucide-react-native';
+import { Ban, History, Receipt, UserMinus } from 'lucide-react-native';
+import { formatEndsAt } from '../detail/format';
 import { Card } from '../../ui/Card';
 
 function plural(count: number, one: string, many: string) {
@@ -36,12 +37,15 @@ export function EndSummary({
   lessonsKept,
   paymentsDeleted,
   paymentsRefunded,
+  endsAt,
 }: {
   lessonsCancelled: number;
   lessonsKept: number;
   paymentsDeleted: number;
   // Quantas das faturas apagadas já estavam pagas (estorno)
   paymentsRefunded: number;
+  // null = aluno fica inativo agora; data = segue ativo até lá
+  endsAt: string | null;
 }) {
   return (
     <Card className="gap-3">
@@ -68,6 +72,17 @@ export function EndSummary({
         {paymentsRefunded > 0
           ? ` (${plural(paymentsRefunded, 'estornada', 'estornadas')})`
           : ''}
+      </Line>
+      <Line icon={UserMinus} color="#4B5563" bg="#F3F4F6">
+        {endsAt ? (
+          <>
+            Aluno segue ativo até{' '}
+            <Text className="font-semibold">{formatEndsAt(endsAt)}</Text> (fim
+            da última aula) e então fica inativo
+          </>
+        ) : (
+          <Text className="font-semibold">Aluno fica inativo agora</Text>
+        )}
       </Line>
     </Card>
   );

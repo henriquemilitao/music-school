@@ -257,7 +257,7 @@ export default function EditEnrollment() {
     );
   }
 
-  const newScheduleLabel = `${WEEKDAY_NAMES[form.weekDay]} às ${form.startTime}`;
+  const newScheduleLabel = `${WEEKDAY_NAMES[form.weekDay]} às ${form.startTime} · ${form.durationMinutes} min`;
 
   // ───────────── Etapa 2: a partir de qual aula? ─────────────
   if (step === 'lessons') {
@@ -296,7 +296,11 @@ export default function EditEnrollment() {
           <Card className="gap-4">
             <SectionTitle
               title={`Novo horário: ${newScheduleLabel}`}
-              subtitle="Escolha a primeira aula que passa para o novo horário. As aulas anteriores continuam como estão."
+              subtitle={`Escolha a primeira aula que passa para o novo horário. As aulas anteriores continuam como estão.${
+                form.durationMinutes !== initial.durationMinutes
+                  ? ` A duração passa de ${initial.durationMinutes} para ${form.durationMinutes} min.`
+                  : ''
+              }`}
             />
 
             {loadingUpcoming ? (
@@ -336,22 +340,44 @@ export default function EditEnrollment() {
                 <ActivityIndicator color="#B08D57" />
               ) : (
                 <>
-                  {previewRows.map((row) => (
-                    <View
-                      key={row.lessonId}
-                      className="flex-row items-center gap-2"
-                    >
-                      <Text className="text-[13px] text-gray-500 flex-1">
-                        {formatLessonShortDate(row.from)} ·{' '}
-                        {formatLessonTime(row.from)}
-                      </Text>
-                      <ArrowRight size={14} color="#B08D57" />
-                      <Text className="text-[13px] font-semibold text-[#1A1A1A] flex-1">
-                        {formatLessonShortDate(row.to)} ·{' '}
-                        {formatLessonTime(row.to)}
-                      </Text>
-                    </View>
-                  ))}
+                  {previewRows.map((row) => {
+                    const durationChanged =
+                      row.fromDurationMinutes !== row.toDurationMinutes;
+                    return (
+                      <View
+                        key={row.lessonId}
+                        className="flex-row items-start gap-2"
+                      >
+                        <View className="flex-1">
+                          <Text className="text-[13px] text-gray-500">
+                            {formatLessonShortDate(row.from)} ·{' '}
+                            {formatLessonTime(row.from)}
+                          </Text>
+                          {durationChanged && (
+                            <Text className="text-xs text-gray-400 mt-0.5">
+                              {row.fromDurationMinutes} min
+                            </Text>
+                          )}
+                        </View>
+                        <ArrowRight
+                          size={14}
+                          color="#B08D57"
+                          style={{ marginTop: 2 }}
+                        />
+                        <View className="flex-1">
+                          <Text className="text-[13px] font-semibold text-[#1A1A1A]">
+                            {formatLessonShortDate(row.to)} ·{' '}
+                            {formatLessonTime(row.to)}
+                          </Text>
+                          {durationChanged && (
+                            <Text className="text-xs font-semibold text-[#B08D57] mt-0.5">
+                              {row.toDurationMinutes} min
+                            </Text>
+                          )}
+                        </View>
+                      </View>
+                    );
+                  })}
                   {preview && preview.total > previewRows.length && (
                     <Text className="text-xs text-gray-400">
                       e mais {preview.total - previewRows.length}{' '}

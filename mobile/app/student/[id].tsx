@@ -237,7 +237,7 @@ export default function AdminStudentDetail() {
             key: 'end',
             label: 'Encerrar matrícula',
             description:
-              'Para as aulas a partir de uma data e mantém o histórico',
+              'Agora, a partir de uma aula ou ao fim de uma fatura. Mantém o histórico',
             icon: UserMinus,
             onPress: () => router.push(`/enrollment-end/${id}`),
           },

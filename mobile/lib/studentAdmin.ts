@@ -23,33 +23,64 @@ export type ScheduleChange = {
 
 export type SchedulePreview = {
   total: number;
-  lessons: { lessonId: string; from: string; to: string }[];
+  lessons: {
+    lessonId: string;
+    from: string;
+    to: string;
+    fromDurationMinutes: number;
+    toDurationMinutes: number;
+  }[];
 };
 
 export type PaymentDecision = 'KEEP' | 'DELETE';
 
-// Fatura sobre a qual o admin decide ao encerrar a matrícula
-export type EndPaymentOption = {
+// Como encerrar: agora, a partir de uma aula ou ao fim de uma fatura
+export type EndMode = 'NOW' | 'FROM_LESSON' | 'AFTER_INVOICE';
+
+export type EndTarget = {
+  mode: EndMode;
+  fromLessonId?: string;
+  afterPaymentId?: string;
+};
+
+// Fatura com o período de aulas que ela cobre (datas "AAAA-MM-DD")
+export type InvoiceOption = {
   id: string;
   referenceMonth: string;
   amount: string;
   dueDate: string;
   status: 'PENDING' | 'OVERDUE' | 'PAID';
+  periodStart: string | null;
+  periodLastDay: string | null;
+};
+
+export type EndOptions = {
+  payments: InvoiceOption[];
+  olderPaymentsCount: number;
+};
+
+// Fatura sobre a qual o encerramento age
+export type EndPaymentOption = InvoiceOption & {
   // Aulas do ciclo da fatura que serão canceladas / que continuam valendo
   lessonsCancelled: number;
   lessonsRemaining: number;
   suggestion: PaymentDecision;
+  // true = será apagada sem escolha (fatura depois da escolhida)
+  locked: boolean;
 };
 
 export type EndPreview = {
+  mode: EndMode;
   cutoff: string;
+  // null = o aluno fica inativo agora; data = segue ativo até lá
+  endsAt: string | null;
   lessonsCancelled: number;
   lessonsKept: number;
+  olderPaymentsCount: number;
   payments: EndPaymentOption[];
 };
 
-export type EndEnrollmentBody = {
-  fromLessonId?: string;
+export type EndEnrollmentBody = EndTarget & {
   deletePaymentIds?: string[];
 };
 
@@ -91,8 +122,16 @@ export const studentAdminKeys = {
       change.startTime,
       change.durationMinutes,
     ] as const,
-  endPreview: (enrollmentId: string, fromLessonId: string | null) =>
-    ['admin-enrollment-end-preview', enrollmentId, fromLessonId] as const,
+  endOptions: (enrollmentId: string) =>
+    ['admin-enrollment-end-options', enrollmentId] as const,
+  endPreview: (enrollmentId: string, target: EndTarget) =>
+    [
+      'admin-enrollment-end-preview',
+      enrollmentId,
+      target.mode,
+      target.fromLessonId,
+      target.afterPaymentId,
+    ] as const,
 };
 
 // ─── Chamadas ─────────────────────────────────────────────────────────
@@ -116,13 +155,17 @@ export async function fetchSchedulePreview(
   return response.data;
 }
 
-export async function fetchEndPreview(
-  enrollmentId: string,
-  fromLessonId: string | null,
-) {
+export async function fetchEndOptions(enrollmentId: string) {
+  const response = await api.get<EndOptions>(
+    `/enrollments/${enrollmentId}/end-options`,
+  );
+  return response.data;
+}
+
+export async function fetchEndPreview(enrollmentId: string, target: EndTarget) {
   const response = await api.get<EndPreview>(
     `/enrollments/${enrollmentId}/end-preview`,
-    { params: fromLessonId ? { fromLessonId } : {} },
+    { params: target },
   );
   return response.data;
 }

@@ -35,3 +35,12 @@ export function formatCurrencyBRL(value: string | number) {
     currency: 'BRL',
   }).format(num);
 }
+
+// Data (e dia da semana) de um encerramento agendado, no fuso do aparelho
+export function formatEndsAt(iso: string) {
+  return new Date(iso).toLocaleDateString('pt-BR', {
+    weekday: 'short',
+    day: 'numeric',
+    month: 'long',
+  });
+}

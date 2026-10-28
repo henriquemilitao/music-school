@@ -2,6 +2,7 @@ import { ActivityIndicator, View, Text } from 'react-native';
 import {
   CalendarCheck2,
   CalendarClock,
+  CalendarX2,
   Clock,
   Music,
   UserRound,
@@ -11,7 +12,7 @@ import { formatInstrument } from '../../../lib/instrument';
 import { WEEKDAY_NAMES } from '../../../lib/weekdays';
 import { SectionCard } from './SectionCard';
 import { InfoBloco } from './InfoBloco';
-import { formatCurrencyBRL } from './format';
+import { formatCurrencyBRL, formatEndsAt } from './format';
 
 export type EnrollmentSummary = {
   id: string;
@@ -21,6 +22,8 @@ export type EnrollmentSummary = {
   monthlyAmount: string;
   firstPaymentDueDate: string;
   teacherId: string | null;
+  // Encerramento agendado: a matrícula segue ativa até essa data
+  endsAt: string | null;
   teacher: { user: { name: string } } | null;
 };
 
@@ -68,6 +71,20 @@ export function EnrollmentCard({
 
   return (
     <SectionCard title="Matrícula" status={status} onEdit={onEdit}>
+      {enrollment.endsAt ? (
+        <View
+          className="flex-row gap-2 rounded-xl px-3 py-2.5 mb-3"
+          style={{ backgroundColor: '#FFFBEB' }}
+        >
+          <CalendarX2 size={15} color="#D97706" style={{ marginTop: 1 }} />
+          <Text className="flex-1 text-xs text-[#92400E] leading-4">
+            Encerra em{' '}
+            <Text className="font-bold">{formatEndsAt(enrollment.endsAt)}</Text>
+            . As aulas depois dessa data já foram canceladas.
+          </Text>
+        </View>
+      ) : null}
+
       <View className="flex-row flex-wrap mb-1">
         <InfoBloco
           label="Instrumento"
