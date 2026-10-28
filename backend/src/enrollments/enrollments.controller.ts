@@ -83,20 +83,25 @@ export class EnrollmentsController {
     );
   }
 
+  @Get(':id/end-options')
+  @ApiOperation({
+    summary:
+      'Faturas mais recentes com o período de aulas (escolher "ao fim de qual fatura")',
+  })
+  endOptions(@Param('id') id: string, @CurrentUser() user: AuthUser) {
+    return this.enrollmentManagement.listEndOptions(id, user.schoolId);
+  }
+
   @Get(':id/end-preview')
   @ApiOperation({
-    summary: 'Prévia do que será removido/mantido ao encerrar a matrícula',
+    summary: 'Prévia do que acontece ao encerrar a matrícula (não salva)',
   })
   endPreview(
     @Param('id') id: string,
     @Query() query: EndPreviewQueryDto,
     @CurrentUser() user: AuthUser,
   ) {
-    return this.enrollmentManagement.previewEnd(
-      id,
-      user.schoolId,
-      query.fromLessonId,
-    );
+    return this.enrollmentManagement.previewEnd(id, user.schoolId, query);
   }
 
   @Patch(':id')

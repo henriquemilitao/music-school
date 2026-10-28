@@ -239,6 +239,13 @@ model Enrollment {
 
   isActive Boolean @default(true) // false = matrícula encerrada, cron nunca mais renova
 
+  // endsAt: quando a matrícula termina. Preenchido ao encerrar. Se já passou
+  // (encerramento imediato), isActive já é false. Se está no futuro
+  // (encerrar "ao fim de uma fatura"/"a partir de uma aula"), a matrícula
+  // segue ativa até essa data — um cron de hora em hora marca isActive=false
+  // quando endsAt chega. Matrícula com endsAt nunca é renovada.
+  endsAt DateTime?
+
   createdAt DateTime @default(now())
 
   lessons  Lesson[]

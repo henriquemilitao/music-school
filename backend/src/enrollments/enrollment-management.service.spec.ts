@@ -3,6 +3,7 @@
 import { Test } from '@nestjs/testing';
 import { BadRequestException } from '@nestjs/common';
 import { EnrollmentManagementService } from './enrollment-management.service';
+import { EndMode } from './dto/end-enrollment.dto';
 import { EnrollmentsService } from './enrollments.service';
 import { PrismaService } from '../prisma/prisma.service';
 
@@ -13,7 +14,11 @@ describe('EnrollmentManagementService', () => {
   const schoolId = 'school-1';
 
   const prisma = {
-    enrollment: { findFirst: jest.fn(), update: jest.fn() },
+    enrollment: {
+      findFirst: jest.fn(),
+      update: jest.fn(),
+      updateMany: jest.fn(),
+    },
     school: { findUniqueOrThrow: jest.fn() },
     teacher: { findFirst: jest.fn() },
     student: { update: jest.fn() },
@@ -25,6 +30,7 @@ describe('EnrollmentManagementService', () => {
       updateMany: jest.fn(),
     },
     payment: {
+      findFirst: jest.fn(),
       findMany: jest.fn(),
       updateMany: jest.fn(),
       deleteMany: jest.fn(),
@@ -231,7 +237,35 @@ describe('EnrollmentManagementService', () => {
     });
   });
 
-  describe('encerrar a partir de uma aula', () => {
+  describe('prévia da troca de horário', () => {
+    it('só a duração muda: mesma data/hora, duração antes e depois', async () => {
+      prisma.enrollment.findFirst.mockResolvedValue(enrollment());
+      const lesson = {
+        id: 'l1',
+        scheduledAt: iso('2099-11-05T19:30:00Z'),
+        durationMinutes: 60,
+      };
+      prisma.lesson.findFirst.mockResolvedValue(lesson);
+      prisma.lesson.findMany.mockResolvedValue([lesson]);
+
+      const result = await service.previewScheduleChange('enr-1', schoolId, {
+        fromLessonId: 'l1',
+        durationMinutes: 45,
+      });
+
+      expect(result.lessons).toEqual([
+        {
+          lessonId: 'l1',
+          from: lesson.scheduledAt,
+          to: lesson.scheduledAt,
+          fromDurationMinutes: 60,
+          toDurationMinutes: 45,
+        },
+      ]);
+    });
+  });
+
+  describe('encerrar matrícula', () => {
     // Ciclo 1: 04/11 a 03/12 (quartas 04, 11, 18, 25/11)
     // Ciclo 2: 04/12 a 03/01 (quartas 09, 16/12 nos dados abaixo)
     const lessons = [
@@ -239,31 +273,37 @@ describe('EnrollmentManagementService', () => {
         id: 'a1',
         scheduledAt: iso('2099-11-04T12:00:00Z'),
         status: 'COMPLETED',
+        durationMinutes: 60,
       },
       {
         id: 'a2',
         scheduledAt: iso('2099-11-11T12:00:00Z'),
         status: 'COMPLETED',
+        durationMinutes: 60,
       },
       {
         id: 'a3',
         scheduledAt: iso('2099-11-18T12:00:00Z'),
         status: 'SCHEDULED',
+        durationMinutes: 60,
       },
       {
         id: 'a4',
         scheduledAt: iso('2099-11-25T12:00:00Z'),
         status: 'SCHEDULED',
+        durationMinutes: 60,
       },
       {
         id: 'b1',
         scheduledAt: iso('2099-12-09T12:00:00Z'),
         status: 'SCHEDULED',
+        durationMinutes: 60,
       },
       {
         id: 'b2',
         scheduledAt: iso('2099-12-16T12:00:00Z'),
         status: 'SCHEDULED',
+        durationMinutes: 60,
       },
     ];
     const payment = (
@@ -289,6 +329,12 @@ describe('EnrollmentManagementService', () => {
         scheduledAt: lesson.scheduledAt,
       });
     };
+    const afterInvoice = (id: string, periodStart: string) =>
+      prisma.payment.findFirst.mockResolvedValue({
+        id,
+        idempotencyKey: `stu-1-${periodStart}`,
+      });
+    const A4_END = iso('2099-11-25T13:00:00Z');
 
     beforeEach(() => {
       prisma.enrollment.findFirst.mockResolvedValue(
@@ -297,247 +343,399 @@ describe('EnrollmentManagementService', () => {
       prisma.lesson.findMany.mockResolvedValue(lessons);
     });
 
-    it('prévia: conta aulas canceladas/mantidas e sugere apagar só a fatura sem aulas restantes', async () => {
-      fromLesson('a4');
-      prisma.payment.findMany.mockResolvedValue([
-        payment('p1', '2099-11-04', 'OVERDUE'), // a1, a2, a3 continuam → manter
-        payment('p2', '2099-12-04', 'PENDING'), // todas canceladas → apagar
-      ]);
+    describe('a partir de uma aula', () => {
+      it('prévia: conta aulas, sugere apagar só a fatura sem aulas restantes e mostra o período', async () => {
+        fromLesson('a4');
+        prisma.payment.findMany.mockResolvedValue([
+          payment('p2', '2099-12-04', 'PENDING'), // todas canceladas → apagar
+          payment('p1', '2099-11-04', 'OVERDUE'), // a1, a2, a3 continuam → manter
+        ]);
 
-      const result = await service.previewEnd('enr-1', schoolId, 'a4');
+        const result = await service.previewEnd('enr-1', schoolId, {
+          mode: EndMode.FROM_LESSON,
+          fromLessonId: 'a4',
+        });
 
-      expect(result.lessonsCancelled).toBe(3);
-      expect(result.lessonsKept).toBe(3);
-      expect(result.payments).toEqual([
-        expect.objectContaining({
-          id: 'p1',
-          lessonsCancelled: 1,
-          lessonsRemaining: 3,
-          suggestion: 'KEEP',
-        }),
-        expect.objectContaining({
-          id: 'p2',
-          lessonsCancelled: 2,
-          lessonsRemaining: 0,
-          suggestion: 'DELETE',
-        }),
-      ]);
-    });
-
-    it('prévia não vaza campos internos do pagamento agregado', async () => {
-      fromLesson('b1');
-      prisma.payment.findMany.mockResolvedValue([
-        payment('p2', '2099-12-04', 'PENDING', {
-          paymentBundleId: 'bundle-1',
-          paymentBundle: { status: 'PENDING' },
-        }),
-      ]);
-
-      const result = await service.previewEnd('enr-1', schoolId, 'b1');
-      expect(result.payments[0]).not.toHaveProperty('bundleId');
-      expect(result.payments[0]).not.toHaveProperty('bundleStatus');
-    });
-
-    it('aulas já canceladas antes não contam como aula dada no ciclo', async () => {
-      fromLesson('a4');
-      prisma.lesson.findMany.mockResolvedValue([
-        ...lessons,
-        {
-          id: 'c1',
-          scheduledAt: iso('2099-12-05T12:00:00Z'),
-          status: 'CANCELLED',
-        },
-      ]);
-      prisma.payment.findMany.mockResolvedValue([
-        payment('p2', '2099-12-04', 'PENDING'),
-      ]);
-
-      const result = await service.previewEnd('enr-1', schoolId, 'a4');
-
-      expect(result.payments[0].suggestion).toBe('DELETE');
-      expect(result.lessonsKept).toBe(4); // a1, a2, a3 + c1 (já cancelada)
-    });
-
-    it('sem corte informado vale "agora": todas as aulas agendadas futuras', async () => {
-      prisma.payment.findMany.mockResolvedValue([]);
-      const result = await service.previewEnd('enr-1', schoolId);
-      expect(result.lessonsCancelled).toBe(4); // a3, a4, b1, b2 (2099)
-    });
-
-    it('encerrar CANCELA as aulas (não apaga) e apaga só as faturas escolhidas', async () => {
-      fromLesson('a4');
-      prisma.payment.findMany.mockResolvedValue([
-        payment('p1', '2099-11-04', 'OVERDUE'),
-        payment('p2', '2099-12-04', 'PENDING'),
-      ]);
-
-      const result = await service.end('enr-1', schoolId, {
-        fromLessonId: 'a4',
-        deletePaymentIds: ['p2'],
+        expect(result.lessonsCancelled).toBe(3);
+        expect(result.lessonsKept).toBe(3);
+        expect(result.endsAt).toEqual(iso('2099-11-18T13:00:00Z')); // fim da a3
+        expect(result.payments).toEqual([
+          expect.objectContaining({
+            id: 'p2',
+            lessonsCancelled: 2,
+            lessonsRemaining: 0,
+            suggestion: 'DELETE',
+            locked: false,
+            periodStart: '2099-12-04',
+            periodLastDay: '2100-01-03',
+          }),
+          expect.objectContaining({
+            id: 'p1',
+            lessonsCancelled: 1,
+            lessonsRemaining: 3,
+            suggestion: 'KEEP',
+          }),
+        ]);
       });
 
-      expect(prisma.lesson.updateMany).toHaveBeenCalledWith({
-        where: { id: { in: ['a4', 'b1', 'b2'] }, status: 'SCHEDULED' },
-        data: { status: 'CANCELLED', cancelReason: 'Matrícula encerrada' },
+      it('exige a aula de corte', async () => {
+        await expect(
+          service.previewEnd('enr-1', schoolId, { mode: EndMode.FROM_LESSON }),
+        ).rejects.toBeInstanceOf(BadRequestException);
       });
-      expect(prisma.payment.deleteMany).toHaveBeenCalledWith({
-        where: { id: { in: ['p2'] } },
+
+      it('cancela as aulas (não apaga), apaga só as faturas escolhidas e segue ativa até a última aula', async () => {
+        fromLesson('a4');
+        prisma.payment.findMany.mockResolvedValue([
+          payment('p2', '2099-12-04', 'PENDING'),
+          payment('p1', '2099-11-04', 'OVERDUE'),
+        ]);
+
+        const result = await service.end('enr-1', schoolId, {
+          mode: EndMode.FROM_LESSON,
+          fromLessonId: 'a4',
+          deletePaymentIds: ['p2'],
+        });
+
+        expect(prisma.lesson.updateMany).toHaveBeenCalledWith({
+          where: { id: { in: ['a4', 'b1', 'b2'] }, status: 'SCHEDULED' },
+          data: { status: 'CANCELLED', cancelReason: 'Matrícula encerrada' },
+        });
+        expect(prisma.payment.deleteMany).toHaveBeenCalledWith({
+          where: { id: { in: ['p2'] } },
+        });
+        // ainda tem a3 pela frente: continua ativa, só ganha a data final
+        expect(prisma.enrollment.update).toHaveBeenCalledWith({
+          where: { id: 'enr-1' },
+          data: { endsAt: iso('2099-11-18T13:00:00Z') },
+        });
+        expect(result).toMatchObject({
+          lessonsCancelled: 3,
+          paymentsDeleted: 1,
+          paymentsKept: 1,
+          endedNow: false,
+        });
       });
-      expect(prisma.enrollment.update).toHaveBeenCalledWith({
-        where: { id: 'enr-1' },
+
+      it('cortando na primeira aula futura não sobra aula: inativa na hora', async () => {
+        fromLesson('a3');
+        prisma.payment.findMany.mockResolvedValue([]);
+
+        const result = await service.end('enr-1', schoolId, {
+          mode: EndMode.FROM_LESSON,
+          fromLessonId: 'a3',
+        });
+
+        expect(prisma.enrollment.update).toHaveBeenCalledWith({
+          where: { id: 'enr-1' },
+          data: { isActive: false, endsAt: expect.any(Date) },
+        });
+        expect(result.endedNow).toBe(true);
+      });
+    });
+
+    describe('agora', () => {
+      it('cancela todas as aulas agendadas e inativa na hora', async () => {
+        prisma.payment.findMany.mockResolvedValue([]);
+
+        const result = await service.end('enr-1', schoolId, {
+          mode: EndMode.NOW,
+        });
+
+        expect(prisma.lesson.updateMany).toHaveBeenCalledWith({
+          where: {
+            id: { in: ['a3', 'a4', 'b1', 'b2'] },
+            status: 'SCHEDULED',
+          },
+          data: { status: 'CANCELLED', cancelReason: 'Matrícula encerrada' },
+        });
+        expect(prisma.enrollment.update).toHaveBeenCalledWith({
+          where: { id: 'enr-1' },
+          data: { isActive: false, endsAt: expect.any(Date) },
+        });
+        expect(result.endedNow).toBe(true);
+      });
+
+      it('sem faturas marcadas nada é apagado, nem a sugerida', async () => {
+        prisma.payment.findMany.mockResolvedValue([
+          payment('p2', '2099-12-04', 'PENDING'),
+        ]);
+
+        const result = await service.end('enr-1', schoolId, {
+          mode: EndMode.NOW,
+        });
+
+        expect(prisma.payment.deleteMany).toHaveBeenCalledWith({
+          where: { id: { in: [] } },
+        });
+        expect(result.paymentsDeleted).toBe(0);
+        expect(result.paymentsKept).toBe(1);
+      });
+
+      it('só as 3 faturas mais recentes são oferecidas; as outras ficam fora', async () => {
+        prisma.payment.findMany.mockResolvedValue([
+          payment('p5', '2100-03-04', 'PENDING'),
+          payment('p4', '2100-02-04', 'PENDING'),
+          payment('p3', '2100-01-04', 'PENDING'),
+          payment('p2', '2099-12-04', 'OVERDUE'),
+          payment('p1', '2099-11-04', 'OVERDUE'),
+        ]);
+
+        const preview = await service.previewEnd('enr-1', schoolId, {
+          mode: EndMode.NOW,
+        });
+        expect(preview.payments.map((p) => p.id)).toEqual(['p5', 'p4', 'p3']);
+        expect(preview.olderPaymentsCount).toBe(2);
+
+        await expect(
+          service.end('enr-1', schoolId, {
+            mode: EndMode.NOW,
+            deletePaymentIds: ['p1'],
+          }),
+        ).rejects.toBeInstanceOf(BadRequestException);
+        expect(prisma.lesson.updateMany).not.toHaveBeenCalled();
+        expect(prisma.enrollment.update).not.toHaveBeenCalled();
+      });
+
+      it('estornar: fatura paga escolhida é apagada (sugestão é manter)', async () => {
+        prisma.payment.findMany.mockResolvedValue([
+          payment('p2', '2099-12-04', 'PAID'),
+          payment('p1', '2099-11-04', 'PAID'),
+        ]);
+
+        const preview = await service.previewEnd('enr-1', schoolId, {
+          mode: EndMode.NOW,
+        });
+        expect(preview.payments.map((p) => p.suggestion)).toEqual([
+          'KEEP',
+          'KEEP',
+        ]);
+
+        await service.end('enr-1', schoolId, {
+          mode: EndMode.NOW,
+          deletePaymentIds: ['p2'],
+        });
+        expect(prisma.payment.deleteMany).toHaveBeenCalledWith({
+          where: { id: { in: ['p2'] } },
+        });
+      });
+
+      it('aulas já canceladas antes não contam como aula dada no ciclo', async () => {
+        prisma.lesson.findMany.mockResolvedValue([
+          ...lessons,
+          {
+            id: 'c1',
+            scheduledAt: iso('2099-12-05T12:00:00Z'),
+            status: 'CANCELLED',
+            durationMinutes: 60,
+          },
+        ]);
+        prisma.payment.findMany.mockResolvedValue([
+          payment('p2', '2099-12-04', 'PENDING'),
+        ]);
+
+        const result = await service.previewEnd('enr-1', schoolId, {
+          mode: EndMode.NOW,
+        });
+
+        expect(result.payments[0].suggestion).toBe('DELETE');
+        expect(result.lessonsKept).toBe(3); // a1, a2 (dadas) + c1 (já cancelada antes)
+      });
+
+      it('fatura apagada num pagamento agregado aberto cancela o agregado e solta as outras', async () => {
+        prisma.payment.findMany.mockResolvedValue([
+          payment('p2', '2099-12-04', 'PENDING', {
+            paymentBundleId: 'bundle-1',
+            paymentBundle: { status: 'PENDING' },
+          }),
+        ]);
+
+        await service.end('enr-1', schoolId, {
+          mode: EndMode.NOW,
+          deletePaymentIds: ['p2'],
+        });
+
+        expect(prisma.paymentBundle.updateMany).toHaveBeenCalledWith({
+          where: { id: { in: ['bundle-1'] }, status: 'PENDING' },
+          data: { status: 'CANCELLED' },
+        });
+        expect(prisma.payment.updateMany).toHaveBeenCalledWith({
+          where: { paymentBundleId: { in: ['bundle-1'] } },
+          data: { paymentBundleId: null },
+        });
+      });
+
+      it('fatura paga dentro de um agregado já pago: o agregado não é mexido', async () => {
+        prisma.payment.findMany.mockResolvedValue([
+          payment('p2', '2099-12-04', 'PAID', {
+            paymentBundleId: 'bundle-9',
+            paymentBundle: { status: 'PAID' },
+          }),
+        ]);
+
+        await service.end('enr-1', schoolId, {
+          mode: EndMode.NOW,
+          deletePaymentIds: ['p2'],
+        });
+
+        expect(prisma.paymentBundle.updateMany).not.toHaveBeenCalled();
+        expect(prisma.payment.deleteMany).toHaveBeenCalledWith({
+          where: { id: { in: ['p2'] } },
+        });
+      });
+
+      it('fatura avulsa (sem período) é oferecida sem sugestão de apagar', async () => {
+        prisma.payment.findMany.mockResolvedValue([
+          {
+            ...payment('p9', '2099-12-04', 'PENDING'),
+            idempotencyKey: 'manual-1',
+          },
+        ]);
+
+        const result = await service.previewEnd('enr-1', schoolId, {
+          mode: EndMode.NOW,
+        });
+
+        expect(result.payments).toEqual([
+          expect.objectContaining({
+            id: 'p9',
+            lessonsCancelled: 0,
+            lessonsRemaining: 0,
+            suggestion: 'KEEP',
+            periodStart: null,
+            periodLastDay: null,
+          }),
+        ]);
+      });
+    });
+
+    describe('ao fim de uma fatura', () => {
+      // Escola em UTC-4: o ciclo 1 termina em 03/12; corte = 04/12 00:00 local
+      it('cancela as aulas depois do período, apaga as faturas seguintes e vale até a última aula do período', async () => {
+        afterInvoice('p1', '2099-11-04');
+        prisma.payment.findMany.mockResolvedValue([
+          payment('p2', '2099-12-04', 'PENDING'),
+          payment('p1', '2099-11-04', 'PAID'),
+        ]);
+
+        const preview = await service.previewEnd('enr-1', schoolId, {
+          mode: EndMode.AFTER_INVOICE,
+          afterPaymentId: 'p1',
+        });
+        expect(preview.cutoff).toEqual(iso('2099-12-04T04:00:00Z'));
+        expect(preview.lessonsCancelled).toBe(2); // b1, b2
+        expect(preview.endsAt).toEqual(A4_END);
+        expect(preview.payments).toEqual([
+          expect.objectContaining({
+            id: 'p2',
+            locked: true,
+            suggestion: 'DELETE',
+          }),
+        ]);
+
+        const result = await service.end('enr-1', schoolId, {
+          mode: EndMode.AFTER_INVOICE,
+          afterPaymentId: 'p1',
+          // o que o app mandar aqui é ignorado neste modo
+          deletePaymentIds: ['p1'],
+        });
+
+        expect(prisma.lesson.updateMany).toHaveBeenCalledWith({
+          where: { id: { in: ['b1', 'b2'] }, status: 'SCHEDULED' },
+          data: { status: 'CANCELLED', cancelReason: 'Matrícula encerrada' },
+        });
+        expect(prisma.payment.deleteMany).toHaveBeenCalledWith({
+          where: { id: { in: ['p2'] } },
+        });
+        expect(prisma.enrollment.update).toHaveBeenCalledWith({
+          where: { id: 'enr-1' },
+          data: { endsAt: A4_END },
+        });
+        expect(result).toMatchObject({ paymentsDeleted: 1, endedNow: false });
+      });
+
+      it('fatura mais recente escolhida: nada depois dela para apagar', async () => {
+        afterInvoice('p2', '2099-12-04');
+        prisma.payment.findMany.mockResolvedValue([
+          payment('p2', '2099-12-04', 'PENDING'),
+          payment('p1', '2099-11-04', 'PAID'),
+        ]);
+
+        const preview = await service.previewEnd('enr-1', schoolId, {
+          mode: EndMode.AFTER_INVOICE,
+          afterPaymentId: 'p2',
+        });
+
+        expect(preview.lessonsCancelled).toBe(0);
+        expect(preview.payments).toEqual([]);
+        expect(preview.endsAt).toEqual(iso('2099-12-16T13:00:00Z')); // fim da b2
+      });
+
+      it('exige a fatura e recusa fatura de outra matrícula ou sem período', async () => {
+        await expect(
+          service.previewEnd('enr-1', schoolId, {
+            mode: EndMode.AFTER_INVOICE,
+          }),
+        ).rejects.toBeInstanceOf(BadRequestException);
+
+        prisma.payment.findFirst.mockResolvedValue(null);
+        await expect(
+          service.previewEnd('enr-1', schoolId, {
+            mode: EndMode.AFTER_INVOICE,
+            afterPaymentId: 'x',
+          }),
+        ).rejects.toBeInstanceOf(BadRequestException);
+
+        prisma.payment.findFirst.mockResolvedValue({
+          id: 'p9',
+          idempotencyKey: 'manual-1',
+        });
+        await expect(
+          service.previewEnd('enr-1', schoolId, {
+            mode: EndMode.AFTER_INVOICE,
+            afterPaymentId: 'p9',
+          }),
+        ).rejects.toBeInstanceOf(BadRequestException);
+      });
+    });
+
+    describe('faturas disponíveis para escolher', () => {
+      it('devolve as 3 mais recentes com período e conta as mais antigas', async () => {
+        prisma.payment.findMany.mockResolvedValue([
+          payment('p4', '2100-02-04', 'PENDING'),
+          payment('p3', '2100-01-04', 'PENDING'),
+          payment('p2', '2099-12-04', 'PAID'),
+          payment('p1', '2099-11-04', 'PAID'),
+          {
+            ...payment('p0', '2099-10-04', 'PAID'),
+            idempotencyKey: 'manual-1',
+          },
+        ]);
+
+        const result = await service.listEndOptions('enr-1', schoolId);
+
+        expect(result.payments.map((p) => p.id)).toEqual(['p4', 'p3', 'p2']);
+        expect(result.olderPaymentsCount).toBe(1); // p1 (a avulsa não conta)
+        expect(result.payments[2]).toMatchObject({
+          periodStart: '2099-12-04',
+          periodLastDay: '2100-01-03',
+        });
+      });
+    });
+  });
+
+  describe('encerramento agendado', () => {
+    it('o cron inativa as matrículas cujo endsAt já passou', async () => {
+      prisma.enrollment.updateMany.mockResolvedValue({ count: 2 });
+      const now = iso('2099-11-25T14:00:00Z');
+
+      const result = await service.closeEndedEnrollments(now);
+
+      expect(prisma.enrollment.updateMany).toHaveBeenCalledWith({
+        where: { isActive: true, endsAt: { lte: now } },
         data: { isActive: false },
       });
-      expect(result).toEqual({
-        lessonsCancelled: 3,
-        lessonsKept: 3,
-        paymentsDeleted: 1,
-        paymentsKept: 1,
-      });
-    });
-
-    it('sem faturas marcadas nada é apagado, nem a sugerida', async () => {
-      fromLesson('a4');
-      prisma.payment.findMany.mockResolvedValue([
-        payment('p2', '2099-12-04', 'PENDING'), // sugestão seria apagar
-      ]);
-
-      const result = await service.end('enr-1', schoolId, {
-        fromLessonId: 'a4',
-      });
-
-      expect(prisma.payment.deleteMany).toHaveBeenCalledWith({
-        where: { id: { in: [] } },
-      });
-      expect(result.paymentsDeleted).toBe(0);
-      expect(result.paymentsKept).toBe(1);
-    });
-
-    it('recusa apagar fatura que não foi oferecida (outra matrícula/inexistente)', async () => {
-      fromLesson('a4');
-      prisma.payment.findMany.mockResolvedValue([
-        payment('p1', '2099-11-04', 'OVERDUE'),
-      ]);
-
-      await expect(
-        service.end('enr-1', schoolId, {
-          fromLessonId: 'a4',
-          deletePaymentIds: ['de-outro-aluno'],
-        }),
-      ).rejects.toBeInstanceOf(BadRequestException);
-
-      expect(prisma.lesson.updateMany).not.toHaveBeenCalled();
-      expect(prisma.payment.deleteMany).not.toHaveBeenCalled();
-      expect(prisma.enrollment.update).not.toHaveBeenCalled();
-    });
-
-    it('só a última fatura paga é oferecida (as anteriores ficam fora da decisão)', async () => {
-      fromLesson('b1');
-      prisma.payment.findMany.mockResolvedValue([
-        payment('p1', '2099-11-04', 'PAID'),
-        payment('p2', '2099-12-04', 'PAID'),
-      ]);
-
-      const result = await service.previewEnd('enr-1', schoolId, 'b1');
-
-      expect(result.payments.map((p) => p.id)).toEqual(['p2']);
-      expect(result.payments[0].suggestion).toBe('KEEP'); // estorno é opt-in
-    });
-
-    it('estornar: fatura paga escolhida é apagada', async () => {
-      fromLesson('b1');
-      prisma.payment.findMany.mockResolvedValue([
-        payment('p1', '2099-11-04', 'PAID'),
-        payment('p2', '2099-12-04', 'PAID'),
-      ]);
-
-      await service.end('enr-1', schoolId, {
-        fromLessonId: 'b1',
-        deletePaymentIds: ['p2'],
-      });
-
-      expect(prisma.payment.deleteMany).toHaveBeenCalledWith({
-        where: { id: { in: ['p2'] } },
-      });
-    });
-
-    it('não oferece apagar fatura paga que não é a última', async () => {
-      fromLesson('b1');
-      prisma.payment.findMany.mockResolvedValue([
-        payment('p1', '2099-11-04', 'PAID'),
-        payment('p2', '2099-12-04', 'PAID'),
-      ]);
-
-      await expect(
-        service.end('enr-1', schoolId, {
-          fromLessonId: 'b1',
-          deletePaymentIds: ['p1'],
-        }),
-      ).rejects.toBeInstanceOf(BadRequestException);
-    });
-
-    it('fatura apagada que estava num pagamento agregado aberto cancela o agregado e solta as outras', async () => {
-      fromLesson('b1');
-      prisma.payment.findMany.mockResolvedValue([
-        payment('p2', '2099-12-04', 'PENDING', {
-          paymentBundleId: 'bundle-1',
-          paymentBundle: { status: 'PENDING' },
-        }),
-      ]);
-
-      await service.end('enr-1', schoolId, {
-        fromLessonId: 'b1',
-        deletePaymentIds: ['p2'],
-      });
-
-      expect(prisma.paymentBundle.updateMany).toHaveBeenCalledWith({
-        where: { id: { in: ['bundle-1'] }, status: 'PENDING' },
-        data: { status: 'CANCELLED' },
-      });
-      expect(prisma.payment.updateMany).toHaveBeenCalledWith({
-        where: { paymentBundleId: { in: ['bundle-1'] } },
-        data: { paymentBundleId: null },
-      });
-    });
-
-    it('fatura paga dentro de um agregado já pago: o agregado não é mexido', async () => {
-      fromLesson('b1');
-      prisma.payment.findMany.mockResolvedValue([
-        payment('p2', '2099-12-04', 'PAID', {
-          paymentBundleId: 'bundle-9',
-          paymentBundle: { status: 'PAID' },
-        }),
-      ]);
-
-      await service.end('enr-1', schoolId, {
-        fromLessonId: 'b1',
-        deletePaymentIds: ['p2'],
-      });
-
-      expect(prisma.paymentBundle.updateMany).not.toHaveBeenCalled();
-      expect(prisma.payment.deleteMany).toHaveBeenCalledWith({
-        where: { id: { in: ['p2'] } },
-      });
-    });
-
-    it('fatura avulsa (sem padrão na chave) é oferecida sem sugestão de apagar', async () => {
-      fromLesson('a3');
-      prisma.payment.findMany.mockResolvedValue([
-        {
-          ...payment('p9', '2099-12-04', 'PENDING'),
-          idempotencyKey: 'manual-1',
-        },
-      ]);
-
-      const result = await service.previewEnd('enr-1', schoolId, 'a3');
-
-      expect(result.payments).toEqual([
-        expect.objectContaining({
-          id: 'p9',
-          lessonsCancelled: 0,
-          lessonsRemaining: 0,
-          suggestion: 'KEEP',
-        }),
-      ]);
+      expect(result.count).toBe(2);
     });
   });
 });

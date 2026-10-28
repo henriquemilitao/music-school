@@ -107,6 +107,11 @@ export class EnrollmentsService {
         'Matrícula encerrada — não é possível renovar',
       );
     }
+    if (enrollment.endsAt) {
+      throw new BadRequestException(
+        'Esta matrícula tem encerramento agendado — não é possível renovar',
+      );
+    }
 
     // NOVO — busca o offset também aqui, mesmo motivo do create()
     const school = await this.prisma.school.findUniqueOrThrow({
@@ -240,7 +245,7 @@ export class EnrollmentsService {
     // Busca só matrículas ativas — as encerradas (isActive: false)
     // nunca são candidatas a renovação automática.
     const activeEnrollments = await this.prisma.enrollment.findMany({
-      where: { isActive: true },
+      where: { isActive: true, endsAt: null },
     });
 
     // Acumula um registro do que foi gerado nessa execução, pra

@@ -2,6 +2,7 @@
 import { Injectable, Logger } from '@nestjs/common';
 import { Cron, CronExpression } from '@nestjs/schedule';
 import { EnrollmentsService } from './enrollments.service';
+import { EnrollmentManagementService } from './enrollment-management.service';
 import { ConfigService } from '@nestjs/config';
 
 @Injectable()
@@ -10,6 +11,7 @@ export class EnrollmentRenewalCron {
 
   constructor(
     private enrollmentsService: EnrollmentsService,
+    private enrollmentManagement: EnrollmentManagementService,
     private config: ConfigService,
   ) {}
 
@@ -59,6 +61,16 @@ export class EnrollmentRenewalCron {
       this.logger.log(`${updatedCount} pagamento(s) marcado(s) como OVERDUE`);
     } else {
       this.logger.log('Nenhum pagamento novo em atraso');
+    }
+  }
+
+  // De hora em hora — inativa as matrículas com encerramento agendado
+  // (endsAt) que já chegou. É só um UPDATE com filtro; custo desprezível.
+  @Cron(CronExpression.EVERY_HOUR)
+  async handleScheduledEnd() {
+    const { count } = await this.enrollmentManagement.closeEndedEnrollments();
+    if (count > 0) {
+      this.logger.log(`${count} matrícula(s) encerrada(s) (endsAt vencido)`);
     }
   }
 }

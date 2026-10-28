@@ -34,6 +34,7 @@ describe('Rotas HTTP usadas pelo app (admin)', () => {
     listUpcomingLessons: jest.fn(),
     previewScheduleChange: jest.fn(),
     previewEnd: jest.fn(),
+    listEndOptions: jest.fn(),
     update: jest.fn(),
     end: jest.fn(),
   };
@@ -102,6 +103,7 @@ describe('Rotas HTTP usadas pelo app (admin)', () => {
       lessons: [],
     });
     enrollmentManagement.previewEnd.mockResolvedValue({});
+    enrollmentManagement.listEndOptions.mockResolvedValue({ payments: [] });
     enrollmentManagement.update.mockResolvedValue({ id: ENROLLMENT });
     enrollmentManagement.end.mockResolvedValue({});
     studentsService.updateProfile.mockResolvedValue({ id: STUDENT });
@@ -177,23 +179,46 @@ describe('Rotas HTTP usadas pelo app (admin)', () => {
       );
     });
 
-    it('GET /enrollments/:id/end-preview com e sem aula de corte', async () => {
-      const withLesson = await call(
+    it('GET /enrollments/:id/end-preview nos três modos', async () => {
+      const base = `/enrollments/${ENROLLMENT}/end-preview`;
+      const now = await call('GET', `${base}?mode=NOW`);
+      const lesson = await call(
         'GET',
-        `/enrollments/${ENROLLMENT}/end-preview?fromLessonId=${LESSON}`,
+        `${base}?mode=FROM_LESSON&fromLessonId=${LESSON}`,
       );
-      const withoutLesson = await call(
+      const invoice = await call(
         'GET',
-        `/enrollments/${ENROLLMENT}/end-preview`,
+        `${base}?mode=AFTER_INVOICE&afterPaymentId=${PAYMENT}`,
       );
-      expect(withLesson.statusCode).toBe(200);
-      expect(withoutLesson.statusCode).toBe(200);
+      expect([now.statusCode, lesson.statusCode, invoice.statusCode]).toEqual([
+        200, 200, 200,
+      ]);
+      expect(enrollmentManagement.previewEnd).toHaveBeenLastCalledWith(
+        ENROLLMENT,
+        'school-1',
+        { mode: 'AFTER_INVOICE', afterPaymentId: PAYMENT },
+      );
+    });
+
+    it('GET /enrollments/:id/end-preview exige o modo', async () => {
+      const res = await call('GET', `/enrollments/${ENROLLMENT}/end-preview`);
+      expect(res.statusCode).toBe(400);
+    });
+
+    it('GET /enrollments/:id/end-options', async () => {
+      const res = await call('GET', `/enrollments/${ENROLLMENT}/end-options`);
+      expect(res.statusCode).toBe(200);
+      expect(enrollmentManagement.listEndOptions).toHaveBeenCalledWith(
+        ENROLLMENT,
+        'school-1',
+      );
     });
   });
 
   describe('POST /enrollments/:id/end (Encerrar matrícula)', () => {
-    it('aceita aula de corte + faturas a apagar', async () => {
+    it('a partir de uma aula, com faturas a apagar', async () => {
       const res = await call('POST', `/enrollments/${ENROLLMENT}/end`, {
+        mode: 'FROM_LESSON',
         fromLessonId: LESSON,
         deletePaymentIds: [PAYMENT],
       });
@@ -202,17 +227,42 @@ describe('Rotas HTTP usadas pelo app (admin)', () => {
       expect(enrollmentManagement.end).toHaveBeenCalledWith(
         ENROLLMENT,
         'school-1',
-        { fromLessonId: LESSON, deletePaymentIds: [PAYMENT] },
+        {
+          mode: 'FROM_LESSON',
+          fromLessonId: LESSON,
+          deletePaymentIds: [PAYMENT],
+        },
       );
     });
 
-    it('aceita corpo vazio (encerrar agora, sem apagar faturas)', async () => {
-      const res = await call('POST', `/enrollments/${ENROLLMENT}/end`, {});
+    it('agora', async () => {
+      const res = await call('POST', `/enrollments/${ENROLLMENT}/end`, {
+        mode: 'NOW',
+        deletePaymentIds: [],
+      });
       expect(res.statusCode).toBe(201);
+    });
+
+    it('ao fim de uma fatura', async () => {
+      const res = await call('POST', `/enrollments/${ENROLLMENT}/end`, {
+        mode: 'AFTER_INVOICE',
+        afterPaymentId: PAYMENT,
+      });
+      expect(res.statusCode).toBe(201);
+    });
+
+    it('recusa corpo sem modo ou com modo desconhecido', async () => {
+      const semModo = await call('POST', `/enrollments/${ENROLLMENT}/end`, {});
+      const invalido = await call('POST', `/enrollments/${ENROLLMENT}/end`, {
+        mode: 'DEPOIS',
+      });
+      expect(semModo.statusCode).toBe(400);
+      expect(invalido.statusCode).toBe(400);
     });
 
     it('recusa id de fatura inválido', async () => {
       const res = await call('POST', `/enrollments/${ENROLLMENT}/end`, {
+        mode: 'NOW',
         deletePaymentIds: ['nao-e-uuid'],
       });
       expect(res.statusCode).toBe(400);
