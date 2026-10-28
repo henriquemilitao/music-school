@@ -28,24 +28,36 @@ export interface ScheduleChangeItem {
   durationMinutes: number;
 }
 
-interface PlannedPayment {
+// Motivo gravado nas aulas canceladas pelo encerramento da matrícula
+export const ENROLLMENT_ENDED_CANCEL_REASON = 'Matrícula encerrada';
+
+export type PaymentSuggestion = 'KEEP' | 'DELETE';
+
+// Uma fatura sobre a qual o admin decide (manter ou apagar) ao encerrar.
+export interface EndPaymentOption {
   id: string;
   referenceMonth: string;
   amount: string;
   dueDate: Date;
   status: string;
+  // Aulas do ciclo desta fatura que serão canceladas agora
+  lessonsCancelled: number;
+  // Aulas do ciclo que continuam valendo (já dadas ou antes do corte)
+  lessonsRemaining: number;
+  // Sugestão da tela: apagar só quando não sobra nenhuma aula no ciclo
+  suggestion: PaymentSuggestion;
+}
+
+interface EndPaymentCandidate extends EndPaymentOption {
+  bundleId: string | null;
+  bundleStatus: string | null;
 }
 
 export interface EndPlan {
   cutoff: Date;
-  lessonIds: string[];
-  lessonsRemoved: number;
+  lessonIds: string[]; // aulas agendadas a partir do corte → canceladas
   lessonsKept: number;
-  paymentsToDelete: PlannedPayment[];
-  // Faturas JÁ PAGAS cujas aulas foram removidas: ficam intactas (não há
-  // estorno automático) e o admin é avisado.
-  paidPaymentsAffected: PlannedPayment[];
-  bundleIds: string[];
+  payments: EndPaymentCandidate[];
 }
 
 @Injectable()
@@ -206,54 +218,94 @@ export class EnrollmentManagementService {
     const enrollment = await this.findActive(enrollmentId, schoolId);
     const offset = await this.getTimezoneOffset(schoolId);
     const cutoff = await this.resolveCutoff(enrollment, fromLessonId);
-    return this.toSummary(
-      await this.planEnd(this.prisma, enrollment, cutoff, offset),
-    );
+    const plan = await this.planEnd(this.prisma, enrollment, cutoff, offset);
+    return {
+      cutoff: plan.cutoff,
+      lessonsCancelled: plan.lessonIds.length,
+      lessonsKept: plan.lessonsKept,
+      payments: plan.payments.map(toPaymentOption),
+    };
   }
 
-  async end(enrollmentId: string, schoolId: string, fromLessonId?: string) {
+  // Encerra a matrícula: as aulas agendadas a partir do corte viram
+  // CANCELADAS (continuam no histórico) e cada fatura listada no preview é
+  // mantida ou apagada conforme a escolha do admin (`deletePaymentIds`).
+  async end(
+    enrollmentId: string,
+    schoolId: string,
+    options: { fromLessonId?: string; deletePaymentIds?: string[] } = {},
+  ) {
     const enrollment = await this.findActive(enrollmentId, schoolId);
     const offset = await this.getTimezoneOffset(schoolId);
-    const cutoff = await this.resolveCutoff(enrollment, fromLessonId);
+    const cutoff = await this.resolveCutoff(enrollment, options.fromLessonId);
+    const deleteIds = new Set(options.deletePaymentIds ?? []);
 
-    const plan = await this.prisma.$transaction(
+    return this.prisma.$transaction(
       async (tx) => {
         // Recalcula DENTRO da transação: se algo mudou desde o preview
         // (ex: fatura paga agora há pouco), vale o estado real.
         const plan = await this.planEnd(tx, enrollment, cutoff, offset);
 
-        await tx.lesson.deleteMany({ where: { id: { in: plan.lessonIds } } });
+        // Só dá pra apagar o que a tela ofereceu (faturas desta matrícula)
+        const offered = new Set(plan.payments.map((p) => p.id));
+        for (const id of deleteIds) {
+          if (!offered.has(id)) {
+            throw new BadRequestException(
+              'Fatura inválida para esta matrícula',
+            );
+          }
+        }
+        const toDelete = plan.payments.filter((p) => deleteIds.has(p.id));
 
-        if (plan.bundleIds.length > 0) {
-          // Fatura presa a um pagamento agregado ainda aberto: cancela o
-          // agregado e solta as faturas (mesma regra do createBundle).
+        await tx.lesson.updateMany({
+          where: { id: { in: plan.lessonIds }, status: 'SCHEDULED' },
+          data: {
+            status: 'CANCELLED',
+            cancelReason: ENROLLMENT_ENDED_CANCEL_REASON,
+          },
+        });
+
+        // Fatura presa a um pagamento agregado ainda aberto: cancela o
+        // agregado e solta as faturas (mesma regra do createBundle).
+        const openBundleIds = [
+          ...new Set(
+            toDelete
+              .filter((p) => p.bundleId && p.bundleStatus === 'PENDING')
+              .map((p) => p.bundleId as string),
+          ),
+        ];
+        if (openBundleIds.length > 0) {
           await tx.paymentBundle.updateMany({
-            where: { id: { in: plan.bundleIds }, status: 'PENDING' },
+            where: { id: { in: openBundleIds }, status: 'PENDING' },
             data: { status: 'CANCELLED' },
           });
           await tx.payment.updateMany({
-            where: { paymentBundleId: { in: plan.bundleIds } },
+            where: { paymentBundleId: { in: openBundleIds } },
             data: { paymentBundleId: null },
           });
         }
 
+        // Fatura já paga apagada = estorno (o dinheiro é devolvido por fora)
         await tx.payment.deleteMany({
-          where: { id: { in: plan.paymentsToDelete.map((p) => p.id) } },
+          where: { id: { in: toDelete.map((p) => p.id) } },
         });
 
         // isActive=false: o cron nunca mais renova e o aluno sai da lista
-        // de ativos. Aulas anteriores à data de corte seguem no histórico.
+        // de ativos. As aulas anteriores ao corte seguem como estão.
         await tx.enrollment.update({
           where: { id: enrollmentId },
           data: { isActive: false },
         });
 
-        return plan;
+        return {
+          lessonsCancelled: plan.lessonIds.length,
+          lessonsKept: plan.lessonsKept,
+          paymentsDeleted: toDelete.length,
+          paymentsKept: plan.payments.length - toDelete.length,
+        };
       },
       { timeout: 20_000 },
     );
-
-    return this.toSummary(plan);
   }
 
   // ═══════════════════════════════════════════════════════════════════
@@ -383,14 +435,11 @@ export class EnrollmentManagementService {
     return lesson.scheduledAt;
   }
 
-  // Regra de quais faturas somem ao encerrar a partir de `cutoff`:
-  //  • Aulas na data de corte ou depois (agendadas/canceladas) são removidas.
-  //  • Cada fatura em aberto (PENDING/OVERDUE) cobre um ciclo mensal de aulas.
-  //    Se TODAS as aulas do ciclo foram removidas → a fatura é apagada.
-  //  • Se sobrou pelo menos uma aula no ciclo (ainda vai ser dada), a fatura
-  //    fica — mesmo atrasada.
-  //  • Faturas pagas nunca são apagadas; só avisamos quando as aulas delas
-  //    foram removidas.
+  // Monta o plano do encerramento a partir de `cutoff`:
+  //  • Aulas AGENDADAS na data de corte ou depois serão canceladas.
+  //  • O admin decide sobre todas as faturas em aberto (pendentes/atrasadas)
+  //    da matrícula e sobre a última paga (estorno). Cada uma vem com uma
+  //    sugestão: apagar só se nenhuma aula do ciclo dela continua valendo.
   private async planEnd(
     client: Prisma.TransactionClient,
     enrollment: Enrollment,
@@ -402,13 +451,18 @@ export class EnrollmentManagementService {
       select: { id: true, scheduledAt: true, status: true },
     });
 
-    const removable = lessons.filter(
+    const cancellable = lessons.filter(
       (lesson) =>
         lesson.scheduledAt.getTime() >= cutoff.getTime() &&
-        lesson.status !== 'COMPLETED',
+        lesson.status === 'SCHEDULED',
     );
-    const removedIds = new Set(removable.map((lesson) => lesson.id));
-    const kept = lessons.filter((lesson) => !removedIds.has(lesson.id));
+    const cancelledNowIds = new Set(cancellable.map((lesson) => lesson.id));
+    // Continuam valendo: aulas dadas ou agendadas antes do corte (aulas já
+    // canceladas antes não contam como aula dada)
+    const standing = lessons.filter(
+      (lesson) =>
+        !cancelledNowIds.has(lesson.id) && lesson.status !== 'CANCELLED',
+    );
 
     const payments = await client.payment.findMany({
       where: { enrollmentId: enrollment.id },
@@ -420,65 +474,74 @@ export class EnrollmentManagementService {
         referenceMonth: true,
         idempotencyKey: true,
         paymentBundleId: true,
+        paymentBundle: { select: { status: true } },
       },
+      orderBy: { dueDate: 'asc' },
     });
 
+    const lastPaid = [...payments].reverse().find((p) => p.status === 'PAID');
     const anchorDay = enrollment.firstLessonDate.getUTCDate();
-    const paymentsToDelete: PlannedPayment[] = [];
-    const paidPaymentsAffected: PlannedPayment[] = [];
-    const bundleIds = new Set<string>();
 
+    const candidates: EndPaymentCandidate[] = [];
     for (const payment of payments) {
+      const isLastPaid = payment === lastPaid;
+      if (payment.status === 'PAID' && !isLastPaid) continue;
+
+      let lessonsCancelled = 0;
+      let lessonsRemaining = 0;
       const periodStart = periodStartFromKey(payment.idempotencyKey);
-      if (!periodStart) continue; // fatura avulsa/antiga: não mexe
+      if (periodStart) {
+        const periodEnd = addMonthsKeepingAnchor(anchorDay, periodStart, 1);
+        const inPeriod = (scheduledAt: Date) => {
+          const day = toLocalDay(scheduledAt, offsetHours);
+          return day >= periodStart && day < periodEnd;
+        };
+        lessonsCancelled = cancellable.filter((l) =>
+          inPeriod(l.scheduledAt),
+        ).length;
+        lessonsRemaining = standing.filter((l) =>
+          inPeriod(l.scheduledAt),
+        ).length;
+      }
 
-      const periodEnd = addMonthsKeepingAnchor(anchorDay, periodStart, 1);
-      const inPeriod = (scheduledAt: Date) => {
-        const day = toLocalDay(scheduledAt, offsetHours);
-        return day >= periodStart && day < periodEnd;
-      };
-
-      const hasKeptLesson = kept.some((lesson) => inPeriod(lesson.scheduledAt));
-      const hasRemovedLesson = removable.some((lesson) =>
-        inPeriod(lesson.scheduledAt),
-      );
-      if (hasKeptLesson || !hasRemovedLesson) continue;
-
-      const planned: PlannedPayment = {
+      candidates.push({
         id: payment.id,
         referenceMonth: payment.referenceMonth,
         amount: payment.amount.toString(),
         dueDate: payment.dueDate,
         status: payment.status,
-      };
-
-      if (payment.status === 'PAID') {
-        paidPaymentsAffected.push(planned);
-        continue;
-      }
-
-      paymentsToDelete.push(planned);
-      if (payment.paymentBundleId) bundleIds.add(payment.paymentBundleId);
+        lessonsCancelled,
+        lessonsRemaining,
+        suggestion:
+          payment.status !== 'PAID' &&
+          lessonsCancelled > 0 &&
+          lessonsRemaining === 0
+            ? 'DELETE'
+            : 'KEEP',
+        bundleId: payment.paymentBundleId,
+        bundleStatus: payment.paymentBundle?.status ?? null,
+      });
     }
 
     return {
       cutoff,
-      lessonIds: removable.map((lesson) => lesson.id),
-      lessonsRemoved: removable.length,
-      lessonsKept: kept.length,
-      paymentsToDelete,
-      paidPaymentsAffected,
-      bundleIds: [...bundleIds],
+      lessonIds: cancellable.map((lesson) => lesson.id),
+      lessonsKept: lessons.length - cancellable.length,
+      payments: candidates,
     };
   }
+}
 
-  private toSummary(plan: EndPlan) {
-    return {
-      cutoff: plan.cutoff,
-      lessonsRemoved: plan.lessonsRemoved,
-      lessonsKept: plan.lessonsKept,
-      paymentsDeleted: plan.paymentsToDelete,
-      paidPaymentsAffected: plan.paidPaymentsAffected,
-    };
-  }
+// Tira os campos internos (pagamento agregado) antes de responder à tela
+function toPaymentOption(candidate: EndPaymentCandidate): EndPaymentOption {
+  return {
+    id: candidate.id,
+    referenceMonth: candidate.referenceMonth,
+    amount: candidate.amount,
+    dueDate: candidate.dueDate,
+    status: candidate.status,
+    lessonsCancelled: candidate.lessonsCancelled,
+    lessonsRemaining: candidate.lessonsRemaining,
+    suggestion: candidate.suggestion,
+  };
 }

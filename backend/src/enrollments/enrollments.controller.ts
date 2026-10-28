@@ -115,14 +115,14 @@ export class EnrollmentsController {
   @Post(':id/end')
   @ApiOperation({
     summary:
-      'Encerrar matrícula a partir de uma aula (remove aulas e faturas futuras)',
+      'Encerrar matrícula a partir de uma aula (cancela as aulas; faturas por escolha do admin)',
   })
   end(
     @Param('id') id: string,
     @Body() dto: EndEnrollmentDto,
     @CurrentUser() user: AuthUser,
   ) {
-    return this.enrollmentManagement.end(id, user.schoolId, dto.fromLessonId);
+    return this.enrollmentManagement.end(id, user.schoolId, dto);
   }
 
   @Post(':id/renew')
