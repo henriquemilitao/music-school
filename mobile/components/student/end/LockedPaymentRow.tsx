@@ -5,6 +5,7 @@ import { paymentStatusConfig } from '../../../lib/status';
 import type { EndPaymentOption } from '../../../lib/studentAdmin';
 import { Badge } from '../detail/Badge';
 import { formatCurrencyBRL } from '../detail/format';
+import { InvoiceDates } from './InvoiceDates';
 
 // Fatura que será apagada sem escolha (vem depois da fatura em cujo fim a
 // matrícula encerra). Se já estava paga, avisa do estorno.
@@ -20,14 +21,17 @@ export function LockedPaymentRow({ payment }: { payment: EndPaymentOption }) {
         borderColor: '#FCA5A5',
       }}
     >
-      <View className="flex-row items-center justify-between">
-        <View className="flex-1 pr-2">
-          <Text className="text-sm font-semibold">
-            {formatMonthLabelFromKey(payment.referenceMonth)}
-          </Text>
-          <Text className="text-[13px] text-gray-500 mt-0.5">
-            {formatCurrencyBRL(payment.amount)}
-          </Text>
+      <View className="flex-row items-start justify-between">
+        <View className="flex-1 pr-2 gap-1.5">
+          <View>
+            <Text className="text-sm font-semibold">
+              {formatMonthLabelFromKey(payment.referenceMonth)}
+            </Text>
+            <Text className="text-[13px] text-gray-500 mt-0.5">
+              {formatCurrencyBRL(payment.amount)}
+            </Text>
+          </View>
+          <InvoiceDates invoice={payment} />
         </View>
         <View className="items-end gap-1.5">
           <Badge label={cfg.label} bg={cfg.colorBg} color={cfg.colorText} />

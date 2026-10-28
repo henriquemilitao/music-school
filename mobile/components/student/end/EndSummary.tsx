@@ -1,5 +1,11 @@
 import { Text, View } from 'react-native';
-import { Ban, History, Receipt, UserMinus } from 'lucide-react-native';
+import {
+  Ban,
+  CheckCircle2,
+  History,
+  Receipt,
+  UserMinus,
+} from 'lucide-react-native';
 import { formatEndsAt } from '../detail/format';
 import { Card } from '../../ui/Card';
 
@@ -37,6 +43,7 @@ export function EndSummary({
   lessonsKept,
   paymentsDeleted,
   paymentsRefunded,
+  paymentsMarkedPaid,
   endsAt,
 }: {
   lessonsCancelled: number;
@@ -44,6 +51,8 @@ export function EndSummary({
   paymentsDeleted: number;
   // Quantas das faturas apagadas já estavam pagas (estorno)
   paymentsRefunded: number;
+  // Faturas em aberto que o admin disse que já foram pagas
+  paymentsMarkedPaid: number;
   // null = aluno fica inativo agora; data = segue ativo até lá
   endsAt: string | null;
 }) {
@@ -73,6 +82,17 @@ export function EndSummary({
           ? ` (${plural(paymentsRefunded, 'estornada', 'estornadas')})`
           : ''}
       </Line>
+      {paymentsMarkedPaid > 0 ? (
+        <Line icon={CheckCircle2} color="#059669" bg="#ECFDF5">
+          <Text className="font-semibold">
+            {plural(
+              paymentsMarkedPaid,
+              'fatura marcada como paga',
+              'faturas marcadas como pagas',
+            )}
+          </Text>
+        </Line>
+      ) : null}
       <Line icon={UserMinus} color="#4B5563" bg="#F3F4F6">
         {endsAt ? (
           <>

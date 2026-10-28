@@ -32,7 +32,13 @@ export type SchedulePreview = {
   }[];
 };
 
-export type PaymentDecision = 'KEEP' | 'DELETE';
+// O que o servidor sugere para uma fatura (a tela não pré-seleciona: tudo
+// começa como "manter")
+export type PaymentSuggestion = 'KEEP' | 'DELETE';
+
+// O que o admin escolhe: manter como está, apagar (estornar, se paga) ou
+// dizer que a fatura em aberto já foi paga
+export type PaymentDecision = 'KEEP' | 'DELETE' | 'MARK_PAID';
 
 // Como encerrar: agora, a partir de uma aula ou ao fim de uma fatura
 export type EndMode = 'NOW' | 'FROM_LESSON' | 'AFTER_INVOICE';
@@ -64,9 +70,11 @@ export type EndPaymentOption = InvoiceOption & {
   // Aulas do ciclo da fatura que serão canceladas / que continuam valendo
   lessonsCancelled: number;
   lessonsRemaining: number;
-  suggestion: PaymentDecision;
+  suggestion: PaymentSuggestion;
   // true = será apagada sem escolha (fatura depois da escolhida)
   locked: boolean;
+  // true = o admin pode escolher apagar (encerrar agora / a partir de uma aula)
+  deletable: boolean;
 };
 
 export type EndPreview = {
@@ -82,6 +90,7 @@ export type EndPreview = {
 
 export type EndEnrollmentBody = EndTarget & {
   deletePaymentIds?: string[];
+  markPaidPaymentIds?: string[];
 };
 
 // Corpo do PATCH /enrollments/:id — só o que mudou

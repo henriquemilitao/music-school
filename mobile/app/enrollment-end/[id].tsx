@@ -10,7 +10,7 @@ import {
   formatLessonShortDate,
   formatLessonTime,
 } from '../../lib/lessonFormat';
-import { formatDate, formatMonthLabelFromKey } from '../../lib/paymentFormat';
+import { formatMonthLabelFromKey } from '../../lib/paymentFormat';
 import { paymentStatusConfig } from '../../lib/status';
 import {
   endEnrollment,
@@ -37,6 +37,11 @@ import {
 } from '../../components/student/detail/format';
 import { EndModePicker } from '../../components/student/end/EndModePicker';
 import { EndSummary } from '../../components/student/end/EndSummary';
+import {
+  invoiceDueLabel,
+  invoicePeriodLabel,
+} from '../../components/student/end/invoiceLabels';
+import { InfoNotice } from '../../components/student/end/InfoNotice';
 import { LockedPaymentRow } from '../../components/student/end/LockedPaymentRow';
 import { PaymentDecisionRow } from '../../components/student/end/PaymentDecisionRow';
 
@@ -130,15 +135,19 @@ export default function EndEnrollment() {
   });
   const preview = previewQuery.data;
 
-  const decisionOf = (paymentId: string, suggestion: PaymentDecision) =>
-    overrides[paymentId] ?? suggestion;
+  // Nada mexido = a fatura continua como está
+  const decisionOf = (paymentId: string): PaymentDecision =>
+    overrides[paymentId] ?? 'KEEP';
 
   const payments = preview?.payments ?? [];
   // Travadas (ao fim de uma fatura) sempre saem; as demais seguem a escolha
   const toDelete = payments.filter(
-    (p) => p.locked || decisionOf(p.id, p.suggestion) === 'DELETE',
+    (p) => p.locked || decisionOf(p.id) === 'DELETE',
   );
   const refunded = toDelete.filter((p) => p.status === 'PAID');
+  const toMarkPaid = payments.filter(
+    (p) => !p.locked && decisionOf(p.id) === 'MARK_PAID',
+  );
 
   const end = useMutation({
     mutationFn: () =>
@@ -147,6 +156,7 @@ export default function EndEnrollment() {
         ...(target!.mode === 'AFTER_INVOICE'
           ? {}
           : { deletePaymentIds: toDelete.map((p) => p.id) }),
+        markPaidPaymentIds: toMarkPaid.map((p) => p.id),
       }),
     onSuccess: () => {
       refreshStudent(id);
@@ -187,12 +197,16 @@ export default function EndEnrollment() {
       refunded.length > 0
         ? ` (${plural(refunded.length, 'já paga, será estornada', 'já pagas, serão estornadas')})`
         : '';
+    const paidNote =
+      toMarkPaid.length > 0
+        ? ` ${plural(toMarkPaid.length, 'fatura será marcada como paga', 'faturas serão marcadas como pagas')}.`
+        : '';
     const when = preview.endsAt
       ? `O aluno segue ativo até ${formatEndsAt(preview.endsAt)} e depois fica inativo.`
       : 'O aluno ficará inativo agora.';
     const ok = await confirmAsync({
       title: `Encerrar a matrícula de ${firstName(student.name)}?`,
-      message: `${plural(preview.lessonsCancelled, 'aula será cancelada', 'aulas serão canceladas')} e ${plural(toDelete.length, 'fatura será apagada', 'faturas serão apagadas')}${refundNote}. ${when}\n\nNão dá para desfazer.`,
+      message: `${plural(preview.lessonsCancelled, 'aula será cancelada', 'aulas serão canceladas')} e ${plural(toDelete.length, 'fatura será apagada', 'faturas serão apagadas')}${refundNote}.${paidNote} ${when}\n\nNão dá para desfazer.`,
       confirmText: 'Encerrar matrícula',
       destructive: true,
     });
@@ -318,7 +332,7 @@ export default function EndEnrollment() {
                     key={invoice.id}
                     selected={invoice.id === invoiceId}
                     title={`${formatMonthLabelFromKey(invoice.referenceMonth)} · ${formatCurrencyBRL(invoice.amount)}`}
-                    subtitle={`${paymentStatusConfig(invoice.status).label} · aulas de ${formatDate(invoice.periodStart!)} a ${formatDate(invoice.periodLastDay!)}`}
+                    subtitle={`${invoicePeriodLabel(invoice)}\n${invoiceDueLabel(invoice)} · ${paymentStatusConfig(invoice.status).label}`}
                     onPress={() => chooseInvoice(invoice.id)}
                   />
                 ))}
@@ -337,15 +351,23 @@ export default function EndEnrollment() {
           <Card className="gap-4">
             {mode === 'AFTER_INVOICE' ? (
               <SectionTitle
-                title="Faturas que serão apagadas"
-                subtitle="Todas as faturas depois da escolhida saem do sistema."
+                title="Faturas"
+                subtitle="As faturas depois da escolhida saem do sistema. A escolhida continua; se já foi paga, marque abaixo."
               />
             ) : (
               <SectionTitle
                 title="O que fazer com as faturas?"
-                subtitle="Mostramos as 3 mais recentes, da mais nova para a mais antiga. Escolha o que fica e o que sai."
+                subtitle="Mostramos as 3 mais recentes, da mais nova para a mais antiga. Escolha o que fica, o que já foi pago e o que sai."
               />
             )}
+
+            {payments.length > 0 ? (
+              <InfoNotice>
+                {mode === 'AFTER_INVOICE'
+                  ? 'As faturas marcadas “Será apagada” saem do sistema. Se você não alterar nada na fatura escolhida, ela continua como está.'
+                  : 'Se você não alterar nada, todas as faturas continuam como estão.'}
+              </InfoNotice>
+            ) : null}
 
             {previewQuery.isError ? (
               <ErrorRetry
@@ -370,7 +392,7 @@ export default function EndEnrollment() {
                     <PaymentDecisionRow
                       key={payment.id}
                       payment={payment}
-                      decision={decisionOf(payment.id, payment.suggestion)}
+                      decision={decisionOf(payment.id)}
                       onChange={(decision) =>
                         setOverrides((current) => ({
                           ...current,
@@ -402,6 +424,7 @@ export default function EndEnrollment() {
             lessonsKept={preview.lessonsKept}
             paymentsDeleted={toDelete.length}
             paymentsRefunded={refunded.length}
+            paymentsMarkedPaid={toMarkPaid.length}
             endsAt={preview.endsAt}
           />
         ) : null}

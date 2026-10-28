@@ -1,5 +1,5 @@
 import { Text, TouchableOpacity, View } from 'react-native';
-import { Info } from 'lucide-react-native';
+import { CheckCircle2, Info } from 'lucide-react-native';
 import { formatMonthLabelFromKey } from '../../../lib/paymentFormat';
 import { paymentStatusConfig } from '../../../lib/status';
 import type {
@@ -7,6 +7,7 @@ import type {
   PaymentDecision,
 } from '../../../lib/studentAdmin';
 import { Badge } from '../detail/Badge';
+import { InvoiceDates } from './InvoiceDates';
 import { formatCurrencyBRL } from '../detail/format';
 
 function plural(count: number, one: string, many: string) {
@@ -25,15 +26,16 @@ function lessonsHint(payment: EndPaymentOption) {
 function Choice({
   label,
   selected,
-  danger,
+  tone = 'default',
   onPress,
 }: {
   label: string;
   selected: boolean;
-  danger?: boolean;
+  tone?: 'default' | 'danger' | 'success';
   onPress: () => void;
 }) {
-  const activeBg = danger ? '#DC2626' : '#B08D57';
+  const activeBg =
+    tone === 'danger' ? '#DC2626' : tone === 'success' ? '#059669' : '#B08D57';
   return (
     <TouchableOpacity
       onPress={onPress}
@@ -57,7 +59,9 @@ function Choice({
   );
 }
 
-// Uma fatura + a escolha do admin: manter ou apagar (estornar, se já paga).
+// Uma fatura + a escolha do admin. Em aberto: manter, já foi paga ou apagar.
+// Paga: manter ou estornar e apagar. Sem nenhuma escolha mexida, a fatura
+// continua como está (por isso "Manter" é o padrão).
 export function PaymentDecisionRow({
   payment,
   decision,
@@ -71,6 +75,7 @@ export function PaymentDecisionRow({
   const isPaid = payment.status === 'PAID';
   const hint = lessonsHint(payment);
   const deleting = decision === 'DELETE';
+  const markingPaid = decision === 'MARK_PAID';
 
   return (
     <View
@@ -78,38 +83,71 @@ export function PaymentDecisionRow({
       style={{
         backgroundColor: '#F5F1EA',
         borderWidth: 1,
-        borderColor: deleting ? '#FCA5A5' : 'transparent',
+        borderColor: deleting
+          ? '#FCA5A5'
+          : markingPaid
+            ? '#6EE7B7'
+            : 'transparent',
       }}
     >
-      <View className="flex-row items-center justify-between">
-        <View className="flex-1 pr-2">
-          <Text className="text-sm font-semibold">
-            {formatMonthLabelFromKey(payment.referenceMonth)}
-          </Text>
-          <Text className="text-[13px] text-gray-500 mt-0.5">
-            {formatCurrencyBRL(payment.amount)}
+      <View className="flex-row items-start justify-between">
+        <View className="flex-1 pr-2 gap-1.5">
+          <View>
+            <Text className="text-sm font-semibold">
+              {formatMonthLabelFromKey(payment.referenceMonth)}
+            </Text>
+            <Text className="text-[13px] text-gray-500 mt-0.5">
+              {formatCurrencyBRL(payment.amount)}
+            </Text>
+          </View>
+          <InvoiceDates invoice={payment} />
+        </View>
+        {markingPaid ? (
+          <Badge label="Paga" bg="#ECFDF5" color="#059669" />
+        ) : (
+          <Badge label={cfg.label} bg={cfg.colorBg} color={cfg.colorText} />
+        )}
+      </View>
+
+      {hint ? <Text className="text-xs text-gray-500">{hint}</Text> : null}
+
+      {isPaid && !payment.deletable ? null : (
+        <View className="flex-row gap-2" accessibilityRole="radiogroup">
+          <Choice
+            label={isPaid ? 'Manter paga' : 'Manter'}
+            selected={decision === 'KEEP'}
+            onPress={() => onChange('KEEP')}
+          />
+          {!isPaid ? (
+            <Choice
+              label="Já foi paga"
+              selected={markingPaid}
+              tone="success"
+              onPress={() => onChange('MARK_PAID')}
+            />
+          ) : null}
+          {payment.deletable ? (
+            <Choice
+              label={isPaid ? 'Estornar e apagar' : 'Apagar'}
+              selected={deleting}
+              tone="danger"
+              onPress={() => onChange('DELETE')}
+            />
+          ) : null}
+        </View>
+      )}
+
+      {markingPaid ? (
+        <View
+          className="flex-row gap-2 rounded-lg px-3 py-2.5"
+          style={{ backgroundColor: '#ECFDF5' }}
+        >
+          <CheckCircle2 size={15} color="#059669" style={{ marginTop: 1 }} />
+          <Text className="flex-1 text-xs text-[#065F46] leading-4">
+            A fatura será confirmada como paga (confirmação manual) ao encerrar.
           </Text>
         </View>
-        <Badge label={cfg.label} bg={cfg.colorBg} color={cfg.colorText} />
-      </View>
-
-      {hint ? (
-        <Text className="text-xs text-gray-500 -mt-1">{hint}</Text>
       ) : null}
-
-      <View className="flex-row gap-2" accessibilityRole="radiogroup">
-        <Choice
-          label={isPaid ? 'Manter paga' : 'Manter'}
-          selected={!deleting}
-          onPress={() => onChange('KEEP')}
-        />
-        <Choice
-          label={isPaid ? 'Estornar e apagar' : 'Apagar'}
-          selected={deleting}
-          danger
-          onPress={() => onChange('DELETE')}
-        />
-      </View>
 
       {isPaid && deleting ? (
         <View
