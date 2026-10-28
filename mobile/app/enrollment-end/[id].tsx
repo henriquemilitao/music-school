@@ -2,7 +2,7 @@ import { useState } from 'react';
 import { ActivityIndicator, Text, View } from 'react-native';
 import { useMutation, useQuery } from '@tanstack/react-query';
 import { useLocalSearchParams, useRouter } from 'expo-router';
-import { History, Info, Trash2, UserMinus } from 'lucide-react-native';
+import { UserMinus } from 'lucide-react-native';
 import { api } from '../../lib/api';
 import { confirmAsync } from '../../lib/confirm';
 import { firstName } from '../../lib/name';
@@ -10,53 +10,50 @@ import {
   formatLessonShortDate,
   formatLessonTime,
 } from '../../lib/lessonFormat';
-import { formatCurrency, formatMonthLabel } from '../../lib/paymentFormat';
-import { paymentStatusConfig } from '../../lib/status';
 import {
   endEnrollment,
   fetchEndPreview,
   fetchUpcomingLessons,
   studentAdminKeys,
   useRefreshStudentData,
+  type PaymentDecision,
 } from '../../lib/studentAdmin';
 import { ActionFooter } from '../../components/ui/ActionFooter';
 import { Button } from '../../components/ui/Button';
 import { Card } from '../../components/ui/Card';
 import { DetailScreen } from '../../components/ui/DetailScreen';
+import { ErrorRetry } from '../../components/ui/ErrorRetry';
 import { InlineFeedback } from '../../components/ui/InlineFeedback';
 import { OptionRow } from '../../components/form/OptionRow';
-import { Badge } from '../../components/student/detail/Badge';
 import type { EnrollmentSummary } from '../../components/student/detail/EnrollmentCard';
+import { EndSummary } from '../../components/student/end/EndSummary';
+import { PaymentDecisionRow } from '../../components/student/end/PaymentDecisionRow';
 
 type StudentLite = { id: string; name: string };
 
-// Escolha "encerrar a partir de agora" quando não há aulas futuras
+// Sem aulas futuras não há o que escolher: encerra "agora"
 const NOW = 'NOW';
 
 function plural(count: number, one: string, many: string) {
   return `${count} ${count === 1 ? one : many}`;
 }
 
-function SummaryLine({
-  icon: Icon,
-  color,
-  bg,
-  children,
+function SectionTitle({
+  title,
+  subtitle,
 }: {
-  icon: React.ComponentType<{ size?: number; color?: string }>;
-  color: string;
-  bg: string;
-  children: React.ReactNode;
+  title: string;
+  subtitle: string;
 }) {
   return (
-    <View className="flex-row items-center gap-3">
-      <View
-        className="w-8 h-8 rounded-lg items-center justify-center"
-        style={{ backgroundColor: bg }}
+    <View>
+      <Text
+        className="text-lg"
+        style={{ fontFamily: 'PlayfairDisplay_700Bold' }}
       >
-        <Icon size={16} color={color} />
-      </View>
-      <Text className="flex-1 text-sm text-[#1A1A1A]">{children}</Text>
+        {title}
+      </Text>
+      <Text className="text-sm text-gray-500 mt-1">{subtitle}</Text>
     </View>
   );
 }
@@ -79,29 +76,57 @@ export default function EndEnrollment() {
         .data,
     enabled: !!id,
   });
-  const { data: upcoming, isLoading: loadingUpcoming } = useQuery({
+  const {
+    data: upcoming,
+    isLoading: loadingUpcoming,
+    isError: upcomingFailed,
+    isFetching: fetchingUpcoming,
+    refetch: refetchUpcoming,
+  } = useQuery({
     queryKey: studentAdminKeys.upcoming(enrollment?.id ?? ''),
     queryFn: () => fetchUpcomingLessons(enrollment!.id),
     enabled: !!enrollment,
   });
 
   const [picked, setPicked] = useState<string | null>(null);
+  // Só guardamos o que o admin mexeu; o resto segue a sugestão do servidor
+  const [overrides, setOverrides] = useState<Record<string, PaymentDecision>>(
+    {},
+  );
   const [submitError, setSubmitError] = useState<string | null>(null);
 
   const lessons = upcoming ?? [];
   const hasLessons = lessons.length > 0;
-  // Sem aulas futuras, a única opção é encerrar já (pré-selecionada)
   const selection = picked ?? (upcoming && !hasLessons ? NOW : null);
   const fromLessonId = selection && selection !== NOW ? selection : null;
 
-  const { data: preview, isFetching: loadingPreview } = useQuery({
+  const {
+    data: preview,
+    isLoading: loadingPreview,
+    isError: previewFailed,
+    isFetching: fetchingPreview,
+    refetch: refetchPreview,
+  } = useQuery({
     queryKey: studentAdminKeys.endPreview(enrollment?.id ?? '', fromLessonId),
     queryFn: () => fetchEndPreview(enrollment!.id, fromLessonId),
     enabled: !!enrollment && !!selection,
   });
 
+  const decisionOf = (paymentId: string, suggestion: PaymentDecision) =>
+    overrides[paymentId] ?? suggestion;
+
+  const payments = preview?.payments ?? [];
+  const toDelete = payments.filter(
+    (p) => decisionOf(p.id, p.suggestion) === 'DELETE',
+  );
+  const refunded = toDelete.filter((p) => p.status === 'PAID');
+
   const end = useMutation({
-    mutationFn: () => endEnrollment(enrollment!.id, fromLessonId),
+    mutationFn: () =>
+      endEnrollment(enrollment!.id, {
+        ...(fromLessonId ? { fromLessonId } : {}),
+        deletePaymentIds: toDelete.map((p) => p.id),
+      }),
     onSuccess: () => {
       refreshStudent(id);
       router.back();
@@ -113,13 +138,24 @@ export default function EndEnrollment() {
     },
   });
 
+  function pickLesson(lessonId: string) {
+    setPicked(lessonId);
+    // Outra aula de corte muda as sugestões: recomeça das sugestões
+    setOverrides({});
+    setSubmitError(null);
+  }
+
   async function handleEnd() {
     if (!preview || !student) return;
     setSubmitError(null);
 
+    const refundNote =
+      refunded.length > 0
+        ? ` (${plural(refunded.length, 'já paga, será estornada', 'já pagas, serão estornadas')})`
+        : '';
     const ok = await confirmAsync({
       title: `Encerrar a matrícula de ${firstName(student.name)}?`,
-      message: `${plural(preview.lessonsRemoved, 'aula será removida', 'aulas serão removidas')} e ${plural(preview.paymentsDeleted.length, 'fatura será apagada', 'faturas serão apagadas')}. As aulas anteriores ficam no histórico.\n\nNão dá para desfazer.`,
+      message: `${plural(preview.lessonsCancelled, 'aula será cancelada', 'aulas serão canceladas')} e ${plural(toDelete.length, 'fatura será apagada', 'faturas serão apagadas')}${refundNote}. O aluno ficará inativo.\n\nNão dá para desfazer.`,
       confirmText: 'Encerrar matrícula',
       destructive: true,
     });
@@ -148,6 +184,8 @@ export default function EndEnrollment() {
     );
   }
 
+  const name = student ? firstName(student.name) : 'o aluno';
+
   return (
     <DetailScreen
       title="Encerrar matrícula"
@@ -159,145 +197,102 @@ export default function EndEnrollment() {
             variant="danger"
             icon={UserMinus}
             onPress={() => void handleEnd()}
-            disabled={!selection || !preview || loadingPreview}
+            disabled={!selection || !preview || fetchingPreview}
             loading={end.isPending}
           />
         </ActionFooter>
       }
     >
       <View className="gap-4">
+        {/* 1) A partir de qual aula */}
         <Card className="gap-4">
-          <View>
-            <Text
-              className="text-lg"
-              style={{ fontFamily: 'PlayfairDisplay_700Bold' }}
-            >
-              {hasLessons
-                ? 'A partir de qual aula?'
-                : 'Encerrar a partir de agora'}
-            </Text>
-            <Text className="text-sm text-gray-500 mt-1">
-              {hasLessons
-                ? `Escolha a primeira aula que ${student ? firstName(student.name) : 'o aluno'} deixa de ter. Ela e as seguintes são removidas; as anteriores ficam no histórico.`
-                : 'Não há aulas futuras agendadas. A matrícula será encerrada e nenhuma aula nova será criada.'}
-            </Text>
-          </View>
-
-          {hasLessons && (
-            <View className="gap-2.5">
-              {lessons.map((lesson, index) => (
-                <OptionRow
-                  key={lesson.id}
-                  selected={lesson.id === selection}
-                  title={`${formatLessonShortDate(lesson.scheduledAt)} · ${formatLessonTime(lesson.scheduledAt)}`}
-                  subtitle={
-                    lesson.isMakeup
-                      ? 'Reposição'
-                      : index === 0
-                        ? 'Próxima aula'
-                        : undefined
-                  }
-                  onPress={() => setPicked(lesson.id)}
-                />
-              ))}
-            </View>
+          {upcomingFailed ? (
+            <ErrorRetry
+              message="Não foi possível carregar as aulas agendadas."
+              onRetry={() => void refetchUpcoming()}
+              retrying={fetchingUpcoming}
+            />
+          ) : hasLessons ? (
+            <>
+              <SectionTitle
+                title="A partir de qual aula?"
+                subtitle={`A aula escolhida e todas as seguintes serão canceladas e ficam no histórico como canceladas. As anteriores não mudam.`}
+              />
+              <View className="gap-2.5">
+                {lessons.map((lesson, index) => (
+                  <OptionRow
+                    key={lesson.id}
+                    selected={lesson.id === selection}
+                    title={`${formatLessonShortDate(lesson.scheduledAt)} · ${formatLessonTime(lesson.scheduledAt)}`}
+                    subtitle={
+                      lesson.isMakeup
+                        ? 'Reposição'
+                        : index === 0
+                          ? 'Próxima aula'
+                          : undefined
+                    }
+                    onPress={() => pickLesson(lesson.id)}
+                  />
+                ))}
+              </View>
+            </>
+          ) : (
+            <SectionTitle
+              title="Encerrar a partir de agora"
+              subtitle={`Não há aulas futuras agendadas para ${name}. A matrícula será encerrada e nenhuma aula nova será criada.`}
+            />
           )}
         </Card>
 
-        {selection && (
+        {/* 2) Faturas: o admin decide uma a uma */}
+        {selection ? (
           <Card className="gap-4">
-            <Text className="text-xs font-bold uppercase tracking-widest text-[#B08D57]">
-              O que acontece
-            </Text>
+            <SectionTitle
+              title="O que fazer com as faturas?"
+              subtitle="Escolha o que fica e o que sai. Nada é apagado sem você marcar."
+            />
 
-            {loadingPreview && !preview ? (
+            {previewFailed ? (
+              <ErrorRetry
+                message="Não foi possível carregar as faturas."
+                onRetry={() => void refetchPreview()}
+                retrying={fetchingPreview}
+              />
+            ) : loadingPreview ? (
               <ActivityIndicator color="#B08D57" />
-            ) : preview ? (
-              <>
-                <View className="gap-3">
-                  <SummaryLine icon={Trash2} color="#DC2626" bg="#FEF2F2">
-                    <Text className="font-semibold">
-                      {plural(
-                        preview.lessonsRemoved,
-                        'aula removida',
-                        'aulas removidas',
-                      )}
-                    </Text>{' '}
-                    da agenda
-                  </SummaryLine>
-                  <SummaryLine icon={History} color="#B08D57" bg="#F3EADD">
-                    <Text className="font-semibold">
-                      {plural(preview.lessonsKept, 'aula fica', 'aulas ficam')}
-                    </Text>{' '}
-                    no histórico
-                  </SummaryLine>
-                </View>
-
-                <View
-                  style={{
-                    borderTopWidth: 1,
-                    borderTopColor: 'rgba(0,0,0,0.06)',
-                  }}
-                />
-
-                <View className="gap-2.5">
-                  <Text className="text-sm font-semibold text-[#1A1A1A]">
-                    {preview.paymentsDeleted.length === 0
-                      ? 'Nenhuma fatura será apagada'
-                      : plural(
-                          preview.paymentsDeleted.length,
-                          'fatura em aberto será apagada',
-                          'faturas em aberto serão apagadas',
-                        )}
-                  </Text>
-                  {preview.paymentsDeleted.map((payment) => {
-                    const cfg = paymentStatusConfig(payment.status);
-                    return (
-                      <View
-                        key={payment.id}
-                        className="flex-row items-center justify-between rounded-xl px-3 py-2.5"
-                        style={{ backgroundColor: '#F5F1EA' }}
-                      >
-                        <View>
-                          <Text className="text-sm font-medium">
-                            {formatMonthLabel(payment.referenceMonth)}
-                          </Text>
-                          <Text className="text-xs text-gray-500 mt-0.5">
-                            R$ {formatCurrency(payment.amount)}
-                          </Text>
-                        </View>
-                        <Badge
-                          label={cfg.label}
-                          bg={cfg.colorBg}
-                          color={cfg.colorText}
-                        />
-                      </View>
-                    );
-                  })}
-                  <Text className="text-xs text-gray-500 leading-4">
-                    Faturas de aulas que continuam no histórico são mantidas —
-                    inclusive as atrasadas.
-                  </Text>
-                </View>
-
-                {preview.paidPaymentsAffected.length > 0 && (
-                  <View
-                    className="flex-row gap-2 rounded-xl px-3 py-2.5"
-                    style={{ backgroundColor: '#FFFBEB' }}
-                  >
-                    <Info size={15} color="#D97706" style={{ marginTop: 1 }} />
-                    <Text className="flex-1 text-xs text-[#92400E] leading-4">
-                      {preview.paidPaymentsAffected.length === 1
-                        ? `A fatura paga de ${formatMonthLabel(preview.paidPaymentsAffected[0].referenceMonth)} é mantida.`
-                        : 'Faturas já pagas são mantidas.'}{' '}
-                      O sistema não estorna pagamentos automaticamente.
-                    </Text>
-                  </View>
-                )}
-              </>
-            ) : null}
+            ) : payments.length === 0 ? (
+              <Text className="text-sm text-gray-500">
+                Não há faturas em aberto nem pagas para decidir.
+              </Text>
+            ) : (
+              <View className="gap-3">
+                {payments.map((payment) => (
+                  <PaymentDecisionRow
+                    key={payment.id}
+                    payment={payment}
+                    decision={decisionOf(payment.id, payment.suggestion)}
+                    onChange={(decision) =>
+                      setOverrides((current) => ({
+                        ...current,
+                        [payment.id]: decision,
+                      }))
+                    }
+                  />
+                ))}
+              </View>
+            )}
           </Card>
-        )}
+        ) : null}
+
+        {/* 3) Resumo */}
+        {preview ? (
+          <EndSummary
+            lessonsCancelled={preview.lessonsCancelled}
+            lessonsKept={preview.lessonsKept}
+            paymentsDeleted={toDelete.length}
+            paymentsRefunded={refunded.length}
+          />
+        ) : null}
 
         <InlineFeedback type="error" message={submitError} />
       </View>

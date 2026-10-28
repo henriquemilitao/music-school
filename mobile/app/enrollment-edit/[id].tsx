@@ -42,6 +42,7 @@ import { ActionFooter } from '../../components/ui/ActionFooter';
 import { Button } from '../../components/ui/Button';
 import { Card } from '../../components/ui/Card';
 import { DetailScreen } from '../../components/ui/DetailScreen';
+import { ErrorRetry } from '../../components/ui/ErrorRetry';
 import { InlineFeedback } from '../../components/ui/InlineFeedback';
 import { ChoiceChips } from '../../components/form/ChoiceChips';
 import { DayOfMonthPicker } from '../../components/form/DayOfMonthPicker';
@@ -146,7 +147,13 @@ export default function EditEnrollment() {
   }, [initial, form]);
 
   // ── Etapa 2: aulas futuras (só carrega quando precisa) ──
-  const { data: upcoming, isLoading: loadingUpcoming } = useQuery({
+  const {
+    data: upcoming,
+    isLoading: loadingUpcoming,
+    isError: upcomingFailed,
+    isFetching: fetchingUpcoming,
+    refetch: refetchUpcoming,
+  } = useQuery({
     queryKey: studentAdminKeys.upcoming(enrollment?.id ?? ''),
     queryFn: () => fetchUpcomingLessons(enrollment!.id),
     enabled: !!enrollment && step === 'lessons',
@@ -276,7 +283,11 @@ export default function EditEnrollment() {
               icon={Check}
               onPress={() => void submit(selectedLessonId ?? undefined)}
               loading={save.isPending}
-              disabled={loadingUpcoming || (hasLessons && !selectedLessonId)}
+              disabled={
+                loadingUpcoming ||
+                upcomingFailed ||
+                (hasLessons && !selectedLessonId)
+              }
             />
           </ActionFooter>
         }
@@ -290,6 +301,12 @@ export default function EditEnrollment() {
 
             {loadingUpcoming ? (
               <ActivityIndicator color="#B08D57" />
+            ) : upcomingFailed ? (
+              <ErrorRetry
+                message="Não foi possível carregar as aulas agendadas."
+                onRetry={() => void refetchUpcoming()}
+                retrying={fetchingUpcoming}
+              />
             ) : !hasLessons ? (
               <Note>
                 Não há aulas futuras agendadas. O novo horário vale para as

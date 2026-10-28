@@ -20,7 +20,7 @@ import { TextField } from '../../components/form/FormField';
 type StudentLite = {
   id: string;
   name: string;
-  isActive: boolean;
+  isActive?: boolean;
   user: { name: string };
 };
 
@@ -154,14 +154,15 @@ export default function DeleteStudent() {
           </Text>
         </View>
 
-        {student.isActive && (
+        {student.isActive !== false && (
           <Card className="gap-3">
             <Text className="text-sm font-semibold">
               Quer só parar as aulas?
             </Text>
             <Text className="text-sm text-gray-500 -mt-1.5">
-              Encerrar a matrícula tira o aluno da lista de ativos e da agenda,
-              mas mantém o histórico de aulas e faturas.
+              Encerrar a matrícula cancela as aulas futuras e deixa o aluno
+              inativo, mantendo o histórico. Você decide o que fazer com cada
+              fatura.
             </Text>
             <Button
               label="Encerrar matrícula em vez disso"

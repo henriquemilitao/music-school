@@ -26,20 +26,31 @@ export type SchedulePreview = {
   lessons: { lessonId: string; from: string; to: string }[];
 };
 
-export type PlannedPayment = {
+export type PaymentDecision = 'KEEP' | 'DELETE';
+
+// Fatura sobre a qual o admin decide ao encerrar a matrícula
+export type EndPaymentOption = {
   id: string;
   referenceMonth: string;
   amount: string;
   dueDate: string;
   status: 'PENDING' | 'OVERDUE' | 'PAID';
+  // Aulas do ciclo da fatura que serão canceladas / que continuam valendo
+  lessonsCancelled: number;
+  lessonsRemaining: number;
+  suggestion: PaymentDecision;
 };
 
 export type EndPreview = {
   cutoff: string;
-  lessonsRemoved: number;
+  lessonsCancelled: number;
   lessonsKept: number;
-  paymentsDeleted: PlannedPayment[];
-  paidPaymentsAffected: PlannedPayment[];
+  payments: EndPaymentOption[];
+};
+
+export type EndEnrollmentBody = {
+  fromLessonId?: string;
+  deletePaymentIds?: string[];
 };
 
 // Corpo do PATCH /enrollments/:id — só o que mudou
@@ -126,12 +137,9 @@ export async function updateEnrollment(
 
 export async function endEnrollment(
   enrollmentId: string,
-  fromLessonId: string | null,
+  body: EndEnrollmentBody,
 ) {
-  const response = await api.post(
-    `/enrollments/${enrollmentId}/end`,
-    fromLessonId ? { fromLessonId } : {},
-  );
+  const response = await api.post(`/enrollments/${enrollmentId}/end`, body);
   return response.data;
 }
 

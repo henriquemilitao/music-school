@@ -44,7 +44,8 @@ import {
 type StudentDetail = StudentProfile & {
   id: string;
   instrument: string | null;
-  isActive: boolean;
+  // Backend antigo não manda: só `false` explícito é inativo
+  isActive?: boolean;
 };
 
 // Status agregado — vem de um endpoint leve, não da lista completa de faturas
@@ -284,7 +285,7 @@ export default function AdminStudentDetail() {
                 >
                   {firstName(student.name)}
                 </Text>
-                {!student.isActive && (
+                {student.isActive === false && (
                   <Badge label="Inativo" bg="#F3F4F6" color="#6B7280" />
                 )}
               </View>
@@ -313,7 +314,7 @@ export default function AdminStudentDetail() {
                 instrument={student.instrument}
                 status={matriculaStatus}
                 loadingStatus={loadingPaymentStatus}
-                ended={!student.isActive}
+                ended={student.isActive === false}
                 onEdit={() => router.push(`/enrollment-edit/${id}`)}
               />
             </>
