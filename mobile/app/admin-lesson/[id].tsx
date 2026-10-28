@@ -11,6 +11,7 @@ import {
   TouchableOpacity,
   KeyboardAvoidingView,
   BackHandler,
+  Alert,
 } from 'react-native';
 import {
   Stack,
@@ -22,8 +23,11 @@ import { usePreventRemove } from '@react-navigation/native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import {
+  CalendarPlus,
+  CalendarX2,
   Check,
   Clock,
+  Ellipsis,
   Eye,
   GraduationCap,
   Music,
@@ -31,6 +35,7 @@ import {
   Pencil,
   Plus,
   StickyNote,
+  Trash2,
   User,
 } from 'lucide-react-native';
 import { api } from '../../lib/api';
@@ -42,38 +47,29 @@ import {
   formatLessonTime,
   formatLessonTimeRange,
 } from '../../lib/lessonFormat';
+import { lessonTags } from '../../lib/lessonForm';
+import { deleteLesson, useRefreshLessons } from '../../lib/lessonAdmin';
+import type { AdminLesson } from '../../lib/lessonTypes';
 import { adminLessonKeys } from '../../lib/queryKeys';
 import {
   adminLessonStatusConfig,
   getEffectiveLessonStatus,
-  makeupLessonVisual,
-  type LessonStatus,
 } from '../../lib/status';
 import { useKeyboardVisible } from '../../lib/useKeyboardVisible';
 import { useLessonStatus } from '../../lib/useLessonStatus';
+import {
+  ActionMenu,
+  type ActionMenuItem,
+} from '../../components/ui/ActionMenu';
 import { Card } from '../../components/ui/Card';
 import { InfoRow } from '../../components/ui/InfoRow';
 import { DetailScreen } from '../../components/ui/DetailScreen';
 import { ScreenHeader } from '../../components/ui/ScreenHeader';
 import { StatusPill } from '../../components/ui/StatusPill';
+import { LessonTags } from '../../components/lesson/LessonTags';
+import { SectionCard } from '../../components/student/detail/SectionCard';
 import { LessonNotesCard } from '../../components/lesson/LessonNotesCard';
 import { LessonNotesEditor } from '../../components/lesson/LessonNotesEditor';
-
-// ─── Tipos ────────────────────────────────────────────────────────────
-
-type AdminLesson = {
-  id: string;
-  studentId: string;
-  scheduledAt: string;
-  durationMinutes: number;
-  status: LessonStatus;
-  isMakeup: boolean;
-  notes: string | null;
-  notesUpdatedAt: string | null;
-  cancelReason: string | null;
-  student: { id: string; name: string; instrument: string | null };
-  teacher: { user: { name: string } } | null;
-};
 
 const DISCARD_CHANGES = {
   title: 'Descartar alterações?',
@@ -186,6 +182,8 @@ export default function AdminLessonDetail() {
 
   const [isEditing, setIsEditing] = useState(false);
   const [draft, setDraft] = useState('');
+  const [menuOpen, setMenuOpen] = useState(false);
+  const refreshLessons = useRefreshLessons();
 
   const {
     data: lesson,
@@ -225,6 +223,29 @@ export default function AdminLessonDetail() {
       setIsEditing(false);
     },
   });
+
+  const removeLesson = useMutation({
+    mutationFn: () => deleteLesson(id),
+    onSuccess: () => {
+      if (lesson) refreshLessons(lesson.studentId);
+      queryClient.removeQueries({ queryKey: adminLessonKeys.detail(id) });
+      router.back();
+    },
+    onError: () => {
+      Alert.alert('Erro', 'Não foi possível excluir a aula.');
+    },
+  });
+
+  async function handleDelete() {
+    const confirmed = await confirmAsync({
+      title: 'Excluir esta aula?',
+      message:
+        'A aula some do histórico do aluno, junto com as anotações. Não dá para desfazer.\n\nSe só quer mudar o dia, use “Editar aula”.',
+      confirmText: 'Excluir aula',
+      destructive: true,
+    });
+    if (confirmed) removeLesson.mutate();
+  }
 
   const savedNotes = lesson?.notes ?? '';
   // o backend faz trim, então espaço sobrando no fim não conta como mudança
@@ -353,77 +374,159 @@ export default function AdminLessonDetail() {
   const statusVisual = adminLessonStatusConfig(
     getEffectiveLessonStatus(lesson.status, liveStatus?.phase),
   );
+  const tags = lessonTags(lesson);
+  const hasActiveMakeup = lesson.makeups.some((m) => m.status !== 'CANCELLED');
+  const instrument = lesson.instrument ?? lesson.student.instrument;
+
+  const menuItems: ActionMenuItem[] = [
+    {
+      key: 'edit',
+      label: 'Editar aula',
+      description: 'Situação, dia, horário, duração, professor...',
+      icon: Pencil,
+      onPress: () => router.push(`/lesson-edit/${id}`),
+    },
+    ...(lesson.status !== 'CANCELLED'
+      ? [
+          {
+            key: 'cancel',
+            label: 'Cancelar aula',
+            description: 'Dá para já marcar a reposição',
+            icon: CalendarX2,
+            onPress: () => router.push(`/lesson-cancel/${id}`),
+          },
+        ]
+      : !hasActiveMakeup
+        ? [
+            {
+              key: 'makeup',
+              label: 'Marcar reposição',
+              description: 'Cria uma aula nova ligada a esta',
+              icon: CalendarPlus,
+              onPress: () =>
+                router.push({
+                  pathname: '/lesson-new/[studentId]',
+                  params: { studentId: lesson.studentId, makeupFor: id },
+                }),
+            },
+          ]
+        : []),
+    {
+      key: 'delete',
+      label: 'Excluir aula',
+      description: 'Remove do histórico de forma definitiva',
+      icon: Trash2,
+      destructive: true,
+      onPress: () => void handleDelete(),
+    },
+  ];
 
   return (
-    <DetailScreen title="Detalhes da aula">
-      <View className="px-5 pt-5 pb-6">
-        <Text
-          className="text-2xl"
-          style={{ fontFamily: 'PlayfairDisplay_700Bold' }}
-        >
-          {formatLessonFullDate(lesson.scheduledAt)}
-        </Text>
-        <View className="flex-row flex-wrap gap-2 mt-2">
-          <StatusPill {...statusVisual} />
-          {lesson.isMakeup && <StatusPill {...makeupLessonVisual} />}
+    <>
+      <DetailScreen
+        title="Detalhes da aula"
+        headerRight={
+          <TouchableOpacity
+            className="w-9 h-9 rounded-full bg-white items-center justify-center"
+            style={{ borderWidth: 1, borderColor: 'rgba(0,0,0,0.05)' }}
+            onPress={() => setMenuOpen(true)}
+            hitSlop={8}
+            accessibilityRole="button"
+            accessibilityLabel="Mais ações"
+          >
+            <Ellipsis size={18} color="#1A1A1A" />
+          </TouchableOpacity>
+        }
+      >
+        <View className="px-5 pt-5 pb-6 gap-2.5">
+          <Text
+            className="text-2xl"
+            style={{ fontFamily: 'PlayfairDisplay_700Bold' }}
+          >
+            {formatLessonFullDate(lesson.scheduledAt)}
+          </Text>
+          <View className="flex-row flex-wrap gap-2">
+            <StatusPill {...statusVisual} />
+          </View>
+          <LessonTags
+            tags={tags}
+            onOpenLesson={(lessonId) =>
+              router.push(`/admin-lesson/${lessonId}`)
+            }
+          />
         </View>
-      </View>
 
-      <View className="px-5 gap-4 pb-10">
-        <Card className="gap-4">
-          <InfoRow
-            icon={User}
-            label="Aluno"
-            value={lesson.student.name}
-            onPress={() => router.push(`/student/${lesson.student.id}`)}
-          />
-          <InfoRow
-            icon={Clock}
-            label="Horário"
-            value={formatLessonTimeRange(
-              lesson.scheduledAt,
-              lesson.durationMinutes,
-            )}
-          />
-          {lesson.student.instrument && (
-            <InfoRow
-              icon={Music}
-              label="Instrumento"
-              value={formatInstrument(lesson.student.instrument)}
-            />
-          )}
-          {lesson.teacher && (
-            <InfoRow
-              icon={GraduationCap}
-              label="Professor"
-              value={lesson.teacher.user.name}
-            />
-          )}
-        </Card>
-
-        {lesson.status === 'CANCELLED' && lesson.cancelReason && (
-          <Card>
-            <View className="flex-row items-center gap-2 mb-3">
-              <StickyNote size={18} color="#DC2626" />
-              <Text className="text-sm font-bold">Motivo do cancelamento</Text>
+        <View className="px-5 gap-4 pb-10">
+          <SectionCard
+            title="Dados da aula"
+            onEdit={() => router.push(`/lesson-edit/${id}`)}
+          >
+            <View className="gap-4">
+              <InfoRow
+                icon={User}
+                label="Aluno"
+                value={lesson.student.name}
+                actionLabel="Ver perfil"
+                onPress={() => router.push(`/student/${lesson.student.id}`)}
+              />
+              <InfoRow
+                icon={Clock}
+                label="Horário"
+                value={formatLessonTimeRange(
+                  lesson.scheduledAt,
+                  lesson.durationMinutes,
+                )}
+              />
+              {instrument && (
+                <InfoRow
+                  icon={Music}
+                  label="Instrumento"
+                  value={formatInstrument(instrument)}
+                />
+              )}
+              {lesson.teacher && (
+                <InfoRow
+                  icon={GraduationCap}
+                  label="Professor"
+                  value={lesson.teacher.user.name}
+                />
+              )}
             </View>
-            <Text className="text-gray-600 text-sm leading-5">
-              {lesson.cancelReason}
-            </Text>
-          </Card>
-        )}
+          </SectionCard>
 
-        {lesson.notes ? (
-          <LessonNotesCard
-            notes={lesson.notes}
-            updatedAt={lesson.notesUpdatedAt}
-            action={<EditNotesButton onPress={startEditing} />}
-            footer={<VisibleToStudentHint />}
-          />
-        ) : (
-          <NotesEmptyState onWrite={startEditing} />
-        )}
-      </View>
-    </DetailScreen>
+          {lesson.status === 'CANCELLED' && lesson.cancelReason && (
+            <Card>
+              <View className="flex-row items-center gap-2 mb-3">
+                <StickyNote size={18} color="#DC2626" />
+                <Text className="text-sm font-bold">
+                  Motivo do cancelamento
+                </Text>
+              </View>
+              <Text className="text-gray-600 text-sm leading-5">
+                {lesson.cancelReason}
+              </Text>
+            </Card>
+          )}
+
+          {lesson.notes ? (
+            <LessonNotesCard
+              notes={lesson.notes}
+              updatedAt={lesson.notesUpdatedAt}
+              action={<EditNotesButton onPress={startEditing} />}
+              footer={<VisibleToStudentHint />}
+            />
+          ) : (
+            <NotesEmptyState onWrite={startEditing} />
+          )}
+        </View>
+      </DetailScreen>
+
+      <ActionMenu
+        visible={menuOpen}
+        onClose={() => setMenuOpen(false)}
+        items={menuItems}
+        title="Aula"
+      />
+    </>
   );
 }

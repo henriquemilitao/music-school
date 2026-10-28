@@ -1,36 +1,11 @@
 import { useState } from 'react';
 import { View, Text, TouchableOpacity } from 'react-native';
-import {
-  CalendarClock,
-  ChevronDown,
-  ChevronRight,
-  X,
-} from 'lucide-react-native';
-import { confirmAsync } from '../../../lib/confirm';
-import { NotesIndicator } from '../../lesson/NotesIndicator';
-import { Badge } from './Badge';
-
-export type StudentLesson = {
-  id: string;
-  scheduledAt: string;
-  status: 'SCHEDULED' | 'COMPLETED' | 'CANCELLED';
-  isMakeup: boolean;
-  notes: string | null;
-};
+import { ChevronDown } from 'lucide-react-native';
+import type { StudentLesson } from '../../../lib/lessonTypes';
+import { LessonRow, SelectionCheckbox } from './LessonRow';
 
 function capitalize(s: string) {
   return s.charAt(0).toUpperCase() + s.slice(1);
-}
-
-// Ex: "Sábado, 5 de julho"
-function formatWeekdayDate(iso: string) {
-  return capitalize(
-    new Date(iso).toLocaleDateString('pt-BR', {
-      weekday: 'long',
-      day: 'numeric',
-      month: 'long',
-    }),
-  );
 }
 
 export function lessonMonthKey(iso: string) {
@@ -48,94 +23,40 @@ function formatMonthLabel(monthKey: string) {
   );
 }
 
-function statusConfig(status: StudentLesson['status']) {
-  if (status === 'COMPLETED')
-    return { label: 'Realizada', bg: '#ECFDF5', text: '#059669' };
-  if (status === 'CANCELLED')
-    return { label: 'Cancelada', bg: '#FEF2F2', text: '#DC2626' };
-  return { label: 'Agendada', bg: '#FFFBEB', text: '#D97706' };
-}
+type LessonMonthGroupProps = {
+  monthKey: string;
+  lessons: StudentLesson[];
+  studentInstrument: string | null;
+  defaultOpen: boolean;
+  // Modo de seleção
+  selecting: boolean;
+  selectedIds: ReadonlySet<string>;
+  onOpenLesson: (lessonId: string) => void;
+  onToggleLesson: (lessonId: string) => void;
+  onLongPressLesson: (lessonId: string) => void;
+  // Marca/desmarca todas as aulas do mês de uma vez
+  onToggleMonth: (lessonIds: string[], selected: boolean) => void;
+};
 
-// Uma linha de aula dentro do grupo do mês — toque abre o detalhe da aula
-function LessonRow({
-  lesson,
-  isFirst,
-  onOpen,
-  onCancel,
-}: {
-  lesson: StudentLesson;
-  isFirst: boolean;
-  onOpen: () => void;
-  onCancel: () => void;
-}) {
-  const cfg = statusConfig(lesson.status);
-  return (
-    <TouchableOpacity
-      onPress={onOpen}
-      className="flex-row items-center justify-between py-2.5"
-      style={
-        !isFirst
-          ? { borderTopWidth: 1, borderTopColor: 'rgba(0,0,0,0.04)' }
-          : undefined
-      }
-    >
-      <View className="flex-row items-center gap-2.5 flex-1">
-        <View className="w-9 h-9 rounded-xl bg-[#F3EADD] items-center justify-center">
-          <CalendarClock size={16} color="#B08D57" />
-        </View>
-        <View className="flex-1">
-          <Text className="text-sm font-medium">
-            {formatWeekdayDate(lesson.scheduledAt)}
-          </Text>
-          {lesson.isMakeup && (
-            <Text className="text-[11px] text-[#B08D57] mt-0.5">Reposição</Text>
-          )}
-          {lesson.notes && <NotesIndicator />}
-        </View>
-      </View>
-      <View className="flex-row items-center gap-2">
-        <Badge label={cfg.label} bg={cfg.bg} color={cfg.text} />
-        {lesson.status === 'SCHEDULED' && (
-          <TouchableOpacity
-            onPress={onCancel}
-            className="w-7 h-7 items-center justify-center rounded-full bg-red-50"
-            accessibilityLabel="Cancelar aula"
-          >
-            <X size={14} color="#DC2626" />
-          </TouchableOpacity>
-        )}
-        <ChevronRight size={16} color="#D4CFC4" />
-      </View>
-    </TouchableOpacity>
-  );
-}
-
-// Grupo de aulas de um mês, em formato sanfona
+// Grupo de aulas de um mês, em formato sanfona. No modo de seleção o
+// cabeçalho ganha uma caixa que marca o mês inteiro.
 export function LessonMonthGroup({
   monthKey,
   lessons,
+  studentInstrument,
   defaultOpen,
+  selecting,
+  selectedIds,
   onOpenLesson,
-  onCancelLesson,
-}: {
-  monthKey: string;
-  lessons: StudentLesson[];
-  defaultOpen: boolean;
-  onOpenLesson: (lessonId: string) => void;
-  onCancelLesson: (lessonId: string) => void;
-}) {
+  onToggleLesson,
+  onLongPressLesson,
+  onToggleMonth,
+}: LessonMonthGroupProps) {
   const [open, setOpen] = useState(defaultOpen);
 
-  async function handleCancel(lessonId: string) {
-    const ok = await confirmAsync({
-      title: 'Cancelar aula',
-      message: 'Confirma o cancelamento desta aula?',
-      confirmText: 'Cancelar aula',
-      cancelText: 'Voltar',
-      destructive: true,
-    });
-    if (ok) onCancelLesson(lessonId);
-  }
+  const ids = lessons.map((lesson) => lesson.id);
+  const selectedCount = ids.filter((id) => selectedIds.has(id)).length;
+  const allSelected = selectedCount === ids.length;
 
   return (
     <View
@@ -147,38 +68,64 @@ export function LessonMonthGroup({
         elevation: 1,
       }}
     >
-      <TouchableOpacity
-        className="flex-row items-center justify-between px-4 py-3"
-        onPress={() => setOpen(!open)}
-      >
-        <Text
-          className="text-sm font-semibold"
-          style={{ fontFamily: 'PlayfairDisplay_600SemiBold' }}
+      <View className="flex-row items-center">
+        {selecting && (
+          <TouchableOpacity
+            onPress={() => onToggleMonth(ids, !allSelected)}
+            className="pl-4 py-3"
+            hitSlop={8}
+            accessibilityRole="checkbox"
+            accessibilityState={{ checked: allSelected }}
+            accessibilityLabel={`Selecionar todas as aulas de ${formatMonthLabel(monthKey)}`}
+          >
+            <SelectionCheckbox
+              checked={allSelected}
+              partial={selectedCount > 0 && !allSelected}
+            />
+          </TouchableOpacity>
+        )}
+        <TouchableOpacity
+          className="flex-1 flex-row items-center justify-between px-4 py-3"
+          onPress={() => setOpen(!open)}
+          accessibilityRole="button"
+          accessibilityState={{ expanded: open }}
         >
-          {formatMonthLabel(monthKey)}
-        </Text>
-        <View className="flex-row items-center gap-2">
-          <View className="rounded-full px-2 py-0.5 bg-[#F5F1EA]">
-            <Text className="text-xs font-medium text-gray-500">
-              {lessons.length}
-            </Text>
+          <Text
+            className="text-sm font-semibold"
+            style={{ fontFamily: 'PlayfairDisplay_600SemiBold' }}
+          >
+            {formatMonthLabel(monthKey)}
+          </Text>
+          <View className="flex-row items-center gap-2">
+            <View className="rounded-full px-2 py-0.5 bg-[#F5F1EA]">
+              <Text className="text-xs font-medium text-gray-500">
+                {selecting && selectedCount > 0
+                  ? `${selectedCount}/${lessons.length}`
+                  : lessons.length}
+              </Text>
+            </View>
+            <ChevronDown
+              size={16}
+              color="#9CA3AF"
+              style={{ transform: [{ rotate: open ? '180deg' : '0deg' }] }}
+            />
           </View>
-          <ChevronDown
-            size={16}
-            color="#9CA3AF"
-            style={{ transform: [{ rotate: open ? '180deg' : '0deg' }] }}
-          />
-        </View>
-      </TouchableOpacity>
+        </TouchableOpacity>
+      </View>
       {open && (
         <View className="px-4 pb-2">
           {lessons.map((lesson, i) => (
             <LessonRow
               key={lesson.id}
               lesson={lesson}
+              studentInstrument={studentInstrument}
               isFirst={i === 0}
-              onOpen={() => onOpenLesson(lesson.id)}
-              onCancel={() => void handleCancel(lesson.id)}
+              selecting={selecting}
+              selected={selectedIds.has(lesson.id)}
+              onPress={() =>
+                selecting ? onToggleLesson(lesson.id) : onOpenLesson(lesson.id)
+              }
+              onLongPress={() => onLongPressLesson(lesson.id)}
             />
           ))}
         </View>

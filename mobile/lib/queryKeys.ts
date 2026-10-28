@@ -23,3 +23,13 @@ export const adminLessonKeys = {
   byStudent: (studentId: string) =>
     ['admin-student-lessons', studentId] as const,
 };
+
+// Faturas na visão do admin (detalhe de uma fatura do aluno).
+export const adminPaymentKeys = {
+  detail: (id: string) => ['admin-payment', id] as const,
+  byStudent: (studentId: string) =>
+    ['admin-student-payments', studentId] as const,
+  studentStatus: (studentId: string) =>
+    ['admin-student-payment-status', studentId] as const,
+  pending: () => ['admin-pending-payments'] as const,
+};

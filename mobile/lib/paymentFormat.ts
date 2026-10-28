@@ -92,3 +92,24 @@ export function getDisplayAmount(payment: {
   }
   return payment.amount;
 }
+
+// Instante (não dia civil): "28/10 às 14:20", no fuso do aparelho. Serve pra
+// paidAt, que é o momento em que o pagamento foi confirmado.
+export function formatDateTime(iso: string) {
+  const date = new Date(iso);
+  const day = date.toLocaleDateString('pt-BR', {
+    day: '2-digit',
+    month: '2-digit',
+    year: 'numeric',
+  });
+  const time = date.toLocaleTimeString('pt-BR', {
+    hour: '2-digit',
+    minute: '2-digit',
+  });
+  return `${day} às ${time}`;
+}
+
+// Só o dia de um instante, no fuso do aparelho: "28/10/2026"
+export function formatInstantDate(iso: string) {
+  return new Date(iso).toLocaleDateString('pt-BR');
+}

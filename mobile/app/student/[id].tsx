@@ -1,20 +1,38 @@
-import { useCallback, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import {
   ActivityIndicator,
   Alert,
+  BackHandler,
   Text,
   TouchableOpacity,
   View,
 } from 'react-native';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { useFocusEffect, useLocalSearchParams, useRouter } from 'expo-router';
-import { Ellipsis, Music2, Trash2, UserMinus } from 'lucide-react-native';
+import {
+  Ellipsis,
+  Music2,
+  Pencil,
+  Trash2,
+  UserMinus,
+} from 'lucide-react-native';
 import { api } from '../../lib/api';
 import { formatInstrument } from '../../lib/instrument';
 import { firstName } from '../../lib/name';
+import { confirmAsync } from '../../lib/confirm';
+import {
+  bulkDeleteLessons,
+  useRefreshLessons,
+  useStudentLessons,
+} from '../../lib/lessonAdmin';
 import { adminLessonKeys } from '../../lib/queryKeys';
+import { usePaymentActions, useStudentPayments } from '../../lib/adminPayments';
+import { useSelection } from '../../lib/useSelection';
+import { ActionFooter } from '../../components/ui/ActionFooter';
+import { Button } from '../../components/ui/Button';
 import { Card } from '../../components/ui/Card';
 import { DetailScreen } from '../../components/ui/DetailScreen';
+import { ErrorRetry } from '../../components/ui/ErrorRetry';
 import { SegmentedControl } from '../../components/ui/SegmentedControl';
 import {
   ActionMenu,
@@ -25,15 +43,8 @@ import {
   EnrollmentCard,
   type EnrollmentSummary,
 } from '../../components/student/detail/EnrollmentCard';
-import {
-  LessonMonthGroup,
-  lessonMonthKey,
-  type StudentLesson,
-} from '../../components/student/detail/LessonMonthGroup';
-import {
-  PaymentsList,
-  type StudentPayment,
-} from '../../components/student/detail/PaymentsList';
+import { LessonsTab } from '../../components/student/detail/LessonsTab';
+import { PaymentsList } from '../../components/student/detail/PaymentsList';
 import {
   StudentProfileCard,
   type StudentProfile,
@@ -120,30 +131,27 @@ export default function AdminStudentDetail() {
     enabled: !!id,
   });
 
-  const { data: lessons, isLoading: loadingLessons } = useQuery({
-    queryKey: adminLessonKeys.byStudent(id),
-    queryFn: async () => {
-      const response = await api.get<StudentLesson[]>(`/lessons/student/${id}`);
-      return response.data;
-    },
-    enabled: !!id && tab === 'aulas',
-  });
+  const lessonsQuery = useStudentLessons(id, tab === 'aulas');
+  const lessons = lessonsQuery.data;
+
+  const selection = useSelection();
+  const { clear: clearSelection } = selection;
+  const refreshLessons = useRefreshLessons();
+  // Ao voltar da edição em lote, o modo de seleção termina
+  const endSelectionOnFocus = useRef(false);
 
   // Lista completa de faturas — só carregada quando o admin abre a aba
   // "Faturas", pra não trazer N faturas por aluno a cada abertura.
-  const { data: payments, isLoading: loadingPayments } = useQuery({
-    queryKey: ['admin-student-payments', id],
-    queryFn: async () => {
-      const response = await api.get<StudentPayment[]>(
-        `/payments/student/${id}`,
-      );
-      return response.data;
-    },
-    enabled: !!id && tab === 'faturas',
-  });
+  const paymentsQuery = useStudentPayments(id, tab === 'faturas');
+  const payments = paymentsQuery.data;
+  const paymentActions = usePaymentActions();
 
   useFocusEffect(
     useCallback(() => {
+      if (endSelectionOnFocus.current) {
+        endSelectionOnFocus.current = false;
+        clearSelection();
+      }
       queryClient.invalidateQueries({
         queryKey: ['admin-student-payments', id],
       });
@@ -153,44 +161,57 @@ export default function AdminStudentDetail() {
       queryClient.invalidateQueries({
         queryKey: adminLessonKeys.byStudent(id),
       });
-    }, [queryClient, id]),
+    }, [queryClient, id, clearSelection]),
   );
 
-  const cancelLesson = useMutation({
-    mutationFn: (lessonId: string) =>
-      api.patch(`/lessons/${lessonId}`, {
-        status: 'CANCELLED',
-        cancelReason: 'Cancelada pelo admin',
-      }),
-    onSuccess: (_, lessonId) => {
-      queryClient.invalidateQueries({
-        queryKey: adminLessonKeys.byStudent(id),
-      });
-      queryClient.invalidateQueries({ queryKey: adminLessonKeys.schedule() });
-      queryClient.invalidateQueries({
-        queryKey: adminLessonKeys.detail(lessonId),
-      });
+  const deleteSelected = useMutation({
+    mutationFn: () => bulkDeleteLessons([...selection.ids]),
+    onSuccess: () => {
+      refreshLessons(id, [...selection.ids]);
+      selection.clear();
     },
     onError: () => {
-      Alert.alert('Erro', 'Não foi possível atualizar a aula.');
+      Alert.alert('Erro', 'Não foi possível excluir as aulas.');
     },
   });
 
-  const confirmPayment = useMutation({
-    mutationFn: (paymentId: string) =>
-      api.patch(`/payments/${paymentId}/confirm`, {}),
-    onSuccess: () => {
-      queryClient.invalidateQueries({
-        queryKey: ['admin-student-payments', id],
-      });
-      queryClient.invalidateQueries({
-        queryKey: ['admin-student-payment-status', id],
-      });
-    },
-    onError: () => {
-      Alert.alert('Erro', 'Não foi possível confirmar o pagamento.');
-    },
-  });
+  // Android: o voltar do sistema sai do modo de seleção em vez de fechar a tela
+  useEffect(() => {
+    if (!selection.selecting) return;
+    const subscription = BackHandler.addEventListener(
+      'hardwareBackPress',
+      () => {
+        clearSelection();
+        return true;
+      },
+    );
+    return () => subscription.remove();
+  }, [selection.selecting, clearSelection]);
+
+  async function handleDeleteSelected() {
+    const count = selection.ids.size;
+    const ok = await confirmAsync({
+      title: count === 1 ? 'Excluir 1 aula?' : `Excluir ${count} aulas?`,
+      message:
+        'As aulas somem do histórico do aluno, junto com as anotações. Não dá para desfazer.\n\nSe só quer avisar que a aula não vai acontecer, prefira cancelar ou mudar a data.',
+      confirmText: 'Excluir',
+      destructive: true,
+    });
+    if (ok) deleteSelected.mutate();
+  }
+
+  function handleEditSelected() {
+    endSelectionOnFocus.current = true;
+    // Uma só: tela completa da aula. Várias: edição em lote.
+    if (selection.ids.size === 1) {
+      router.push(`/lesson-edit/${[...selection.ids][0]}`);
+      return;
+    }
+    router.push({
+      pathname: '/lessons-edit',
+      params: { studentId: id, ids: [...selection.ids].join(',') },
+    });
+  }
 
   if (loadingStudent || loadingEnrollment) {
     return (
@@ -212,18 +233,10 @@ export default function AdminStudentDetail() {
     );
   }
 
-  // Agrupa as aulas por mês, mais recente primeiro
-  const lessonGroups: Record<string, StudentLesson[]> = {};
-  (lessons ?? [])
-    .slice()
-    .sort(
-      (a, b) =>
-        new Date(b.scheduledAt).getTime() - new Date(a.scheduledAt).getTime(),
-    )
-    .forEach((lesson) => {
-      (lessonGroups[lessonMonthKey(lesson.scheduledAt)] ??= []).push(lesson);
-    });
-  const lessonMonthKeys = Object.keys(lessonGroups).sort().reverse();
+  const allLessonIds = (lessons ?? []).map((lesson) => lesson.id);
+  const selectedCount = selection.ids.size;
+  const allSelected =
+    allLessonIds.length > 0 && selectedCount === allLessonIds.length;
 
   const matriculaStatus =
     enrollment && paymentStatus
@@ -256,18 +269,69 @@ export default function AdminStudentDetail() {
   return (
     <>
       <DetailScreen
-        title="Detalhes do aluno"
+        title={
+          selection.selecting
+            ? selectedCount === 0
+              ? 'Selecionar aulas'
+              : selectedCount === 1
+                ? '1 aula selecionada'
+                : `${selectedCount} aulas selecionadas`
+            : 'Detalhes do aluno'
+        }
+        onBack={selection.selecting ? selection.clear : undefined}
         headerRight={
-          <TouchableOpacity
-            className="w-9 h-9 rounded-full bg-white items-center justify-center"
-            style={{ borderWidth: 1, borderColor: 'rgba(0,0,0,0.05)' }}
-            onPress={() => setMenuOpen(true)}
-            hitSlop={8}
-            accessibilityRole="button"
-            accessibilityLabel="Mais ações"
-          >
-            <Ellipsis size={18} color="#1A1A1A" />
-          </TouchableOpacity>
+          selection.selecting ? (
+            <TouchableOpacity
+              className="rounded-full bg-white px-3.5 h-9 items-center justify-center"
+              style={{ borderWidth: 1, borderColor: 'rgba(0,0,0,0.08)' }}
+              onPress={() =>
+                allSelected
+                  ? selection.unselectAll()
+                  : selection.selectAll(allLessonIds)
+              }
+              accessibilityRole="button"
+            >
+              <Text className="text-[13px] font-semibold">
+                {allSelected ? 'Limpar' : 'Selecionar todas'}
+              </Text>
+            </TouchableOpacity>
+          ) : (
+            <TouchableOpacity
+              className="w-9 h-9 rounded-full bg-white items-center justify-center"
+              style={{ borderWidth: 1, borderColor: 'rgba(0,0,0,0.05)' }}
+              onPress={() => setMenuOpen(true)}
+              hitSlop={8}
+              accessibilityRole="button"
+              accessibilityLabel="Mais ações"
+            >
+              <Ellipsis size={18} color="#1A1A1A" />
+            </TouchableOpacity>
+          )
+        }
+        footer={
+          selection.selecting && tab === 'aulas' ? (
+            <ActionFooter>
+              <Button
+                label={
+                  selectedCount === 1
+                    ? 'Editar 1 aula'
+                    : `Editar ${selectedCount} aulas`
+                }
+                icon={Pencil}
+                onPress={handleEditSelected}
+                disabled={selectedCount === 0}
+              />
+              <Button
+                label="Excluir"
+                variant="danger"
+                icon={Trash2}
+                grow={false}
+                onPress={() => void handleDeleteSelected()}
+                disabled={selectedCount === 0}
+                loading={deleteSelected.isPending}
+              />
+            </ActionFooter>
+          ) : undefined
         }
       >
         {/* Identificação do aluno */}
@@ -299,7 +363,14 @@ export default function AdminStudentDetail() {
 
         {/* Abas */}
         <View className="px-5 mb-4">
-          <SegmentedControl options={TABS} value={tab} onChange={setTab} />
+          <SegmentedControl
+            options={TABS}
+            value={tab}
+            onChange={(next) => {
+              if (next !== 'aulas') selection.clear();
+              setTab(next);
+            }}
+          />
         </View>
 
         <View className="px-5 pb-10">
@@ -320,44 +391,43 @@ export default function AdminStudentDetail() {
             </>
           )}
 
-          {tab === 'aulas' &&
-            (loadingLessons ? (
+          {tab === 'aulas' && (
+            <LessonsTab
+              lessons={lessons}
+              loading={lessonsQuery.isLoading}
+              error={lessonsQuery.isError}
+              onRetry={() => void lessonsQuery.refetch()}
+              studentInstrument={student.instrument}
+              selection={selection}
+              onOpenLesson={(lessonId) =>
+                router.push(`/admin-lesson/${lessonId}`)
+              }
+              onNewLesson={() => router.push(`/lesson-new/${id}`)}
+            />
+          )}
+
+          {tab === 'faturas' &&
+            (paymentsQuery.isLoading ? (
+              <ActivityIndicator color="#B08D57" />
+            ) : paymentsQuery.isError ? (
+              <ErrorRetry
+                onRetry={() => void paymentsQuery.refetch()}
+                retrying={paymentsQuery.isRefetching}
+              />
+            ) : !payments || payments.length === 0 ? (
               <Card>
-                <ActivityIndicator color="#B08D57" />
-              </Card>
-            ) : lessonMonthKeys.length === 0 ? (
-              <Card>
-                <EmptyState text="Nenhuma aula encontrada" />
+                <EmptyState text="Nenhuma fatura encontrada" />
               </Card>
             ) : (
-              lessonMonthKeys.map((monthKey, i) => (
-                <LessonMonthGroup
-                  key={monthKey}
-                  monthKey={monthKey}
-                  lessons={lessonGroups[monthKey]}
-                  defaultOpen={i === 0}
-                  onOpenLesson={(lessonId) =>
-                    router.push(`/admin-lesson/${lessonId}`)
-                  }
-                  onCancelLesson={(lessonId) => cancelLesson.mutate(lessonId)}
-                />
-              ))
+              <PaymentsList
+                payments={payments}
+                busyId={paymentActions.busyId}
+                onOpen={(paymentId) =>
+                  router.push(`/admin-payment/${paymentId}`)
+                }
+                onConfirm={(payment) => void paymentActions.confirm(payment)}
+              />
             ))}
-
-          {tab === 'faturas' && (
-            <Card>
-              {loadingPayments ? (
-                <ActivityIndicator color="#B08D57" />
-              ) : !payments || payments.length === 0 ? (
-                <EmptyState text="Nenhuma fatura encontrada" />
-              ) : (
-                <PaymentsList
-                  payments={payments}
-                  onConfirm={(paymentId) => confirmPayment.mutate(paymentId)}
-                />
-              )}
-            </Card>
-          )}
         </View>
       </DetailScreen>
 
