@@ -11,7 +11,6 @@ import {
   TouchableOpacity,
   KeyboardAvoidingView,
   BackHandler,
-  Alert,
 } from 'react-native';
 import {
   Stack,
@@ -23,7 +22,7 @@ import { usePreventRemove } from '@react-navigation/native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import {
-  CalendarPlus,
+  CalendarClock,
   CalendarX2,
   Check,
   Clock,
@@ -39,7 +38,7 @@ import {
   User,
 } from 'lucide-react-native';
 import { api } from '../../lib/api';
-import { confirmAsync } from '../../lib/confirm';
+import { alertAsync, confirmAsync } from '../../lib/dialog';
 import { formatInstrument } from '../../lib/instrument';
 import {
   formatLessonFullDate,
@@ -47,8 +46,11 @@ import {
   formatLessonTime,
   formatLessonTimeRange,
 } from '../../lib/lessonFormat';
-import { lessonTags } from '../../lib/lessonForm';
-import { deleteLesson, useRefreshLessons } from '../../lib/lessonAdmin';
+import {
+  deleteLesson,
+  updateLesson,
+  useRefreshLessons,
+} from '../../lib/lessonAdmin';
 import type { AdminLesson } from '../../lib/lessonTypes';
 import { adminLessonKeys } from '../../lib/queryKeys';
 import {
@@ -66,7 +68,6 @@ import { InfoRow } from '../../components/ui/InfoRow';
 import { DetailScreen } from '../../components/ui/DetailScreen';
 import { ScreenHeader } from '../../components/ui/ScreenHeader';
 import { StatusPill } from '../../components/ui/StatusPill';
-import { LessonTags } from '../../components/lesson/LessonTags';
 import { SectionCard } from '../../components/student/detail/SectionCard';
 import { LessonNotesCard } from '../../components/lesson/LessonNotesCard';
 import { LessonNotesEditor } from '../../components/lesson/LessonNotesEditor';
@@ -232,9 +233,40 @@ export default function AdminLessonDetail() {
       router.back();
     },
     onError: () => {
-      Alert.alert('Erro', 'Não foi possível excluir a aula.');
+      void alertAsync({
+        title: 'Erro',
+        message: 'Não foi possível excluir a aula.',
+        tone: 'error',
+      });
     },
   });
+
+  const cancelLesson = useMutation({
+    mutationFn: () => updateLesson(id, { status: 'CANCELLED' }),
+    onSuccess: (updated) => {
+      queryClient.setQueryData(adminLessonKeys.detail(id), updated);
+      refreshLessons(updated.studentId, [id]);
+    },
+    onError: () => {
+      void alertAsync({
+        title: 'Erro',
+        message: 'Não foi possível cancelar a aula.',
+        tone: 'error',
+      });
+    },
+  });
+
+  async function handleCancel() {
+    const confirmed = await confirmAsync({
+      title: 'Cancelar esta aula?',
+      message:
+        'Ela continua no histórico como cancelada. Para remarcar depois, é só editar a data: a aula volta a ficar agendada.',
+      confirmText: 'Cancelar aula',
+      cancelText: 'Voltar',
+      destructive: true,
+    });
+    if (confirmed) cancelLesson.mutate();
+  }
 
   async function handleDelete() {
     const confirmed = await confirmAsync({
@@ -374,8 +406,6 @@ export default function AdminLessonDetail() {
   const statusVisual = adminLessonStatusConfig(
     getEffectiveLessonStatus(lesson.status, liveStatus?.phase),
   );
-  const tags = lessonTags(lesson);
-  const hasActiveMakeup = lesson.makeups.some((m) => m.status !== 'CANCELLED');
   const instrument = lesson.instrument ?? lesson.student.instrument;
 
   const menuItems: ActionMenuItem[] = [
@@ -386,31 +416,21 @@ export default function AdminLessonDetail() {
       icon: Pencil,
       onPress: () => router.push(`/lesson-edit/${id}`),
     },
-    ...(lesson.status !== 'CANCELLED'
-      ? [
-          {
-            key: 'cancel',
-            label: 'Cancelar aula',
-            description: 'Dá para já marcar a reposição',
-            icon: CalendarX2,
-            onPress: () => router.push(`/lesson-cancel/${id}`),
-          },
-        ]
-      : !hasActiveMakeup
-        ? [
-            {
-              key: 'makeup',
-              label: 'Marcar reposição',
-              description: 'Cria uma aula nova ligada a esta',
-              icon: CalendarPlus,
-              onPress: () =>
-                router.push({
-                  pathname: '/lesson-new/[studentId]',
-                  params: { studentId: lesson.studentId, makeupFor: id },
-                }),
-            },
-          ]
-        : []),
+    lesson.status === 'CANCELLED'
+      ? {
+          key: 'reschedule',
+          label: 'Reagendar aula',
+          description: 'Escolha a nova data e ela volta a ficar agendada',
+          icon: CalendarClock,
+          onPress: () => router.push(`/lesson-edit/${id}`),
+        }
+      : {
+          key: 'cancel',
+          label: 'Cancelar aula',
+          description: 'Continua no histórico, dá para remarcar depois',
+          icon: CalendarX2,
+          onPress: () => void handleCancel(),
+        },
     {
       key: 'delete',
       label: 'Excluir aula',
@@ -448,12 +468,6 @@ export default function AdminLessonDetail() {
           <View className="flex-row flex-wrap gap-2">
             <StatusPill {...statusVisual} />
           </View>
-          <LessonTags
-            tags={tags}
-            onOpenLesson={(lessonId) =>
-              router.push(`/admin-lesson/${lessonId}`)
-            }
-          />
         </View>
 
         <View className="px-5 gap-4 pb-10">

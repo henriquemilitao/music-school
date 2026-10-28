@@ -1,7 +1,12 @@
-import { useCallback, useEffect, useRef, useState } from 'react';
+import {
+  useCallback,
+  useEffect,
+  useRef,
+  useState,
+  type ReactNode,
+} from 'react';
 import {
   ActivityIndicator,
-  Alert,
   BackHandler,
   Text,
   TouchableOpacity,
@@ -19,7 +24,7 @@ import {
 import { api } from '../../lib/api';
 import { formatInstrument } from '../../lib/instrument';
 import { firstName } from '../../lib/name';
-import { confirmAsync } from '../../lib/confirm';
+import { alertAsync, confirmAsync } from '../../lib/dialog';
 import {
   bulkDeleteLessons,
   useRefreshLessons,
@@ -81,6 +86,24 @@ function matriculaStatusConfig(status: PaymentStatusSummary['status']) {
   return { label: 'Em dia', bg: '#ECFDF5', text: '#059669' };
 }
 
+// Painel de uma aba: só entra na tela depois da primeira visita e, depois
+// disso, apenas fica escondido quando outra aba está ativa — assim voltar a
+// ela não refaz a tela inteira.
+function TabPanel({
+  active,
+  visited = true,
+  children,
+}: {
+  active: boolean;
+  visited?: boolean;
+  children: ReactNode;
+}) {
+  if (!active && !visited) return null;
+  return (
+    <View style={active ? undefined : { display: 'none' }}>{children}</View>
+  );
+}
+
 function EmptyState({ text }: { text: string }) {
   return (
     <View className="items-center py-8">
@@ -96,6 +119,10 @@ export default function AdminStudentDetail() {
   const router = useRouter();
   const queryClient = useQueryClient();
   const [tab, setTab] = useState<TabKey>('geral');
+  // Abas já abertas ficam montadas (só escondidas): voltar a elas é instantâneo
+  const [visitedTabs, setVisitedTabs] = useState<ReadonlySet<TabKey>>(
+    () => new Set<TabKey>(['geral']),
+  );
   const [menuOpen, setMenuOpen] = useState(false);
 
   const { data: student, isLoading: loadingStudent } = useQuery({
@@ -131,18 +158,23 @@ export default function AdminStudentDetail() {
     enabled: !!id,
   });
 
-  const lessonsQuery = useStudentLessons(id, tab === 'aulas');
+  // Aulas e faturas começam a carregar assim que os dados básicos chegam,
+  // enquanto a pessoa ainda olha a visão geral — ao abrir a aba, já estão aí.
+  const baseReady = !!student && !loadingEnrollment;
+  const lessonsQuery = useStudentLessons(id, baseReady);
   const lessons = lessonsQuery.data;
 
   const selection = useSelection();
   const { clear: clearSelection } = selection;
+  const openLesson = useCallback(
+    (lessonId: string) => router.push(`/admin-lesson/${lessonId}`),
+    [router],
+  );
   const refreshLessons = useRefreshLessons();
   // Ao voltar da edição em lote, o modo de seleção termina
   const endSelectionOnFocus = useRef(false);
 
-  // Lista completa de faturas — só carregada quando o admin abre a aba
-  // "Faturas", pra não trazer N faturas por aluno a cada abertura.
-  const paymentsQuery = useStudentPayments(id, tab === 'faturas');
+  const paymentsQuery = useStudentPayments(id, baseReady);
   const payments = paymentsQuery.data;
   const paymentActions = usePaymentActions();
 
@@ -171,7 +203,11 @@ export default function AdminStudentDetail() {
       selection.clear();
     },
     onError: () => {
-      Alert.alert('Erro', 'Não foi possível excluir as aulas.');
+      void alertAsync({
+        title: 'Erro',
+        message: 'Não foi possível excluir as aulas.',
+        tone: 'error',
+      });
     },
   });
 
@@ -367,31 +403,32 @@ export default function AdminStudentDetail() {
             options={TABS}
             value={tab}
             onChange={(next) => {
-              if (next !== 'aulas') selection.clear();
+              if (next !== 'aulas') clearSelection();
               setTab(next);
+              setVisitedTabs((current) =>
+                current.has(next) ? current : new Set(current).add(next),
+              );
             }}
           />
         </View>
 
         <View className="px-5 pb-10">
-          {tab === 'geral' && (
-            <>
-              <StudentProfileCard
-                student={student}
-                onEdit={() => router.push(`/student-edit/${id}`)}
-              />
-              <EnrollmentCard
-                enrollment={enrollment ?? null}
-                instrument={student.instrument}
-                status={matriculaStatus}
-                loadingStatus={loadingPaymentStatus}
-                ended={student.isActive === false}
-                onEdit={() => router.push(`/enrollment-edit/${id}`)}
-              />
-            </>
-          )}
+          <TabPanel active={tab === 'geral'}>
+            <StudentProfileCard
+              student={student}
+              onEdit={() => router.push(`/student-edit/${id}`)}
+            />
+            <EnrollmentCard
+              enrollment={enrollment ?? null}
+              instrument={student.instrument}
+              status={matriculaStatus}
+              loadingStatus={loadingPaymentStatus}
+              ended={student.isActive === false}
+              onEdit={() => router.push(`/enrollment-edit/${id}`)}
+            />
+          </TabPanel>
 
-          {tab === 'aulas' && (
+          <TabPanel active={tab === 'aulas'} visited={visitedTabs.has('aulas')}>
             <LessonsTab
               lessons={lessons}
               loading={lessonsQuery.isLoading}
@@ -399,15 +436,16 @@ export default function AdminStudentDetail() {
               onRetry={() => void lessonsQuery.refetch()}
               studentInstrument={student.instrument}
               selection={selection}
-              onOpenLesson={(lessonId) =>
-                router.push(`/admin-lesson/${lessonId}`)
-              }
+              onOpenLesson={openLesson}
               onNewLesson={() => router.push(`/lesson-new/${id}`)}
             />
-          )}
+          </TabPanel>
 
-          {tab === 'faturas' &&
-            (paymentsQuery.isLoading ? (
+          <TabPanel
+            active={tab === 'faturas'}
+            visited={visitedTabs.has('faturas')}
+          >
+            {paymentsQuery.isLoading ? (
               <ActivityIndicator color="#B08D57" />
             ) : paymentsQuery.isError ? (
               <ErrorRetry
@@ -427,7 +465,8 @@ export default function AdminStudentDetail() {
                 }
                 onConfirm={(payment) => void paymentActions.confirm(payment)}
               />
-            ))}
+            )}
+          </TabPanel>
         </View>
       </DetailScreen>
 

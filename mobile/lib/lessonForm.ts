@@ -1,96 +1,18 @@
 // lib/lessonForm.ts
 //
-// Lógica PURA dos formulários de aula (editar uma, criar, cancelar com
-// reposição, editar várias) e das etiquetas de reposição. Sem React nem rede:
-// testável com um script simples e reaproveitada pelas telas.
+// Lógica PURA dos formulários de aula (editar uma, criar, editar várias).
+// Sem React nem rede: testável com um script simples e reaproveitada pelas
+// telas.
 
-import { formatLessonShortDate, formatLessonTime } from './lessonFormat';
 import {
   CANCEL_REASON_MAX_LENGTH,
-  ENROLLMENT_ENDED_REASON,
   type BulkLessonChanges,
-  type CancelLessonBody,
   type CreateLessonBody,
   type LessonStatus,
   type StudentLesson,
   type UpdateLessonBody,
 } from './lessonTypes';
 import { dateToText, isValidTime, parseDate, textToDate } from './newStudent';
-
-// ─── Reposição: tags e candidatas ─────────────────────────────────────
-
-export type LessonTag = {
-  tone: 'purple' | 'green' | 'gray';
-  text: string;
-  // aula pra onde a tag leva (a original ou a reposição)
-  targetLessonId?: string;
-};
-
-const activeMakeup = (lesson: Pick<StudentLesson, 'makeups'>) =>
-  lesson.makeups.find((makeup) => makeup.status !== 'CANCELLED');
-
-// Etiquetas de reposição de uma aula, pra lista e pro detalhe:
-//  • é reposição → "Reposição da aula de Seg, 2 de nov" (ou só "Reposição")
-//  • cancelada com reposição marcada → "Reposição marcada: Qua, 4 de nov às 15:00"
-//  • cancelada sem reposição → "Sem reposição prevista" (menos quando foi o
-//    encerramento da matrícula que cancelou — aí não faz sentido repor)
-export function lessonTags(
-  lesson: Pick<
-    StudentLesson,
-    'isMakeup' | 'makeupFor' | 'makeups' | 'status' | 'cancelReason'
-  >,
-): LessonTag[] {
-  const tags: LessonTag[] = [];
-
-  if (lesson.isMakeup) {
-    tags.push(
-      lesson.makeupFor
-        ? {
-            tone: 'purple',
-            text: `Reposição da aula de ${formatLessonShortDate(lesson.makeupFor.scheduledAt)}`,
-            targetLessonId: lesson.makeupFor.id,
-          }
-        : { tone: 'purple', text: 'Reposição' },
-    );
-  }
-
-  if (lesson.status === 'CANCELLED') {
-    const makeup = activeMakeup(lesson);
-    if (makeup) {
-      tags.push({
-        tone: 'green',
-        text: `Reposição marcada: ${formatLessonShortDate(makeup.scheduledAt)} às ${formatLessonTime(makeup.scheduledAt)}`,
-        targetLessonId: makeup.id,
-      });
-    } else if (lesson.cancelReason !== ENROLLMENT_ENDED_REASON) {
-      tags.push({ tone: 'gray', text: 'Sem reposição prevista' });
-    }
-  }
-
-  return tags;
-}
-
-// Aulas canceladas que ainda podem ganhar uma reposição (as mais recentes
-// primeiro). `keepId` mantém na lista a que já está vinculada.
-export function replaceableLessons(
-  lessons: StudentLesson[],
-  options: { excludeId?: string; keepId?: string | null; limit?: number } = {},
-) {
-  const { excludeId, keepId, limit = 8 } = options;
-  return lessons
-    .filter(
-      (lesson) =>
-        lesson.id !== excludeId &&
-        lesson.status === 'CANCELLED' &&
-        lesson.cancelReason !== ENROLLMENT_ENDED_REASON &&
-        (lesson.id === keepId || !activeMakeup(lesson)),
-    )
-    .sort(
-      (a, b) =>
-        new Date(b.scheduledAt).getTime() - new Date(a.scheduledAt).getTime(),
-    )
-    .slice(0, limit);
-}
 
 // ─── Data e hora do formulário ────────────────────────────────────────
 
@@ -120,8 +42,6 @@ export type LessonForm = {
   // instrumento que vale pra esta aula (o da aula ou, se não tiver, o do aluno)
   instrument: string | null;
   teacherId: string | null;
-  isMakeup: boolean;
-  makeupForLessonId: string | null;
 };
 
 export type LessonFormErrors = Partial<
@@ -141,9 +61,26 @@ export function lessonToForm(
     durationMinutes: lesson.durationMinutes,
     instrument: lesson.instrument ?? studentInstrument,
     teacherId: lesson.teacherId,
-    isMakeup: lesson.isMakeup,
-    makeupForLessonId: lesson.makeupFor?.id ?? null,
   };
+}
+
+// Reagendar: se uma aula cancelada (ou já realizada) ganha uma data futura e
+// a situação não foi mexida à mão, ela volta sozinha para "Agendada" —
+// é o que o admin quer quando "passa a aula para o próximo dia".
+export function rescheduledStatus(
+  initial: LessonForm,
+  draft: Partial<LessonForm>,
+  now: number,
+): LessonStatus | null {
+  if (draft.status !== undefined) return null; // escolheu a situação à mão
+  if (initial.status === 'SCHEDULED') return null;
+
+  const date = draft.date ?? initial.date;
+  const time = draft.time ?? initial.time;
+  if (date === initial.date && time === initial.time) return null;
+
+  const when = combineDateTime(date, time);
+  return when && when.getTime() > now ? 'SCHEDULED' : null;
 }
 
 export function isLessonFormDirty(initial: LessonForm, form: LessonForm) {
@@ -197,11 +134,6 @@ export function buildLessonPatch(
     form.instrument === studentInstrument ? null : form.instrument;
   if (nextInstrument !== lesson.instrument) body.instrument = nextInstrument;
 
-  if (form.isMakeup !== initial.isMakeup) body.isMakeup = form.isMakeup;
-  if (form.isMakeup && form.makeupForLessonId !== initial.makeupForLessonId) {
-    body.makeupForLessonId = form.makeupForLessonId;
-  }
-
   return body;
 }
 
@@ -211,7 +143,6 @@ export function newLessonForm(defaults: {
   instrument: string | null;
   teacherId: string | null;
   durationMinutes: number;
-  makeupForLessonId?: string | null;
 }): LessonForm {
   return {
     status: 'SCHEDULED',
@@ -221,8 +152,6 @@ export function newLessonForm(defaults: {
     durationMinutes: defaults.durationMinutes,
     instrument: defaults.instrument,
     teacherId: defaults.teacherId,
-    isMakeup: !!defaults.makeupForLessonId,
-    makeupForLessonId: defaults.makeupForLessonId ?? null,
   };
 }
 
@@ -246,75 +175,7 @@ export function buildCreateBody(
         : undefined,
     scheduledAt: when.toISOString(),
     durationMinutes: form.durationMinutes,
-    isMakeup: form.isMakeup,
-    makeupForLessonId:
-      form.isMakeup && form.makeupForLessonId
-        ? form.makeupForLessonId
-        : undefined,
   };
-}
-
-// ─── Cancelar (com reposição opcional) ────────────────────────────────
-
-export type MakeupDraft = {
-  date: string;
-  time: string;
-  durationMinutes: number;
-  instrument: string | null;
-  teacherId: string | null;
-};
-
-export function makeupDraftFrom(
-  lesson: StudentLesson,
-  studentInstrument: string | null,
-): MakeupDraft {
-  return {
-    date: '',
-    time: timeToText(new Date(lesson.scheduledAt)),
-    durationMinutes: lesson.durationMinutes,
-    instrument: lesson.instrument ?? studentInstrument,
-    teacherId: lesson.teacherId,
-  };
-}
-
-export function validateMakeupDraft(
-  draft: MakeupDraft,
-): Pick<LessonFormErrors, 'date' | 'time'> {
-  const errors: Pick<LessonFormErrors, 'date' | 'time'> = {};
-  if (!parseDate(draft.date)) errors.date = 'Escolha a data da reposição';
-  if (!isValidTime(draft.time)) errors.time = 'Informe o horário (ex: 15:00)';
-  return errors;
-}
-
-export function buildCancelBody(
-  reason: string,
-  makeup: MakeupDraft | null,
-  lesson: StudentLesson,
-  studentInstrument: string | null,
-): CancelLessonBody {
-  const body: CancelLessonBody = {};
-  if (reason.trim()) body.cancelReason = reason.trim();
-
-  if (makeup) {
-    const when = combineDateTime(makeup.date, makeup.time);
-    if (when) {
-      body.makeup = {
-        scheduledAt: when.toISOString(),
-        durationMinutes: makeup.durationMinutes,
-        // só manda o que difere da aula cancelada (o resto o back herda)
-        teacherId:
-          makeup.teacherId && makeup.teacherId !== lesson.teacherId
-            ? makeup.teacherId
-            : undefined,
-        instrument:
-          makeup.instrument &&
-          makeup.instrument !== (lesson.instrument ?? studentInstrument)
-            ? makeup.instrument
-            : undefined,
-      };
-    }
-  }
-  return body;
 }
 
 // ─── Edição em lote ───────────────────────────────────────────────────
@@ -375,10 +236,33 @@ export function buildBulkChanges(form: BulkEditForm): BulkLessonChanges {
   return changes;
 }
 
-// Quantos dias pra frente vai de um dia da semana (0 = dom ... 6 = sáb) ao
-// outro: segunda(1) → quarta(3) = 2; quarta(3) → segunda(1) = 5.
-export function forwardShiftDays(from: number, to: number) {
-  return (to - from + 7) % 7;
+// Passar as aulas para outro dia da semana, sem sair da semana da primeira
+// aula (a base de todas as outras; a semana vai de segunda a domingo):
+//  • aulas de quinta → quarta: volta 1 dia, na mesma semana;
+//  • sexta → quarta, hoje terça: a quarta é amanhã, fica nesta semana;
+//  • se esse dia (no horário da aula) já passou, só resta a semana seguinte.
+// Aulas que já aconteceram (correção de histórico) nunca pulam de semana.
+// O mesmo número de dias vale para todas as aulas escolhidas.
+export function sameWeekShiftDays(params: {
+  firstLessonIso: string;
+  targetWeekday: number; // 0 = dom ... 6 = sáb
+  time?: string; // novo horário ('' = o de cada aula)
+  now: number;
+}) {
+  const { firstLessonIso, targetWeekday, time = '', now } = params;
+  const first = new Date(firstLessonIso);
+  const mondayFirst = (weekday: number) => (weekday + 6) % 7;
+
+  let days = mondayFirst(targetWeekday) - mondayFirst(first.getDay());
+  const landing = shiftedDate(firstLessonIso, days, time);
+  if (first.getTime() >= now && landing.getTime() < now) days += 7;
+  return days;
+}
+
+// Dia da semana pra onde as aulas vão com `shiftDays` (null = continua o mesmo)
+export function shiftTargetWeekday(weekday: number, shiftDays: number) {
+  if (shiftDays % 7 === 0) return null;
+  return (((weekday + shiftDays) % 7) + 7) % 7;
 }
 
 // Dia da semana comum às aulas escolhidas (null se forem de dias diferentes)

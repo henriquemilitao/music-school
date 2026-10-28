@@ -4,7 +4,7 @@ import { useMutation, useQuery } from '@tanstack/react-query';
 import { useLocalSearchParams, useRouter } from 'expo-router';
 import { ArrowRight, Check } from 'lucide-react-native';
 import { api } from '../lib/api';
-import { confirmAsync } from '../lib/confirm';
+import { confirmAsync } from '../lib/dialog';
 import {
   bulkUpdateLessons,
   useRefreshLessons,
@@ -15,9 +15,10 @@ import {
   buildBulkChanges,
   commonWeekday,
   EMPTY_BULK_FORM,
-  forwardShiftDays,
   hasBulkChange,
+  sameWeekShiftDays,
   shiftedDate,
+  shiftTargetWeekday,
   validateBulkForm,
   type BulkEditForm,
 } from '../lib/lessonForm';
@@ -41,6 +42,7 @@ import { FormField, TextField } from '../components/form/FormField';
 import { Stepper } from '../components/form/Stepper';
 import { TimeField } from '../components/form/TimeField';
 import {
+  LESSON_STATUS_CHOICES,
   LessonAssignmentFields,
   LessonNote,
 } from '../components/lesson/LessonFormFields';
@@ -50,12 +52,11 @@ type StudentLite = { id: string; name: string; instrument: string | null };
 const MAX_SHIFT = 366;
 const PREVIEW_LIMIT = 4;
 
-const STATUS_CHOICES: { value: LessonStatus | null; label: string }[] = [
-  { value: null, label: 'Manter' },
-  { value: 'SCHEDULED', label: 'Agendada' },
-  { value: 'COMPLETED', label: 'Realizada' },
-  { value: 'CANCELLED', label: 'Cancelada' },
-];
+const STATUS_CHOICES: {
+  value: LessonStatus | null;
+  label: string;
+  selectedColor?: string;
+}[] = [{ value: null, label: 'Manter' }, ...LESSON_STATUS_CHOICES];
 
 function plural(count: number, one: string, many: string) {
   return `${count} ${count === 1 ? one : many}`;
@@ -169,11 +170,13 @@ export default function EditLessonsInBulk() {
   const [timeError, setTimeError] = useState<string | undefined>();
   const [submitError, setSubmitError] = useState<string | null>(null);
   const changed = hasBulkChange(form);
+  const guard = useUnsavedChangesGuard(changed);
 
   const apply = useMutation({
     mutationFn: () => bulkUpdateLessons(lessonIds, buildBulkChanges(form)),
     onSuccess: () => {
       refreshLessons(studentId, lessonIds);
+      guard.allowLeave();
       router.back();
     },
     onError: (error: any) => {
@@ -183,20 +186,28 @@ export default function EditLessonsInBulk() {
     },
   });
 
-  useUnsavedChangesGuard(changed && !apply.isSuccess);
-
   function patch(next: Partial<BulkEditForm>) {
     setForm((current) => ({ ...current, ...next }));
     setSubmitError(null);
     if ('time' in next) setTimeError(undefined);
   }
 
+  // "Agora" fixo desde que a tela abriu (decide se o dia escolhido já passou)
+  const [openedAt] = useState(() => Date.now());
+
+  // Só dá pra "passar tudo para quarta" quando todas são do mesmo dia da
+  // semana. A 1ª aula (a mais antiga) é a base: o resto anda os mesmos dias.
   const weekday = commonWeekday(selected);
-  // Dia da semana de destino (só quando todas as aulas são do mesmo dia)
+  const firstLessonIso = selected[0]?.scheduledAt;
+  const shiftFor = (target: number, time: string) =>
+    sameWeekShiftDays({
+      firstLessonIso,
+      targetWeekday: target,
+      time,
+      now: openedAt,
+    });
   const targetWeekday =
-    weekday !== null && form.shiftDays !== 0 && Math.abs(form.shiftDays) < 7
-      ? (((weekday + form.shiftDays) % 7) + 7) % 7
-      : null;
+    weekday !== null ? shiftTargetWeekday(weekday, form.shiftDays) : null;
 
   async function handleApply() {
     const errors = validateBulkForm(form);
@@ -306,7 +317,7 @@ export default function EditLessonsInBulk() {
           {weekday !== null && (
             <FormField
               label="Passar todas para"
-              hint={`Hoje são aulas de ${WEEKDAY_NAMES[weekday].toLowerCase()}.`}
+              hint={`Hoje são aulas de ${WEEKDAY_NAMES[weekday].toLowerCase()}. Fica na mesma semana da primeira aula (${formatLessonShortDate(firstLessonIso)}); se o dia já passou, vai para a semana seguinte.`}
             >
               <ChoiceChips
                 options={[
@@ -322,7 +333,7 @@ export default function EditLessonsInBulk() {
                 onChange={(target) =>
                   patch({
                     shiftDays:
-                      target === null ? 0 : forwardShiftDays(weekday, target),
+                      target === null ? 0 : shiftFor(target, form.time),
                   })
                 }
               />
@@ -345,7 +356,20 @@ export default function EditLessonsInBulk() {
             label="Novo horário"
             hint="Deixe em branco para manter o horário de cada aula."
             value={form.time}
-            onChange={(time) => patch({ time })}
+            onChange={(time) => {
+              // Mudar o horário pode fazer o dia escolhido já ter passado
+              // (ou deixar de ter): recalcula enquanto os dias não foram
+              // ajustados à mão.
+              const followsWeekday =
+                targetWeekday !== null &&
+                form.shiftDays === shiftFor(targetWeekday, form.time);
+              patch({
+                time,
+                ...(followsWeekday
+                  ? { shiftDays: shiftFor(targetWeekday, time) }
+                  : {}),
+              });
+            }}
             error={timeError}
           />
           <SchedulePreview lessons={selected} form={form} />

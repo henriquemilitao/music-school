@@ -205,3 +205,38 @@ export function groupByGuardian(rows: StudentRowData[]): GuardianGroup[] {
   });
   return [...groups.values()];
 }
+
+// ─── Itens da lista (virtualizada) ────────────────────────────────────
+
+// Cada item da FlatList: um aluno solto (busca ativa) ou um grupo de
+// responsável. `index`/`startIndex` é a numeração mostrada ao lado do nome.
+export type StudentListItem =
+  | { kind: 'row'; key: string; student: StudentRowData; index: number }
+  | { kind: 'group'; key: string; group: GuardianGroup; startIndex: number };
+
+// Busca ativa: lista direta; senão, agrupada por responsável.
+export function buildListItems(
+  rows: StudentRowData[],
+  searching: boolean,
+): StudentListItem[] {
+  if (searching) {
+    return rows.map((student, i) => ({
+      kind: 'row' as const,
+      key: student.id,
+      student,
+      index: i + 1,
+    }));
+  }
+
+  let counter = 0;
+  return groupByGuardian(rows).map((group) => {
+    const startIndex = counter + 1;
+    counter += group.students.length;
+    return {
+      kind: 'group' as const,
+      key: group.guardianId,
+      group,
+      startIndex,
+    };
+  });
+}

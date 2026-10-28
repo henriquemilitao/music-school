@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { memo, useCallback, useState } from 'react';
 import { View, Text, TouchableOpacity } from 'react-native';
 import { ChevronDown } from 'lucide-react-native';
 import type { StudentLesson } from '../../../lib/lessonTypes';
@@ -40,7 +40,7 @@ type LessonMonthGroupProps = {
 
 // Grupo de aulas de um mês, em formato sanfona. No modo de seleção o
 // cabeçalho ganha uma caixa que marca o mês inteiro.
-export function LessonMonthGroup({
+export const LessonMonthGroup = memo(function LessonMonthGroup({
   monthKey,
   lessons,
   studentInstrument,
@@ -53,6 +53,13 @@ export function LessonMonthGroup({
   onToggleMonth,
 }: LessonMonthGroupProps) {
   const [open, setOpen] = useState(defaultOpen);
+
+  // Mesma função para todas as linhas (ver LessonRow)
+  const handlePress = useCallback(
+    (lessonId: string) =>
+      selecting ? onToggleLesson(lessonId) : onOpenLesson(lessonId),
+    [selecting, onToggleLesson, onOpenLesson],
+  );
 
   const ids = lessons.map((lesson) => lesson.id);
   const selectedCount = ids.filter((id) => selectedIds.has(id)).length;
@@ -122,14 +129,12 @@ export function LessonMonthGroup({
               isFirst={i === 0}
               selecting={selecting}
               selected={selectedIds.has(lesson.id)}
-              onPress={() =>
-                selecting ? onToggleLesson(lesson.id) : onOpenLesson(lesson.id)
-              }
-              onLongPress={() => onLongPressLesson(lesson.id)}
+              onPress={handlePress}
+              onLongPress={onLongPressLesson}
             />
           ))}
         </View>
       )}
     </View>
   );
-}
+});

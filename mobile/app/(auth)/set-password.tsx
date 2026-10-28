@@ -4,7 +4,6 @@ import {
   Text,
   TextInput,
   TouchableOpacity,
-  Alert,
   Image,
   KeyboardAvoidingView,
   ScrollView,
@@ -14,6 +13,7 @@ import {
 } from 'react-native';
 import { useRouter, useLocalSearchParams } from 'expo-router';
 import { Eye, EyeOff } from 'lucide-react-native';
+import { alertAsync } from '../../lib/dialog';
 import { api } from '../../lib/api';
 
 const logo = require('../../assets/images/logo.png');
@@ -83,33 +83,49 @@ export default function SetPassword() {
 
   async function handleSetPassword() {
     if (!password || !confirmPassword) {
-      Alert.alert('Atenção', 'Preencha os dois campos de senha');
+      void alertAsync({
+        title: 'Atenção',
+        message: 'Preencha os dois campos de senha',
+        tone: 'warning',
+      });
       return;
     }
 
     if (password.length < 6) {
-      Alert.alert('Atenção', 'A senha precisa ter pelo menos 6 caracteres');
+      void alertAsync({
+        title: 'Atenção',
+        message: 'A senha precisa ter pelo menos 6 caracteres',
+        tone: 'warning',
+      });
       return;
     }
 
     if (password !== confirmPassword) {
-      Alert.alert('Atenção', 'As senhas não coincidem');
+      void alertAsync({
+        title: 'Atenção',
+        message: 'As senhas não coincidem',
+        tone: 'warning',
+      });
       return;
     }
 
     setIsSubmitting(true);
     try {
       await api.post('/auth/set-password', { token, password });
-      Alert.alert(
-        'Pronto!',
-        'Sua senha foi criada. Faça login para continuar.',
-        [{ text: 'OK', onPress: () => router.replace('/login') }],
-      );
-    } catch (error) {
-      Alert.alert(
-        'Erro',
-        'Não foi possível definir sua senha. O link pode ter expirado — peça um novo.',
-      );
+      await alertAsync({
+        title: 'Pronto!',
+        message: 'Sua senha foi criada. Faça login para continuar.',
+        okText: 'Ir para o login',
+        tone: 'success',
+      });
+      router.replace('/login');
+    } catch {
+      void alertAsync({
+        title: 'Erro',
+        message:
+          'Não foi possível definir sua senha. O link pode ter expirado — peça um novo.',
+        tone: 'error',
+      });
     } finally {
       setIsSubmitting(false);
     }

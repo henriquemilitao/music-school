@@ -4,7 +4,7 @@ import { useMutation, useQuery } from '@tanstack/react-query';
 import { useLocalSearchParams, useRouter } from 'expo-router';
 import { UserMinus } from 'lucide-react-native';
 import { api } from '../../lib/api';
-import { confirmAsync } from '../../lib/confirm';
+import { confirmAsync } from '../../lib/dialog';
 import { firstName } from '../../lib/name';
 import {
   formatLessonShortDate,

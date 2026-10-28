@@ -5,7 +5,6 @@ import {
   TextInput,
   TouchableOpacity,
   ScrollView,
-  Alert,
 } from 'react-native';
 import { useRouter } from 'expo-router';
 import {
@@ -18,6 +17,7 @@ import {
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useAuth } from '../context/AuthContext';
 import { api } from '../lib/api';
+import { confirmAsync } from '../lib/dialog';
 
 const CONFIRM_WORD = 'EXCLUIR';
 
@@ -254,18 +254,15 @@ export default function DeleteAccountScreen() {
                 opacity: loading ? 0.7 : 1,
               }}
               onPress={() => {
-                Alert.alert(
-                  'Excluir conta',
-                  'Tem certeza? Essa ação não pode ser desfeita.',
-                  [
-                    { text: 'Cancelar', style: 'cancel' },
-                    {
-                      text: 'Excluir',
-                      style: 'destructive',
-                      onPress: handleDelete,
-                    },
-                  ],
-                );
+                void confirmAsync({
+                  title: 'Excluir conta',
+                  message: 'Tem certeza? Essa ação não pode ser desfeita.',
+                  confirmText: 'Excluir',
+                  cancelText: 'Cancelar',
+                  destructive: true,
+                }).then((confirmed) => {
+                  if (confirmed) void handleDelete();
+                });
               }}
             >
               <Text

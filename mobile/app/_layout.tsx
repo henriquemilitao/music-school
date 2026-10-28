@@ -21,6 +21,7 @@ import {
   subscribeToPushTokenChanges,
 } from '../lib/notifications';
 import { api } from '../lib/api';
+import { DialogHost } from '../components/ui/DialogHost';
 
 const queryClient = new QueryClient();
 
@@ -117,6 +118,7 @@ export default function RootLayout() {
         <AuthGate>
           <Stack screenOptions={{ headerShown: false }} />
         </AuthGate>
+        <DialogHost />
       </AuthProvider>
     </QueryClientProvider>
   );

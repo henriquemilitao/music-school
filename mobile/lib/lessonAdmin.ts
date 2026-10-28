@@ -8,7 +8,6 @@ import { api } from './api';
 import type {
   AdminLesson,
   BulkLessonChanges,
-  CancelLessonBody,
   CreateLessonBody,
   StudentLesson,
   TeacherOption,
@@ -27,14 +26,6 @@ export async function fetchStudentLessons(studentId: string) {
 
 export async function updateLesson(lessonId: string, body: UpdateLessonBody) {
   const response = await api.patch<AdminLesson>(`/lessons/${lessonId}`, body);
-  return response.data;
-}
-
-export async function cancelLesson(lessonId: string, body: CancelLessonBody) {
-  const response = await api.post<{
-    lesson: AdminLesson;
-    makeup: AdminLesson | null;
-  }>(`/lessons/${lessonId}/cancel`, body);
   return response.data;
 }
 
@@ -68,11 +59,18 @@ export async function bulkDeleteLessons(lessonIds: string[]) {
 
 // ─── Hooks de dados ───────────────────────────────────────────────────
 
+// Por quanto tempo o que já foi carregado vale como "fresco": abrir de novo a
+// aba/tela mostra na hora, sem recarregar. Toda mudança invalida o cache
+// (useRefreshLessons), então nada fica desatualizado depois de editar.
+const LESSONS_STALE_MS = 30_000;
+const TEACHERS_STALE_MS = 5 * 60_000;
+
 export function useStudentLessons(studentId: string, enabled = true) {
   return useQuery({
     queryKey: adminLessonKeys.byStudent(studentId),
     queryFn: () => fetchStudentLessons(studentId),
     enabled: !!studentId && enabled,
+    staleTime: LESSONS_STALE_MS,
   });
 }
 
@@ -89,6 +87,7 @@ export function useTeachers() {
   return useQuery({
     queryKey: ['admin-teachers'],
     queryFn: async () => (await api.get<TeacherOption[]>('/teachers')).data,
+    staleTime: TEACHERS_STALE_MS,
   });
 }
 

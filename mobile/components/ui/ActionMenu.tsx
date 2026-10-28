@@ -1,4 +1,11 @@
-import { Modal, Pressable, Text, TouchableOpacity, View } from 'react-native';
+import {
+  Modal,
+  Platform,
+  Pressable,
+  Text,
+  TouchableOpacity,
+  View,
+} from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 export type ActionMenuItem = {
@@ -60,7 +67,10 @@ export function ActionMenu({
                 key={item.key}
                 onPress={() => {
                   onClose();
-                  item.onPress();
+                  // iOS não apresenta outro Modal (ex: um diálogo de
+                  // confirmação) enquanto este ainda está fechando
+                  if (Platform.OS === 'ios') setTimeout(item.onPress, 350);
+                  else item.onPress();
                 }}
                 className="flex-row items-center gap-3 py-3.5"
                 style={

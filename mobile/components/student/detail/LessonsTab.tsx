@@ -1,4 +1,4 @@
-import { useMemo } from 'react';
+import { useCallback, useMemo } from 'react';
 import { ActivityIndicator, Text, TouchableOpacity, View } from 'react-native';
 import { CheckSquare, Plus } from 'lucide-react-native';
 import type { StudentLesson } from '../../../lib/lessonTypes';
@@ -85,6 +85,13 @@ export function LessonsTab({
 }: LessonsTabProps) {
   const groups = useMemo(() => groupLessonsByMonth(lessons ?? []), [lessons]);
 
+  // Funções estáveis: as linhas só redesenham quando a própria aula muda
+  const { selecting, start, toggle } = selection;
+  const handleLongPress = useCallback(
+    (lessonId: string) => (selecting ? toggle(lessonId) : start(lessonId)),
+    [selecting, start, toggle],
+  );
+
   if (loading) {
     return (
       <Card>
@@ -148,12 +155,8 @@ export function LessonsTab({
             selecting={selection.selecting}
             selectedIds={selection.ids}
             onOpenLesson={onOpenLesson}
-            onToggleLesson={selection.toggle}
-            onLongPressLesson={(lessonId) =>
-              selection.selecting
-                ? selection.toggle(lessonId)
-                : selection.start(lessonId)
-            }
+            onToggleLesson={toggle}
+            onLongPressLesson={handleLongPress}
             onToggleMonth={selection.setMany}
           />
         ))

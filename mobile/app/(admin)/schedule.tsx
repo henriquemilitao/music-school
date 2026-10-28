@@ -1,4 +1,4 @@
-import { useCallback, useState } from 'react';
+import { useCallback, useEffect, useState } from 'react';
 import {
   View,
   Text,
@@ -202,23 +202,35 @@ export default function AdminSchedule() {
   const [pickerOpen, setPickerOpen] = useState(false);
   const queryClient = useQueryClient();
 
-  const dateKey = toDateKey(selectedDate);
+  const dayQuery = useCallback(
+    (date: Date) => ({
+      queryKey: adminLessonKeys.scheduleDay(toDateKey(date)),
+      queryFn: async () => {
+        const response = await api.get<LessonOfDay[]>('/lessons/day', {
+          // início/fim do dia no fuso do aparelho, em UTC (ver dayRangeIso)
+          params: dayRangeIso(date),
+        });
+        return response.data;
+      },
+      // Voltar a um dia já visto mostra na hora (a mudança de aulas invalida)
+      staleTime: 30_000,
+    }),
+    [],
+  );
 
   const {
     data: lessons,
     isLoading,
     isError,
     refetch,
-  } = useQuery({
-    queryKey: adminLessonKeys.scheduleDay(dateKey),
-    queryFn: async () => {
-      const response = await api.get<LessonOfDay[]>('/lessons/day', {
-        // início/fim do dia no fuso do aparelho, em UTC (ver dayRangeIso)
-        params: dayRangeIso(selectedDate),
-      });
-      return response.data;
-    },
-  });
+  } = useQuery(dayQuery(selectedDate));
+
+  // Já carrega o dia anterior e o seguinte: as setas ficam instantâneas
+  useEffect(() => {
+    [-1, 1].forEach((delta) => {
+      void queryClient.prefetchQuery(dayQuery(addDays(selectedDate, delta)));
+    });
+  }, [selectedDate, queryClient, dayQuery]);
 
   useFocusEffect(
     useCallback(() => {

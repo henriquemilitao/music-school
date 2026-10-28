@@ -4,7 +4,7 @@ import { useMutation, useQuery } from '@tanstack/react-query';
 import { useLocalSearchParams, useRouter } from 'expo-router';
 import { ArrowRight, Check, Info } from 'lucide-react-native';
 import { api } from '../../lib/api';
-import { confirmAsync } from '../../lib/confirm';
+import { confirmAsync } from '../../lib/dialog';
 import {
   buildUpdateBody,
   dueDayDistance,
@@ -173,11 +173,14 @@ export default function EditEnrollment() {
     enabled: !!enrollment && step === 'lessons' && !!selectedLessonId,
   });
 
+  const guard = useUnsavedChangesGuard(dirty);
+
   const save = useMutation({
     mutationFn: (body: ReturnType<typeof buildUpdateBody>) =>
       updateEnrollment(enrollment!.id, body),
     onSuccess: () => {
       refreshStudent(id);
+      guard.allowLeave();
       router.back();
     },
     onError: (error: any) => {
@@ -186,8 +189,6 @@ export default function EditEnrollment() {
       );
     },
   });
-
-  useUnsavedChangesGuard(dirty && !save.isPending && !save.isSuccess);
 
   function patch(change: Partial<EnrollmentEditForm>) {
     setDraft((current) => ({ ...current, ...change }));

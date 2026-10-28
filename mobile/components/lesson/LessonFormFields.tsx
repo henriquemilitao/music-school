@@ -4,32 +4,36 @@ import { Info } from 'lucide-react-native';
 import { INSTRUMENT_OPTIONS } from '../../lib/instrument';
 import { combineDateTime, type LessonFormErrors } from '../../lib/lessonForm';
 import {
-  formatLessonShortDate,
-  formatLessonTime,
-} from '../../lib/lessonFormat';
-import {
   CANCEL_REASON_MAX_LENGTH,
   type LessonStatus,
-  type StudentLesson,
   type TeacherOption,
 } from '../../lib/lessonTypes';
 import { firstName } from '../../lib/name';
 import { DURATION_OPTIONS } from '../../lib/newStudent';
+import { adminLessonStatusConfig } from '../../lib/status';
 import { ChoiceChips } from '../form/ChoiceChips';
 import { DateField } from '../form/DateField';
 import { FormField, TextField } from '../form/FormField';
-import { OptionRow } from '../form/OptionRow';
 import { TimeField } from '../form/TimeField';
-import { ToggleRow } from '../form/ToggleRow';
 
-// Pedaços de formulário de aula, compartilhados entre editar, nova aula,
-// cancelar com reposição e a edição em lote.
+// Pedaços de formulário de aula, compartilhados entre editar, nova aula e a
+// edição em lote.
 
-const STATUS_OPTIONS: { value: LessonStatus; label: string }[] = [
-  { value: 'SCHEDULED', label: 'Agendada' },
-  { value: 'COMPLETED', label: 'Realizada' },
-  { value: 'CANCELLED', label: 'Cancelada' },
-];
+// Situações com a mesma cor que têm no resto do app (amarela, verde,
+// vermelha): ao escolher, a pílula fica dessa cor.
+export const LESSON_STATUS_CHOICES: {
+  value: LessonStatus;
+  label: string;
+  selectedColor: string;
+}[] = [
+  ['SCHEDULED', 'Agendada'],
+  ['COMPLETED', 'Realizada'],
+  ['CANCELLED', 'Cancelada'],
+].map(([value, label]) => ({
+  value: value as LessonStatus,
+  label,
+  selectedColor: adminLessonStatusConfig(value as LessonStatus).colorText,
+}));
 
 export function LessonNote({ children }: { children: React.ReactNode }) {
   return (
@@ -62,23 +66,28 @@ export function LessonWhenFields({
   dateLabel?: string;
   timeLabel?: string;
 }) {
+  // Data e horário lado a lado: são dois campos curtos
   return (
-    <>
-      <DateField
-        label={dateLabel}
-        required
-        value={date}
-        onChange={(next) => onChange({ date: next })}
-        error={errors?.date}
-      />
-      <TimeField
-        label={timeLabel}
-        required
-        value={time}
-        onChange={(next) => onChange({ time: next })}
-        error={errors?.time}
-      />
-    </>
+    <View className="flex-row gap-3">
+      <View style={{ flex: 3 }}>
+        <DateField
+          label={dateLabel}
+          required
+          value={date}
+          onChange={(next) => onChange({ date: next })}
+          error={errors?.date}
+        />
+      </View>
+      <View style={{ flex: 2 }}>
+        <TimeField
+          label={timeLabel}
+          required
+          value={time}
+          onChange={(next) => onChange({ time: next })}
+          error={errors?.time}
+        />
+      </View>
+    </View>
   );
 }
 
@@ -180,6 +189,7 @@ export function LessonStatusFields({
   date,
   time,
   error,
+  rescheduled = false,
   onChange,
 }: {
   status: LessonStatus;
@@ -187,6 +197,8 @@ export function LessonStatusFields({
   date: string;
   time: string;
   error?: string;
+  // A situação voltou para "Agendada" sozinha porque a data ficou no futuro
+  rescheduled?: boolean;
   onChange: (patch: { status?: LessonStatus; cancelReason?: string }) => void;
 }) {
   // Aula "agendada" no passado: o servidor marca como realizada sozinho.
@@ -201,7 +213,7 @@ export function LessonStatusFields({
     <>
       <FormField label="Situação da aula">
         <ChoiceChips
-          options={STATUS_OPTIONS}
+          options={LESSON_STATUS_CHOICES}
           value={status}
           onChange={(value) => onChange({ status: value })}
         />
@@ -219,74 +231,18 @@ export function LessonStatusFields({
         />
       )}
 
+      {rescheduled && (
+        <LessonNote>
+          Como a nova data é futura, a aula voltou para “Agendada”. Dá para
+          trocar a situação acima se preferir outra.
+        </LessonNote>
+      )}
+
       {scheduledInThePast && (
         <LessonNote>
           Essa data já passou: aulas agendadas no passado são marcadas como
           realizadas automaticamente em poucos minutos.
         </LessonNote>
-      )}
-    </>
-  );
-}
-
-// ─── Reposição ────────────────────────────────────────────────────────
-
-export function MakeupFields({
-  isMakeup,
-  makeupForLessonId,
-  candidates,
-  onChange,
-}: {
-  isMakeup: boolean;
-  makeupForLessonId: string | null;
-  // Aulas canceladas que ainda podem ser repostas
-  candidates: StudentLesson[];
-  onChange: (patch: {
-    isMakeup?: boolean;
-    makeupForLessonId?: string | null;
-  }) => void;
-}) {
-  return (
-    <>
-      <ToggleRow
-        label="É uma aula de reposição"
-        description="Marca a aula como reposição de outra"
-        value={isMakeup}
-        onChange={(value) =>
-          onChange({
-            isMakeup: value,
-            makeupForLessonId: value ? makeupForLessonId : null,
-          })
-        }
-      />
-
-      {isMakeup && (
-        <FormField
-          label="Qual aula está sendo reposta?"
-          hint="Opcional. Se não informar, fica só como reposição."
-        >
-          <View className="gap-2">
-            <OptionRow
-              selected={makeupForLessonId === null}
-              title="Não informar"
-              onPress={() => onChange({ makeupForLessonId: null })}
-            />
-            {candidates.map((candidate) => (
-              <OptionRow
-                key={candidate.id}
-                selected={makeupForLessonId === candidate.id}
-                title={`${formatLessonShortDate(candidate.scheduledAt)} · ${formatLessonTime(candidate.scheduledAt)}`}
-                subtitle={candidate.cancelReason ?? 'Cancelada'}
-                onPress={() => onChange({ makeupForLessonId: candidate.id })}
-              />
-            ))}
-            {candidates.length === 0 && (
-              <Text className="text-xs text-gray-400 px-1">
-                Não há aulas canceladas sem reposição para vincular.
-              </Text>
-            )}
-          </View>
-        </FormField>
       )}
     </>
   );

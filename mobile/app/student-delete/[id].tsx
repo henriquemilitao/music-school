@@ -4,7 +4,7 @@ import { useMutation, useQuery } from '@tanstack/react-query';
 import { useLocalSearchParams, useRouter } from 'expo-router';
 import { AlertTriangle, Trash2, UserMinus } from 'lucide-react-native';
 import { api } from '../../lib/api';
-import { confirmAsync } from '../../lib/confirm';
+import { confirmAsync } from '../../lib/dialog';
 import { firstName, namesMatch } from '../../lib/name';
 import {
   deleteStudentPermanently,

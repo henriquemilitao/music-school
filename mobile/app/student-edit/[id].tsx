@@ -80,11 +80,14 @@ export default function EditStudentProfile() {
   const form: ProfileForm | null = initial ? { ...initial, ...draft } : null;
   const dirty = !!initial && !!form && isProfileDirty(initial, form);
 
+  const guard = useUnsavedChangesGuard(dirty);
+
   const save = useMutation({
     mutationFn: (body: ReturnType<typeof buildProfileBody>) =>
       updateStudentProfile(id, body),
     onSuccess: () => {
       refreshStudent(id);
+      guard.allowLeave();
       router.back();
     },
     onError: (error: any) => {
@@ -93,9 +96,6 @@ export default function EditStudentProfile() {
       );
     },
   });
-
-  // Não pergunta "descartar?" no meio de um salvamento bem-sucedido
-  useUnsavedChangesGuard(dirty && !save.isPending && !save.isSuccess);
 
   function patch(change: Partial<ProfileForm>) {
     setDraft((current) => ({ ...current, ...change }));

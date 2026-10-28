@@ -1,3 +1,4 @@
+import { memo } from 'react';
 import { Text, TouchableOpacity, View } from 'react-native';
 import { ChevronRight, UserRound } from 'lucide-react-native';
 import type { GuardianGroup, StudentRowData } from '../../../lib/studentList';
@@ -18,7 +19,8 @@ const CARD_SHADOW = {
 } as const;
 
 // Uma linha da lista: número, nome, instrumento · professor e situação.
-export function StudentRow({
+// Memorizada: ao filtrar, só redesenha quem realmente mudou.
+export const StudentRow = memo(function StudentRow({
   student,
   index,
   onOpen,
@@ -63,10 +65,10 @@ export function StudentRow({
       <ChevronRight size={16} color="#D4CFC4" />
     </TouchableOpacity>
   );
-}
+});
 
 // Grupo por responsável — sempre mostrado, mesmo com 1 aluno
-export function StudentGroup({
+export const StudentGroup = memo(function StudentGroup({
   group,
   startIndex,
   onOpen,
@@ -93,4 +95,4 @@ export function StudentGroup({
       ))}
     </View>
   );
-}
+});

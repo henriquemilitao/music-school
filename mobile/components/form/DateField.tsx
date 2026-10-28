@@ -55,6 +55,8 @@ export function DateField({
                 includeFontPadding: false,
               }}
               numberOfLines={1}
+              adjustsFontSizeToFit
+              minimumFontScale={0.8}
             >
               {display ?? placeholder}
             </Text>

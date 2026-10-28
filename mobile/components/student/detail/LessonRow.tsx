@@ -1,11 +1,10 @@
+import { memo } from 'react';
 import { Text, TouchableOpacity, View } from 'react-native';
 import { CalendarClock, Check, ChevronRight } from 'lucide-react-native';
 import { formatInstrument } from '../../../lib/instrument';
-import { lessonTags } from '../../../lib/lessonForm';
 import { formatLessonTimeRange } from '../../../lib/lessonFormat';
 import type { LessonStatus, StudentLesson } from '../../../lib/lessonTypes';
 import { firstName } from '../../../lib/name';
-import { LessonTags } from '../../lesson/LessonTags';
 import { NotesIndicator } from '../../lesson/NotesIndicator';
 import { Badge } from './Badge';
 
@@ -67,13 +66,15 @@ type LessonRowProps = {
   isFirst: boolean;
   selecting: boolean;
   selected: boolean;
-  onPress: () => void;
-  onLongPress: () => void;
+  // Recebem o id da aula, assim o pai passa a MESMA função para todas as
+  // linhas e o memo evita redesenhar as que não mudaram
+  onPress: (lessonId: string) => void;
+  onLongPress: (lessonId: string) => void;
 };
 
 // Uma aula na lista do aluno. Toque abre o detalhe; toque longo (ou
 // "Selecionar") liga o modo de seleção, em que o toque marca/desmarca.
-export function LessonRow({
+export const LessonRow = memo(function LessonRow({
   lesson,
   studentInstrument,
   isFirst,
@@ -94,12 +95,11 @@ export function LessonRow({
   ]
     .filter(Boolean)
     .join(' · ');
-  const tags = lessonTags(lesson);
 
   return (
     <TouchableOpacity
-      onPress={onPress}
-      onLongPress={onLongPress}
+      onPress={() => onPress(lesson.id)}
+      onLongPress={() => onLongPress(lesson.id)}
       delayLongPress={350}
       activeOpacity={0.7}
       className="flex-row items-center justify-between py-3 -mx-2 px-2 rounded-xl"
@@ -129,7 +129,6 @@ export function LessonRow({
           </Text>
           <Text className="text-xs text-gray-500">{details}</Text>
           {lesson.notes ? <NotesIndicator /> : null}
-          <LessonTags tags={tags} />
         </View>
       </View>
       <View className="flex-row items-center gap-2 pl-2">
@@ -138,4 +137,4 @@ export function LessonRow({
       </View>
     </TouchableOpacity>
   );
-}
+});

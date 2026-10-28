@@ -1,6 +1,12 @@
 import { View, Text, TouchableOpacity } from 'react-native';
 
-type Option<T> = { value: T; label: string };
+type Option<T> = {
+  value: T;
+  label: string;
+  // Cor da pílula quando selecionada (padrão: dourado). Útil pra situações
+  // que já têm cor no app (agendada, realizada, cancelada).
+  selectedColor?: string;
+};
 
 type ChoiceChipsProps<T> = {
   options: Option<T>[];
@@ -19,15 +25,16 @@ export function ChoiceChips<T extends string | number | null>({
     <View className="flex-row flex-wrap gap-2">
       {options.map((option) => {
         const selected = option.value === value;
+        const activeColor = option.selectedColor ?? '#B08D57';
         return (
           <TouchableOpacity
             key={String(option.value)}
             onPress={() => onChange(option.value)}
             className="rounded-full px-4 py-2.5"
             style={{
-              backgroundColor: selected ? '#B08D57' : '#F5F1EA',
+              backgroundColor: selected ? activeColor : '#F5F1EA',
               borderWidth: 1,
-              borderColor: selected ? '#B08D57' : 'rgba(0,0,0,0.08)',
+              borderColor: selected ? activeColor : 'rgba(0,0,0,0.08)',
             }}
             accessibilityRole="radio"
             accessibilityState={{ selected }}

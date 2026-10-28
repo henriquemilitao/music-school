@@ -7,7 +7,6 @@ import { api } from '../../lib/api';
 import {
   buildCreateBody,
   newLessonForm,
-  replaceableLessons,
   validateLessonForm,
   type LessonForm,
   type LessonFormErrors,
@@ -15,7 +14,6 @@ import {
 import {
   createLesson,
   useRefreshLessons,
-  useStudentLessons,
   useTeachers,
 } from '../../lib/lessonAdmin';
 import { firstName } from '../../lib/name';
@@ -29,7 +27,6 @@ import { InlineFeedback } from '../../components/ui/InlineFeedback';
 import {
   LessonAssignmentFields,
   LessonWhenFields,
-  MakeupFields,
 } from '../../components/lesson/LessonFormFields';
 import type { EnrollmentSummary } from '../../components/student/detail/EnrollmentCard';
 
@@ -57,14 +54,11 @@ function SectionTitle({
   );
 }
 
-// Criar uma aula a mais (extra ou reposição). Já vem preenchida com o que se
-// sabe do aluno (instrumento, professor, duração); dia e horário ficam em
-// branco de propósito. Com `makeupFor`, nasce como reposição daquela aula.
+// Criar uma aula a mais. Já vem preenchida com o que se sabe do aluno
+// (instrumento, professor, duração); dia e horário ficam em branco de
+// propósito, pois são obrigatórios.
 export default function NewLesson() {
-  const { studentId, makeupFor } = useLocalSearchParams<{
-    studentId: string;
-    makeupFor?: string;
-  }>();
+  const { studentId } = useLocalSearchParams<{ studentId: string }>();
   const router = useRouter();
   const refreshLessons = useRefreshLessons();
 
@@ -85,7 +79,6 @@ export default function NewLesson() {
     enabled: !!studentId,
   });
   const teachers = useTeachers().data ?? [];
-  const studentLessons = useStudentLessons(studentId).data ?? [];
 
   const student = studentQuery.data;
   const enrollment = enrollmentQuery.data;
@@ -98,10 +91,9 @@ export default function NewLesson() {
             instrument: student.instrument,
             teacherId: enrollment?.teacherId ?? null,
             durationMinutes: enrollment?.durationMinutes ?? 60,
-            makeupForLessonId: makeupFor ?? null,
           })
         : null,
-    [ready, student, enrollment, makeupFor],
+    [ready, student, enrollment],
   );
 
   const [draft, setDraft] = useState<Partial<LessonForm>>({});
@@ -113,6 +105,7 @@ export default function NewLesson() {
     [initial, draft],
   );
   const dirty = Object.keys(draft).length > 0;
+  const guard = useUnsavedChangesGuard(dirty);
 
   const create = useMutation({
     mutationFn: () => {
@@ -125,10 +118,8 @@ export default function NewLesson() {
       return createLesson(body);
     },
     onSuccess: (created) => {
-      refreshLessons(
-        studentId,
-        [created.id, form?.makeupForLessonId].filter((x): x is string => !!x),
-      );
+      refreshLessons(studentId, [created.id]);
+      guard.allowLeave();
       router.back();
     },
     onError: (error: any) => {
@@ -138,8 +129,6 @@ export default function NewLesson() {
       );
     },
   });
-
-  useUnsavedChangesGuard(dirty && !create.isSuccess);
 
   function patch(next: Partial<LessonForm>) {
     setDraft((current) => ({ ...current, ...next }));
@@ -161,7 +150,7 @@ export default function NewLesson() {
     create.mutate();
   }
 
-  const title = makeupFor ? 'Marcar reposição' : 'Nova aula';
+  const title = 'Nova aula';
 
   if (studentQuery.isLoading || enrollmentQuery.isLoading) {
     return (
@@ -187,10 +176,6 @@ export default function NewLesson() {
     );
   }
 
-  const candidates = replaceableLessons(studentLessons, {
-    keepId: form.makeupForLessonId,
-  });
-
   return (
     <DetailScreen
       title={title}
@@ -199,7 +184,7 @@ export default function NewLesson() {
       footer={
         <ActionFooter>
           <Button
-            label={makeupFor ? 'Marcar reposição' : 'Criar aula'}
+            label="Criar aula"
             icon={Check}
             onPress={handleCreate}
             loading={create.isPending}
@@ -245,16 +230,6 @@ export default function NewLesson() {
             teachers={teachers}
             durationError={errors.durationMinutes}
             onChange={(next) => patch(next as Partial<LessonForm>)}
-          />
-        </Card>
-
-        <Card className="gap-5">
-          <SectionTitle title="Reposição" />
-          <MakeupFields
-            isMakeup={form.isMakeup}
-            makeupForLessonId={form.makeupForLessonId}
-            candidates={candidates}
-            onChange={patch}
           />
         </Card>
 

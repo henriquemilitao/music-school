@@ -8,7 +8,7 @@ import {
   buildLessonPatch,
   isLessonFormDirty,
   lessonToForm,
-  replaceableLessons,
+  rescheduledStatus,
   validateLessonForm,
   type LessonForm,
   type LessonFormErrors,
@@ -17,7 +17,6 @@ import {
   updateLesson,
   useAdminLesson,
   useRefreshLessons,
-  useStudentLessons,
   useTeachers,
 } from '../../lib/lessonAdmin';
 import { formatLessonFullDate } from '../../lib/lessonFormat';
@@ -33,7 +32,6 @@ import {
   LessonAssignmentFields,
   LessonStatusFields,
   LessonWhenFields,
-  MakeupFields,
 } from '../../components/lesson/LessonFormFields';
 
 function SectionTitle({
@@ -58,8 +56,9 @@ function SectionTitle({
   );
 }
 
-// Editar UMA aula: situação, data, horário, duração, instrumento, professor e
-// reposição. Só o que mudou é enviado.
+// Editar UMA aula: situação, data, horário, duração, instrumento e professor.
+// Só o que mudou é enviado. Uma aula cancelada que ganha data futura volta
+// sozinha para "Agendada" (é assim que se reagenda).
 export default function EditLesson() {
   const { id } = useLocalSearchParams<{ id: string }>();
   const router = useRouter();
@@ -69,7 +68,6 @@ export default function EditLesson() {
   const lessonQuery = useAdminLesson(id);
   const lesson = lessonQuery.data;
   const teachers = useTeachers().data ?? [];
-  const studentLessons = useStudentLessons(lesson?.studentId ?? '').data ?? [];
 
   const studentInstrument = lesson?.student.instrument ?? null;
   const initial = useMemo(
@@ -82,11 +80,25 @@ export default function EditLesson() {
   const [errors, setErrors] = useState<LessonFormErrors>({});
   const [submitError, setSubmitError] = useState<string | null>(null);
 
+  // "Agora" fixo desde que a tela abriu: só decide se a nova data é futura
+  const [openedAt] = useState(() => Date.now());
+  const autoStatus = initial
+    ? rescheduledStatus(initial, draft, openedAt)
+    : null;
+
   const form: LessonForm | null = useMemo(
-    () => (initial ? { ...initial, ...draft } : null),
-    [initial, draft],
+    () =>
+      initial
+        ? {
+            ...initial,
+            ...draft,
+            ...(autoStatus ? { status: autoStatus } : {}),
+          }
+        : null,
+    [initial, draft, autoStatus],
   );
   const dirty = !!initial && !!form && isLessonFormDirty(initial, form);
+  const guard = useUnsavedChangesGuard(dirty);
 
   const save = useMutation({
     mutationFn: () => {
@@ -101,6 +113,7 @@ export default function EditLesson() {
     onSuccess: (updated) => {
       queryClient.setQueryData(adminLessonKeys.detail(id), updated);
       refreshLessons(updated.studentId, [id]);
+      guard.allowLeave();
       router.back();
     },
     onError: (error: any) => {
@@ -109,8 +122,6 @@ export default function EditLesson() {
       );
     },
   });
-
-  useUnsavedChangesGuard(dirty && !save.isSuccess);
 
   function patch(next: Partial<LessonForm>) {
     setDraft((current) => ({ ...current, ...next }));
@@ -157,11 +168,6 @@ export default function EditLesson() {
     );
   }
 
-  const candidates = replaceableLessons(studentLessons, {
-    excludeId: lesson.id,
-    keepId: form.makeupForLessonId,
-  });
-
   return (
     <DetailScreen
       title="Editar aula"
@@ -203,6 +209,7 @@ export default function EditLesson() {
             date={form.date}
             time={form.time}
             error={errors.cancelReason}
+            rescheduled={!!autoStatus}
             onChange={patch}
           />
         </Card>
@@ -229,16 +236,6 @@ export default function EditLesson() {
             teachers={teachers}
             durationError={errors.durationMinutes}
             onChange={(next) => patch(next as Partial<LessonForm>)}
-          />
-        </Card>
-
-        <Card className="gap-5">
-          <SectionTitle title="Reposição" />
-          <MakeupFields
-            isMakeup={form.isMakeup}
-            makeupForLessonId={form.makeupForLessonId}
-            candidates={candidates}
-            onChange={patch}
           />
         </Card>
 

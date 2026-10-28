@@ -5,10 +5,9 @@
 // pela lista (aba Faturas) e pelo detalhe da fatura.
 
 import { useState } from 'react';
-import { Alert } from 'react-native';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { api } from './api';
-import { confirmAsync } from './confirm';
+import { alertAsync, confirmAsync } from './dialog';
 import { formatMonthLabelFromKey } from './paymentFormat';
 import { undoConfirmMessage } from './paymentView';
 import type { AdminPaymentDetail, StudentPayment } from './paymentTypes';
@@ -51,6 +50,8 @@ export function useStudentPayments(studentId: string, enabled: boolean) {
     queryKey: adminPaymentKeys.byStudent(studentId),
     queryFn: () => fetchStudentPayments(studentId),
     enabled: !!studentId && enabled,
+    // Mostrar a aba na hora ao voltar a ela; confirmar/desfazer invalida
+    staleTime: 30_000,
   });
 }
 
@@ -99,20 +100,22 @@ export function usePaymentActions() {
     mutationFn: (payment: PaymentRef) => confirmPaymentManually(payment.id),
     onSuccess: (_data, payment) => refresh(payment.studentId, payment.id),
     onError: (error) =>
-      Alert.alert(
-        'Erro',
-        errorMessage(error, 'Não foi possível confirmar o pagamento.'),
-      ),
+      void alertAsync({
+        title: 'Erro',
+        message: errorMessage(error, 'Não foi possível confirmar o pagamento.'),
+        tone: 'error',
+      }),
   });
 
   const undoMutation = useMutation({
     mutationFn: (payment: PaymentRef) => undoPayment(payment.id),
     onSuccess: (_data, payment) => refresh(payment.studentId, payment.id),
     onError: (error) =>
-      Alert.alert(
-        'Erro',
-        errorMessage(error, 'Não foi possível desfazer o pagamento.'),
-      ),
+      void alertAsync({
+        title: 'Erro',
+        message: errorMessage(error, 'Não foi possível desfazer o pagamento.'),
+        tone: 'error',
+      }),
   });
 
   async function run(

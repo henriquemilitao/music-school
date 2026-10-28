@@ -18,7 +18,7 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { ArrowRight, Send } from 'lucide-react-native';
 import { api } from '../lib/api';
-import { confirmAsync } from '../lib/confirm';
+import { confirmAsync } from '../lib/dialog';
 import { firstName } from '../lib/name';
 import { adminLessonKeys } from '../lib/queryKeys';
 import { useKeyboardOverlap } from '../lib/useKeyboardOverlap';
