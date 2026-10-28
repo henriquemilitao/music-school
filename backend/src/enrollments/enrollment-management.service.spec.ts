@@ -41,6 +41,8 @@ describe('EnrollmentManagementService', () => {
   const enrollmentsService = { findOne: jest.fn() };
 
   let service: EnrollmentManagementService;
+  const endAs = (input: Parameters<EnrollmentManagementService['end']>[2]) =>
+    service.end('enr-1', schoolId, input, 'admin-1');
 
   // Matrícula de quarta-feira 08:00, ciclos mensais ancorados no dia 4
   const enrollment = (overrides: Record<string, unknown> = {}) => ({
@@ -391,7 +393,7 @@ describe('EnrollmentManagementService', () => {
           payment('p1', '2099-11-04', 'OVERDUE'),
         ]);
 
-        const result = await service.end('enr-1', schoolId, {
+        const result = await endAs({
           mode: EndMode.FROM_LESSON,
           fromLessonId: 'a4',
           deletePaymentIds: ['p2'],
@@ -421,7 +423,7 @@ describe('EnrollmentManagementService', () => {
         fromLesson('a3');
         prisma.payment.findMany.mockResolvedValue([]);
 
-        const result = await service.end('enr-1', schoolId, {
+        const result = await endAs({
           mode: EndMode.FROM_LESSON,
           fromLessonId: 'a3',
         });
@@ -438,7 +440,7 @@ describe('EnrollmentManagementService', () => {
       it('cancela todas as aulas agendadas e inativa na hora', async () => {
         prisma.payment.findMany.mockResolvedValue([]);
 
-        const result = await service.end('enr-1', schoolId, {
+        const result = await endAs({
           mode: EndMode.NOW,
         });
 
@@ -461,7 +463,7 @@ describe('EnrollmentManagementService', () => {
           payment('p2', '2099-12-04', 'PENDING'),
         ]);
 
-        const result = await service.end('enr-1', schoolId, {
+        const result = await endAs({
           mode: EndMode.NOW,
         });
 
@@ -488,7 +490,7 @@ describe('EnrollmentManagementService', () => {
         expect(preview.olderPaymentsCount).toBe(2);
 
         await expect(
-          service.end('enr-1', schoolId, {
+          endAs({
             mode: EndMode.NOW,
             deletePaymentIds: ['p1'],
           }),
@@ -511,7 +513,7 @@ describe('EnrollmentManagementService', () => {
           'KEEP',
         ]);
 
-        await service.end('enr-1', schoolId, {
+        await endAs({
           mode: EndMode.NOW,
           deletePaymentIds: ['p2'],
         });
@@ -550,7 +552,7 @@ describe('EnrollmentManagementService', () => {
           }),
         ]);
 
-        await service.end('enr-1', schoolId, {
+        await endAs({
           mode: EndMode.NOW,
           deletePaymentIds: ['p2'],
         });
@@ -573,7 +575,7 @@ describe('EnrollmentManagementService', () => {
           }),
         ]);
 
-        await service.end('enr-1', schoolId, {
+        await endAs({
           mode: EndMode.NOW,
           deletePaymentIds: ['p2'],
         });
@@ -581,6 +583,70 @@ describe('EnrollmentManagementService', () => {
         expect(prisma.paymentBundle.updateMany).not.toHaveBeenCalled();
         expect(prisma.payment.deleteMany).toHaveBeenCalledWith({
           where: { id: { in: ['p2'] } },
+        });
+      });
+
+      it('marcar como paga: confirma como pagamento manual do admin e não apaga', async () => {
+        prisma.payment.findMany.mockResolvedValue([
+          payment('p2', '2099-12-04', 'PENDING'),
+          payment('p1', '2099-11-04', 'OVERDUE'),
+        ]);
+
+        const result = await endAs({
+          mode: EndMode.NOW,
+          markPaidPaymentIds: ['p1'],
+          deletePaymentIds: ['p2'],
+        });
+
+        expect(prisma.payment.updateMany).toHaveBeenCalledWith({
+          where: { id: { in: ['p1'] }, status: { not: 'PAID' } },
+          data: {
+            status: 'PAID',
+            paidAt: expect.any(Date),
+            paymentMethod: 'MANUAL_PIX',
+            confirmedBy: 'admin-1',
+          },
+        });
+        expect(prisma.payment.deleteMany).toHaveBeenCalledWith({
+          where: { id: { in: ['p2'] } },
+        });
+        expect(result).toMatchObject({
+          paymentsMarkedPaid: 1,
+          paymentsDeleted: 1,
+        });
+      });
+
+      it('recusa marcar como paga uma fatura que também será apagada ou que não foi oferecida', async () => {
+        prisma.payment.findMany.mockResolvedValue([
+          payment('p2', '2099-12-04', 'PENDING'),
+        ]);
+
+        await expect(
+          endAs({
+            mode: EndMode.NOW,
+            markPaidPaymentIds: ['p2'],
+            deletePaymentIds: ['p2'],
+          }),
+        ).rejects.toBeInstanceOf(BadRequestException);
+        await expect(
+          endAs({ mode: EndMode.NOW, markPaidPaymentIds: ['outra'] }),
+        ).rejects.toBeInstanceOf(BadRequestException);
+        expect(prisma.enrollment.update).not.toHaveBeenCalled();
+      });
+
+      it('marcar como paga uma fatura de agregado aberto solta o agregado', async () => {
+        prisma.payment.findMany.mockResolvedValue([
+          payment('p2', '2099-12-04', 'PENDING', {
+            paymentBundleId: 'bundle-1',
+            paymentBundle: { status: 'PENDING' },
+          }),
+        ]);
+
+        await endAs({ mode: EndMode.NOW, markPaidPaymentIds: ['p2'] });
+
+        expect(prisma.paymentBundle.updateMany).toHaveBeenCalledWith({
+          where: { id: { in: ['bundle-1'] }, status: 'PENDING' },
+          data: { status: 'CANCELLED' },
         });
       });
 
@@ -625,15 +691,22 @@ describe('EnrollmentManagementService', () => {
         expect(preview.cutoff).toEqual(iso('2099-12-04T04:00:00Z'));
         expect(preview.lessonsCancelled).toBe(2); // b1, b2
         expect(preview.endsAt).toEqual(A4_END);
+        // as posteriores (saem) + a própria escolhida (fica)
         expect(preview.payments).toEqual([
           expect.objectContaining({
             id: 'p2',
             locked: true,
+            deletable: false,
             suggestion: 'DELETE',
+          }),
+          expect.objectContaining({
+            id: 'p1',
+            locked: false,
+            deletable: false,
           }),
         ]);
 
-        const result = await service.end('enr-1', schoolId, {
+        const result = await endAs({
           mode: EndMode.AFTER_INVOICE,
           afterPaymentId: 'p1',
           // o que o app mandar aqui é ignorado neste modo
@@ -654,6 +727,35 @@ describe('EnrollmentManagementService', () => {
         expect(result).toMatchObject({ paymentsDeleted: 1, endedNow: false });
       });
 
+      it('permite marcar a própria fatura escolhida como paga, mas não as que serão apagadas', async () => {
+        afterInvoice('p1', '2099-11-04');
+        prisma.payment.findMany.mockResolvedValue([
+          payment('p2', '2099-12-04', 'PENDING'),
+          payment('p1', '2099-11-04', 'OVERDUE'),
+        ]);
+
+        await expect(
+          endAs({
+            mode: EndMode.AFTER_INVOICE,
+            afterPaymentId: 'p1',
+            markPaidPaymentIds: ['p2'],
+          }),
+        ).rejects.toBeInstanceOf(BadRequestException);
+
+        await endAs({
+          mode: EndMode.AFTER_INVOICE,
+          afterPaymentId: 'p1',
+          markPaidPaymentIds: ['p1'],
+        });
+        expect(prisma.payment.updateMany).toHaveBeenCalledWith({
+          where: { id: { in: ['p1'] }, status: { not: 'PAID' } },
+          data: expect.objectContaining({ status: 'PAID' }),
+        });
+        expect(prisma.payment.deleteMany).toHaveBeenCalledWith({
+          where: { id: { in: ['p2'] } },
+        });
+      });
+
       it('fatura mais recente escolhida: nada depois dela para apagar', async () => {
         afterInvoice('p2', '2099-12-04');
         prisma.payment.findMany.mockResolvedValue([
@@ -667,7 +769,10 @@ describe('EnrollmentManagementService', () => {
         });
 
         expect(preview.lessonsCancelled).toBe(0);
-        expect(preview.payments).toEqual([]);
+        // só a escolhida (nada depois dela para apagar)
+        expect(preview.payments).toEqual([
+          expect.objectContaining({ id: 'p2', locked: false }),
+        ]);
         expect(preview.endsAt).toEqual(iso('2099-12-16T13:00:00Z')); // fim da b2
       });
 

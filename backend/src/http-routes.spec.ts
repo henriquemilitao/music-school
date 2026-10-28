@@ -232,6 +232,7 @@ describe('Rotas HTTP usadas pelo app (admin)', () => {
           fromLessonId: LESSON,
           deletePaymentIds: [PAYMENT],
         },
+        'admin-1',
       );
     });
 
@@ -257,6 +258,19 @@ describe('Rotas HTTP usadas pelo app (admin)', () => {
         mode: 'DEPOIS',
       });
       expect(semModo.statusCode).toBe(400);
+      expect(invalido.statusCode).toBe(400);
+    });
+
+    it('aceita faturas marcadas como pagas e recusa id inválido nelas', async () => {
+      const ok = await call('POST', `/enrollments/${ENROLLMENT}/end`, {
+        mode: 'NOW',
+        markPaidPaymentIds: [PAYMENT],
+      });
+      const invalido = await call('POST', `/enrollments/${ENROLLMENT}/end`, {
+        mode: 'NOW',
+        markPaidPaymentIds: ['nao-e-uuid'],
+      });
+      expect(ok.statusCode).toBe(201);
       expect(invalido.statusCode).toBe(400);
     });
 

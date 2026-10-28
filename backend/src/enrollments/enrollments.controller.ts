@@ -127,7 +127,7 @@ export class EnrollmentsController {
     @Body() dto: EndEnrollmentDto,
     @CurrentUser() user: AuthUser,
   ) {
-    return this.enrollmentManagement.end(id, user.schoolId, dto);
+    return this.enrollmentManagement.end(id, user.schoolId, dto, user.id);
   }
 
   @Post(':id/renew')

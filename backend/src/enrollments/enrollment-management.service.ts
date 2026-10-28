@@ -45,6 +45,8 @@ export interface EndInput {
   fromLessonId?: string;
   afterPaymentId?: string;
   deletePaymentIds?: string[];
+  // Faturas em aberto que o admin já recebeu: viram PAGAS (confirmação manual)
+  markPaidPaymentIds?: string[];
 }
 
 // Fatura com o período de aulas que ela cobre (datas "AAAA-MM-DD")
@@ -68,6 +70,8 @@ export interface EndPaymentOption extends InvoiceOption {
   suggestion: PaymentSuggestion;
   // true = será apagada sem escolha (fatura depois da escolhida)
   locked: boolean;
+  // true = o admin pode escolher apagar (NOW / FROM_LESSON)
+  deletable: boolean;
 }
 
 interface EndPaymentCandidate extends EndPaymentOption {
@@ -301,7 +305,12 @@ export class EnrollmentManagementService {
   //  • AFTER_INVOICE: as faturas DEPOIS da escolhida são apagadas.
   // Sem aulas futuras restantes, o aluno fica inativo na hora; com aulas
   // restantes, segue ativo até o fim da última (`endsAt`) e o cron inativa.
-  async end(enrollmentId: string, schoolId: string, input: EndInput) {
+  async end(
+    enrollmentId: string,
+    schoolId: string,
+    input: EndInput,
+    adminUserId: string,
+  ) {
     const enrollment = await this.findActive(enrollmentId, schoolId);
     const offset = await this.getTimezoneOffset(schoolId);
     const target = await this.resolveEndTarget(enrollment, offset, input);
@@ -318,22 +327,46 @@ export class EnrollmentManagementService {
           offset,
         );
 
+        const offered = new Map(plan.payments.map((p) => [p.id, p]));
+        // Em AFTER_INVOICE o que apagar é definido pela fatura escolhida:
+        // `deletePaymentIds` é ignorado
+        const wanted = new Set(
+          input.mode === EndMode.AFTER_INVOICE
+            ? []
+            : (input.deletePaymentIds ?? []),
+        );
+        const paid = new Set(input.markPaidPaymentIds ?? []);
+
+        // Só dá pra agir no que a tela ofereceu (faturas desta matrícula)
+        for (const id of [...wanted, ...paid]) {
+          if (!offered.has(id)) {
+            throw new BadRequestException(
+              'Fatura inválida para esta matrícula',
+            );
+          }
+        }
+
         let toDelete: EndPaymentCandidate[];
         if (input.mode === EndMode.AFTER_INVOICE) {
-          toDelete = plan.payments; // todas travadas: depois da escolhida
+          // As posteriores à escolhida saem sempre; o resto da lista é a
+          // própria fatura escolhida, que só pode ser mantida ou marcada paga.
+          toDelete = plan.payments.filter((p) => p.locked);
         } else {
-          // Só dá pra apagar o que a tela ofereceu (faturas desta matrícula)
-          const wanted = new Set(input.deletePaymentIds ?? []);
-          const offered = new Set(plan.payments.map((p) => p.id));
-          for (const id of wanted) {
-            if (!offered.has(id)) {
-              throw new BadRequestException(
-                'Fatura inválida para esta matrícula',
-              );
-            }
-          }
           toDelete = plan.payments.filter((p) => wanted.has(p.id));
         }
+
+        for (const id of paid) {
+          const payment = offered.get(id)!;
+          if (payment.locked || wanted.has(id)) {
+            throw new BadRequestException(
+              'Uma fatura apagada não pode ser marcada como paga',
+            );
+          }
+        }
+        // Já paga (ex: webhook chegou depois do preview): nada a confirmar
+        const toMarkPaid = plan.payments.filter(
+          (p) => paid.has(p.id) && p.status !== 'PAID',
+        );
 
         await tx.lesson.updateMany({
           where: { id: { in: plan.lessonIds }, status: 'SCHEDULED' },
@@ -347,7 +380,7 @@ export class EnrollmentManagementService {
         // agregado e solta as faturas (mesma regra do createBundle).
         const openBundleIds = [
           ...new Set(
-            toDelete
+            [...toDelete, ...toMarkPaid]
               .filter((p) => p.bundleId && p.bundleStatus === 'PENDING')
               .map((p) => p.bundleId as string),
           ),
@@ -360,6 +393,22 @@ export class EnrollmentManagementService {
           await tx.payment.updateMany({
             where: { paymentBundleId: { in: openBundleIds } },
             data: { paymentBundleId: null },
+          });
+        }
+
+        // Recebida por fora: confirma como o admin faria na mão
+        if (toMarkPaid.length > 0) {
+          await tx.payment.updateMany({
+            where: {
+              id: { in: toMarkPaid.map((p) => p.id) },
+              status: { not: 'PAID' },
+            },
+            data: {
+              status: 'PAID',
+              paidAt: new Date(),
+              paymentMethod: 'MANUAL_PIX',
+              confirmedBy: adminUserId,
+            },
           });
         }
 
@@ -381,6 +430,7 @@ export class EnrollmentManagementService {
           lessonsCancelled: plan.lessonIds.length,
           lessonsKept: plan.lessonsKept,
           paymentsDeleted: toDelete.length,
+          paymentsMarkedPaid: toMarkPaid.length,
           paymentsKept: plan.payments.length - toDelete.length,
           endsAt: plan.endsAt,
           endedNow: plan.endsAt === null,
@@ -639,20 +689,26 @@ export class EnrollmentManagementService {
     let olderPaymentsCount = 0;
     if (mode === EndMode.AFTER_INVOICE && target.afterPayment) {
       const after = target.afterPayment.periodStart;
+      // As posteriores (saem) + a própria escolhida (fica; pode ser marcada paga)
       shown = payments.filter((p) => {
         const start = periodStartFromKey(p.idempotencyKey);
-        return !!start && start > after;
+        return !!start && start >= after;
       });
     } else {
       shown = payments.slice(0, RECENT_PAYMENTS_LIMIT);
       olderPaymentsCount = Math.max(0, payments.length - shown.length);
     }
-    const locked = mode === EndMode.AFTER_INVOICE;
+    const afterStart = target.afterPayment?.periodStart;
 
     const candidates: EndPaymentCandidate[] = shown.map((payment) => {
       let lessonsCancelled = 0;
       let lessonsRemaining = 0;
       const periodStart = periodStartFromKey(payment.idempotencyKey);
+      const locked =
+        mode === EndMode.AFTER_INVOICE &&
+        !!periodStart &&
+        !!afterStart &&
+        periodStart > afterStart;
       if (periodStart) {
         const periodEnd = addMonthsKeepingAnchor(anchorDay, periodStart, 1);
         const inPeriod = (scheduledAt: Date) => {
@@ -679,6 +735,7 @@ export class EnrollmentManagementService {
             ? 'DELETE'
             : 'KEEP',
         locked,
+        deletable: mode !== EndMode.AFTER_INVOICE,
         bundleId: payment.paymentBundleId,
         bundleStatus: payment.paymentBundle?.status ?? null,
       };
@@ -750,5 +807,6 @@ function toPaymentOption(candidate: EndPaymentCandidate): EndPaymentOption {
     lessonsRemaining: candidate.lessonsRemaining,
     suggestion: candidate.suggestion,
     locked: candidate.locked,
+    deletable: candidate.deletable,
   };
 }

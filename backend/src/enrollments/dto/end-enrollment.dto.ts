@@ -52,4 +52,15 @@ export class EndEnrollmentDto extends EndPreviewQueryDto {
   @ArrayMaxSize(100)
   @IsUUID('all', { each: true })
   deletePaymentIds?: string[];
+
+  @ApiPropertyOptional({
+    description:
+      'Faturas em aberto (listadas no end-preview) que o admin já recebeu: passam a PAGAS.',
+    type: [String],
+  })
+  @IsOptional()
+  @IsArray()
+  @ArrayMaxSize(100)
+  @IsUUID('all', { each: true })
+  markPaidPaymentIds?: string[];
 }
