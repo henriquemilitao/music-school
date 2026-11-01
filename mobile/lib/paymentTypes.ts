@@ -23,6 +23,9 @@ export type StudentPayment = {
   // avulsa/antiga ou sem matrícula
   periodStart: string | null;
   periodLastDay: string | null;
+  // Só em fatura cancelada
+  cancelledAt: string | null;
+  cancelReason: string | null;
 };
 
 // Detalhe (GET /payments/:id)
@@ -36,4 +39,15 @@ export type AdminPaymentDetail = StudentPayment & {
     status: 'PENDING' | 'PAID' | 'CANCELLED';
     amount: string;
   } | null;
+};
+
+// Corpo do PATCH /payments/:id — só o que mudou
+export type UpdatePaymentBody = {
+  // Valor da mensalidade em reais
+  amount?: number;
+  // Datas "AAAA-MM-DD"
+  dueDate?: string;
+  periodStart?: string;
+  periodEnd?: string;
+  paidAt?: string;
 };

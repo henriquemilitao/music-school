@@ -1,6 +1,5 @@
 import { useState } from 'react';
-import { Text, View } from 'react-native';
-import { Info } from 'lucide-react-native';
+import { View } from 'react-native';
 import { INSTRUMENT_OPTIONS } from '../../lib/instrument';
 import { combineDateTime, type LessonFormErrors } from '../../lib/lessonForm';
 import {
@@ -11,6 +10,7 @@ import {
 import { firstName } from '../../lib/name';
 import { DURATION_OPTIONS } from '../../lib/newStudent';
 import { adminLessonStatusConfig } from '../../lib/status';
+import { Note } from '../ui/Note';
 import { ChoiceChips } from '../form/ChoiceChips';
 import { DateField } from '../form/DateField';
 import { FormField, TextField } from '../form/FormField';
@@ -35,19 +35,7 @@ export const LESSON_STATUS_CHOICES: {
   selectedColor: adminLessonStatusConfig(value as LessonStatus).colorText,
 }));
 
-export function LessonNote({ children }: { children: React.ReactNode }) {
-  return (
-    <View
-      className="flex-row gap-2 rounded-xl px-3 py-2.5"
-      style={{ backgroundColor: '#F3EADD' }}
-    >
-      <Info size={15} color="#B08D57" style={{ marginTop: 1 }} />
-      <Text className="flex-1 text-xs text-[#6B5B3E] leading-4">
-        {children}
-      </Text>
-    </View>
-  );
-}
+export const LessonNote = Note;
 
 // ─── Dia e horário ────────────────────────────────────────────────────
 

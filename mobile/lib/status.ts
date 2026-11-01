@@ -1,4 +1,4 @@
-export type PaymentStatus = 'PENDING' | 'OVERDUE' | 'PAID';
+export type PaymentStatus = 'PENDING' | 'OVERDUE' | 'PAID' | 'CANCELLED';
 export type LessonStatus = 'SCHEDULED' | 'COMPLETED' | 'CANCELLED';
 
 // status "efetivo" pra exibição — combina o status do banco com o
@@ -30,6 +30,8 @@ export function paymentStatusConfig(status: PaymentStatus): StatusVisual {
       return { label: 'Atrasada', ...COLORS.red };
     case 'PENDING':
       return { label: 'Pendente', ...COLORS.amber };
+    case 'CANCELLED':
+      return { label: 'Cancelada', ...COLORS.gray };
     default:
       return { label: status, ...COLORS.gray };
   }

@@ -457,14 +457,7 @@ export default function AdminStudentDetail() {
                 <EmptyState text="Nenhuma fatura encontrada" />
               </Card>
             ) : (
-              <PaymentsList
-                payments={payments}
-                busyId={paymentActions.busyId}
-                onOpen={(paymentId) =>
-                  router.push(`/admin-payment/${paymentId}`)
-                }
-                onConfirm={(payment) => void paymentActions.confirm(payment)}
-              />
+              <PaymentsList payments={payments} actions={paymentActions} />
             )}
           </TabPanel>
         </View>

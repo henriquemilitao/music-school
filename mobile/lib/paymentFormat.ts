@@ -85,7 +85,7 @@ export function formatMonthNameOnly(referenceMonth: string) {
 export function getDisplayAmount(payment: {
   amount: string;
   paidAmount?: string | null;
-  status: 'PENDING' | 'OVERDUE' | 'PAID';
+  status: string;
 }): string {
   if (payment.status === 'PAID' && payment.paidAmount) {
     return payment.paidAmount;

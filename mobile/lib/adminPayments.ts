@@ -1,16 +1,24 @@
 // lib/adminPayments.ts
 //
 // Chamadas à API de faturas (admin), cache do React Query e as ações
-// "confirmar" / "desfazer" com os diálogos de confirmação, compartilhadas
-// pela lista (aba Faturas) e pelo detalhe da fatura.
+// "desfazer pagamento" / "cancelar" / "reativar" com os diálogos de
+// confirmação, compartilhadas pela lista (aba Faturas) e pelo detalhe.
 
 import { useState } from 'react';
-import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
+import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { api } from './api';
 import { alertAsync, confirmAsync } from './dialog';
 import { formatMonthLabelFromKey } from './paymentFormat';
-import { undoConfirmMessage } from './paymentView';
-import type { AdminPaymentDetail, StudentPayment } from './paymentTypes';
+import {
+  cancelConfirmMessage,
+  reactivateMessage,
+  undoConfirmMessage,
+} from './paymentView';
+import type {
+  AdminPaymentDetail,
+  StudentPayment,
+  UpdatePaymentBody,
+} from './paymentTypes';
 import { adminPaymentKeys, dashboardKeys } from './queryKeys';
 
 // ─── Chamadas ─────────────────────────────────────────────────────────
@@ -27,9 +35,40 @@ export async function fetchAdminPayment(paymentId: string) {
   return response.data;
 }
 
-export async function confirmPaymentManually(paymentId: string) {
+// paidAt: dia do pagamento "AAAA-MM-DD" (sem ele vale agora)
+export async function confirmPaymentManually(
+  paymentId: string,
+  paidAt?: string,
+) {
   const response = await api.patch<StudentPayment>(
     `/payments/${paymentId}/confirm`,
+    paidAt ? { paidAt } : {},
+  );
+  return response.data;
+}
+
+export async function updatePayment(
+  paymentId: string,
+  body: UpdatePaymentBody,
+) {
+  const response = await api.patch<AdminPaymentDetail>(
+    `/payments/${paymentId}`,
+    body,
+  );
+  return response.data;
+}
+
+export async function cancelPayment(paymentId: string) {
+  const response = await api.patch<AdminPaymentDetail>(
+    `/payments/${paymentId}/cancel`,
+    {},
+  );
+  return response.data;
+}
+
+export async function reactivatePayment(paymentId: string) {
+  const response = await api.patch<AdminPaymentDetail>(
+    `/payments/${paymentId}/reactivate`,
     {},
   );
   return response.data;
@@ -63,7 +102,7 @@ export function useAdminPayment(paymentId: string) {
   });
 }
 
-// Depois de confirmar/desfazer: atualiza o detalhe, a lista e o status do
+// Depois de confirmar/editar/cancelar...: atualiza o detalhe, a lista e o status do
 // aluno, a lista de pendências e o painel inicial.
 export function useRefreshPayments() {
   const queryClient = useQueryClient();
@@ -82,7 +121,18 @@ export function useRefreshPayments() {
 
 // ─── Ações ────────────────────────────────────────────────────────────
 
-type PaymentRef = Pick<StudentPayment, 'id' | 'studentId' | 'referenceMonth'>;
+// O mínimo que as ações precisam saber da fatura (a da lista já traz tudo)
+export type PaymentRef = Pick<
+  StudentPayment,
+  | 'id'
+  | 'studentId'
+  | 'referenceMonth'
+  | 'status'
+  | 'amount'
+  | 'paidAt'
+  | 'dueDate'
+  | 'paymentMethod'
+>;
 
 function errorMessage(error: unknown, fallback: string) {
   const message = (error as { friendlyMessage?: string } | null)
@@ -92,68 +142,86 @@ function errorMessage(error: unknown, fallback: string) {
 
 // Cada ação pergunta antes (sempre) e só então chama a API. Devolve true
 // quando a mudança foi feita, pra tela decidir se fecha/atualiza algo.
+// (Confirmar pagamento e editar têm tela própria: pedem a data/os campos.)
 export function usePaymentActions() {
   const refresh = useRefreshPayments();
   const [busyId, setBusyId] = useState<string | null>(null);
 
-  const confirmMutation = useMutation({
-    mutationFn: (payment: PaymentRef) => confirmPaymentManually(payment.id),
-    onSuccess: (_data, payment) => refresh(payment.studentId, payment.id),
-    onError: (error) =>
-      void alertAsync({
-        title: 'Erro',
-        message: errorMessage(error, 'Não foi possível confirmar o pagamento.'),
-        tone: 'error',
-      }),
-  });
-
-  const undoMutation = useMutation({
-    mutationFn: (payment: PaymentRef) => undoPayment(payment.id),
-    onSuccess: (_data, payment) => refresh(payment.studentId, payment.id),
-    onError: (error) =>
-      void alertAsync({
-        title: 'Erro',
-        message: errorMessage(error, 'Não foi possível desfazer o pagamento.'),
-        tone: 'error',
-      }),
-  });
-
+  // Roda a chamada com o "ocupado" ligado na fatura e já mostra o erro
   async function run(
     payment: PaymentRef,
-    mutate: (payment: PaymentRef) => Promise<unknown>,
+    call: () => Promise<unknown>,
+    failure: string,
   ) {
     setBusyId(payment.id);
     try {
-      await mutate(payment);
+      await call();
+      refresh(payment.studentId, payment.id);
       return true;
-    } catch {
-      return false; // o Alert já foi mostrado no onError
+    } catch (error) {
+      await alertAsync({
+        title: 'Erro',
+        message: errorMessage(error, failure),
+        tone: 'error',
+      });
+      return false;
     } finally {
       setBusyId(null);
     }
   }
 
-  async function confirm(payment: PaymentRef) {
-    const ok = await confirmAsync({
-      title: 'Confirmar pagamento?',
-      message: `Confirma que a fatura de ${formatMonthLabelFromKey(payment.referenceMonth)} foi paga? Ela será marcada como paga manualmente.`,
-      confirmText: 'Confirmar pagamento',
-    });
-    return ok ? run(payment, confirmMutation.mutateAsync) : false;
-  }
-
-  async function undo(
-    payment: PaymentRef &
-      Pick<AdminPaymentDetail, 'status' | 'paymentMethod' | 'dueDate'>,
-  ) {
+  async function undo(payment: PaymentRef) {
     const ok = await confirmAsync({
       title: 'Desfazer pagamento?',
       message: undoConfirmMessage(payment),
       confirmText: 'Desfazer pagamento',
       destructive: true,
     });
-    return ok ? run(payment, undoMutation.mutateAsync) : false;
+    return ok
+      ? run(
+          payment,
+          () => undoPayment(payment.id),
+          'Não foi possível desfazer o pagamento.',
+        )
+      : false;
   }
 
-  return { confirm, undo, busyId };
+  async function cancel(payment: PaymentRef) {
+    const paid = payment.status === 'PAID';
+    const ok = await confirmAsync({
+      title: paid
+        ? 'Cancelar uma fatura paga?'
+        : `Cancelar a fatura de ${formatMonthLabelFromKey(payment.referenceMonth)}?`,
+      message: cancelConfirmMessage(payment),
+      confirmText: paid ? 'Sim, cancelar fatura' : 'Cancelar fatura',
+      cancelText: 'Voltar',
+      destructive: true,
+    });
+    return ok
+      ? run(
+          payment,
+          () => cancelPayment(payment.id),
+          'Não foi possível cancelar a fatura.',
+        )
+      : false;
+  }
+
+  async function reactivate(payment: PaymentRef) {
+    const ok = await confirmAsync({
+      title: 'Reativar fatura?',
+      message: reactivateMessage(payment),
+      confirmText: 'Reativar fatura',
+    });
+    return ok
+      ? run(
+          payment,
+          () => reactivatePayment(payment.id),
+          'Não foi possível reativar a fatura.',
+        )
+      : false;
+  }
+
+  return { undo, cancel, reactivate, busyId };
 }
+
+export type PaymentActions = ReturnType<typeof usePaymentActions>;
