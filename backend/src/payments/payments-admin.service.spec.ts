@@ -198,6 +198,9 @@ describe('PaymentsService — admin: detalhes e desfazer pagamento', () => {
       amount: '150',
       dueDate: new Date('2099-01-10T12:00:00Z'),
       idempotencyKey: 'stu-1-2099-01-05',
+      periodEnd: null,
+      // âncora dia 5 → período derivado: 05/01 a 04/02
+      enrollment: { firstLessonDate: new Date('2098-12-05T00:00:00Z') },
       paymentBundleId: null,
       paymentBundle: null,
       pixQrCode: 'qr',
@@ -287,7 +290,7 @@ describe('PaymentsService — admin: detalhes e desfazer pagamento', () => {
       });
     });
 
-    it('início do período troca o final da chave', async () => {
+    it('início do período troca a chave e fixa o fim que já valia', async () => {
       loadPayment(open());
       prisma.payment.findUnique.mockResolvedValue(null);
       await service.updatePayment(
@@ -296,7 +299,73 @@ describe('PaymentsService — admin: detalhes e desfazer pagamento', () => {
         schoolId,
         'adm',
       );
-      expect(updateData()).toEqual({ idempotencyKey: 'stu-1-2099-01-12' });
+      expect(updateData()).toEqual({
+        idempotencyKey: 'stu-1-2099-01-12',
+        periodEnd: new Date('2099-02-04T00:00:00Z'),
+      });
+    });
+
+    it('início e fim juntos', async () => {
+      loadPayment(open());
+      prisma.payment.findUnique.mockResolvedValue(null);
+      await service.updatePayment(
+        'pay-1',
+        { periodStart: '2099-01-12', periodEnd: '2099-02-11' },
+        schoolId,
+        'adm',
+      );
+      expect(updateData()).toEqual({
+        idempotencyKey: 'stu-1-2099-01-12',
+        periodEnd: new Date('2099-02-11T00:00:00Z'),
+      });
+    });
+
+    it('só o fim: a chave não muda', async () => {
+      loadPayment(open());
+      await service.updatePayment(
+        'pay-1',
+        { periodEnd: '2099-02-10' },
+        schoolId,
+        'adm',
+      );
+      expect(updateData()).toEqual({
+        periodEnd: new Date('2099-02-10T00:00:00Z'),
+      });
+      expect(prisma.payment.findUnique).not.toHaveBeenCalled();
+    });
+
+    it('mesmo período que já vale não grava nada', async () => {
+      loadPayment(open());
+      await service.updatePayment(
+        'pay-1',
+        { periodStart: '2099-01-05', periodEnd: '2099-02-04' },
+        schoolId,
+        'adm',
+      );
+      expect(prisma.payment.update).not.toHaveBeenCalled();
+    });
+
+    it('recusa fim antes do início e período longo demais', async () => {
+      loadPayment(open());
+      await expect(
+        service.updatePayment(
+          'pay-1',
+          { periodEnd: '2099-01-01' },
+          schoolId,
+          'adm',
+        ),
+      ).rejects.toBeInstanceOf(BadRequestException);
+
+      prisma.payment.findFirst.mockReset();
+      loadPayment(open());
+      await expect(
+        service.updatePayment(
+          'pay-1',
+          { periodEnd: '2099-06-30' },
+          schoolId,
+          'adm',
+        ),
+      ).rejects.toBeInstanceOf(BadRequestException);
     });
 
     it('recusa período que já é de outra fatura do aluno', async () => {
@@ -313,7 +382,13 @@ describe('PaymentsService — admin: detalhes e desfazer pagamento', () => {
     });
 
     it('recusa ajustar período de fatura avulsa', async () => {
-      loadPayment(open({ enrollmentId: null, idempotencyKey: 'manual' }));
+      loadPayment(
+        open({
+          enrollment: null,
+          enrollmentId: null,
+          idempotencyKey: 'manual',
+        }),
+      );
       await expect(
         service.updatePayment(
           'pay-1',

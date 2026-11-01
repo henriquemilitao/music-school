@@ -12,11 +12,11 @@ import { Enrollment, Prisma } from '@prisma/client';
 import { getSchoolTimezoneOffset } from '../common/utils/school-timezone.util';
 import { PrismaService } from '../prisma/prisma.service';
 import { EnrollmentsService } from './enrollments.service';
+import { periodEndExclusive } from '../payments/payment-period.util';
 import { UpdateEnrollmentDto } from './dto/update-enrollment.dto';
 import { SchedulePreviewQueryDto } from './dto/schedule-preview-query.dto';
 import { EndMode } from './dto/end-enrollment.dto';
 import {
-  addMonthsKeepingAnchor,
   dateWithAnchorDay,
   moveLessonToSchedule,
   periodStartFromKey,
@@ -591,7 +591,7 @@ export class EnrollmentManagementService {
         }
         const payment = await this.prisma.payment.findFirst({
           where: { id: input.afterPaymentId, enrollmentId: enrollment.id },
-          select: { id: true, idempotencyKey: true },
+          select: { id: true, idempotencyKey: true, periodEnd: true },
         });
         if (!payment) {
           throw new BadRequestException('Fatura inválida para esta matrícula');
@@ -604,10 +604,10 @@ export class EnrollmentManagementService {
         }
         // Corte = meia-noite (horário da escola) do dia seguinte ao fim do
         // período da fatura. Nunca antes de agora.
-        const periodEnd = addMonthsKeepingAnchor(
-          enrollment.firstLessonDate.getUTCDate(),
+        const periodEnd = periodEndExclusive(
+          payment,
           periodStart,
-          1,
+          enrollment.firstLessonDate.getUTCDate(),
         );
         const cutoff = new Date(periodEnd.getTime() - offsetHours * HOUR_MS);
         return {
@@ -708,7 +708,7 @@ export class EnrollmentManagementService {
         !!afterStart &&
         periodStart > afterStart;
       if (periodStart) {
-        const periodEnd = addMonthsKeepingAnchor(anchorDay, periodStart, 1);
+        const periodEnd = periodEndExclusive(payment, periodStart, anchorDay);
         const inPeriod = (scheduledAt: Date) => {
           const day = toLocalDay(scheduledAt, offsetHours);
           return day >= periodStart && day < periodEnd;
@@ -758,6 +758,7 @@ const PAYMENT_SELECT = {
   status: true,
   referenceMonth: true,
   idempotencyKey: true,
+  periodEnd: true,
   paymentBundleId: true,
   paymentBundle: { select: { status: true } },
 } satisfies Prisma.PaymentSelect;
@@ -772,10 +773,10 @@ function toInvoiceOption(
 ): InvoiceOption {
   const periodStart = periodStartFromKey(payment.idempotencyKey);
   const periodEnd = periodStart
-    ? addMonthsKeepingAnchor(
-        enrollment.firstLessonDate.getUTCDate(),
+    ? periodEndExclusive(
+        payment,
         periodStart,
-        1,
+        enrollment.firstLessonDate.getUTCDate(),
       )
     : null;
   return {

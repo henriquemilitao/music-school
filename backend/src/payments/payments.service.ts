@@ -7,9 +7,11 @@ import {
 } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
 import { ConfirmPaymentDto } from './dto/confirm-payment.dto';
-import { UpdatePaymentDto } from './dto/update-payment.dto';
+import {
+  PAYMENT_MAX_PERIOD_DAYS,
+  UpdatePaymentDto,
+} from './dto/update-payment.dto';
 import { getSchoolTimezoneOffset } from '../common/utils/school-timezone.util';
-import { periodStartFromKey } from '../enrollments/enrollment-schedule.util';
 import {
   civilDateToNoonUtc,
   openStatusForDueDate,
@@ -20,6 +22,8 @@ import { PAYMENT_PROVIDER } from './payments.constants';
 import type { PaymentProvider } from './providers/payment-provider.interface';
 import { paymentPeriod } from './payment-period.util';
 import * as crypto from 'crypto';
+
+const DAY_MS = 24 * 60 * 60 * 1000;
 
 @Injectable()
 export class PaymentsService {
@@ -556,7 +560,10 @@ export class PaymentsService {
   ) {
     const payment = await this.prisma.payment.findFirst({
       where: { id: paymentId, schoolId },
-      include: { paymentBundle: { select: { status: true } } },
+      include: {
+        paymentBundle: { select: { status: true } },
+        enrollment: { select: { firstLessonDate: true } },
+      },
     });
     if (!payment) throw new NotFoundException('Pagamento não encontrado');
 
@@ -595,23 +602,34 @@ export class PaymentsService {
       }
     }
 
-    if (dto.periodStart !== undefined) {
-      if (
-        !periodStartFromKey(payment.idempotencyKey) ||
-        !payment.enrollmentId
-      ) {
+    if (dto.periodStart !== undefined || dto.periodEnd !== undefined) {
+      const current = paymentPeriod(payment, payment.enrollment);
+      if (!current.periodStart || !current.periodLastDay) {
         throw new BadRequestException(
           'Esta fatura não tem período de aulas para ajustar',
         );
       }
-      if (!civilDateToNoonUtc(dto.periodStart)) {
-        throw new BadRequestException('Início do período inválido');
+      const start = dto.periodStart ?? current.periodStart;
+      const end = dto.periodEnd ?? current.periodLastDay;
+      const startDate = civilDateToNoonUtc(start);
+      const endDate = civilDateToNoonUtc(end);
+      if (!startDate || !endDate) {
+        throw new BadRequestException('Datas do período inválidas');
       }
-      const idempotencyKey = withPeriodStart(
-        payment.idempotencyKey,
-        dto.periodStart,
-      );
-      if (idempotencyKey !== payment.idempotencyKey) {
+      if (end < start) {
+        throw new BadRequestException(
+          'O fim do período não pode ser antes do início',
+        );
+      }
+      const days = (endDate.getTime() - startDate.getTime()) / DAY_MS + 1;
+      if (days > PAYMENT_MAX_PERIOD_DAYS) {
+        throw new BadRequestException(
+          `O período não pode passar de ${PAYMENT_MAX_PERIOD_DAYS} dias`,
+        );
+      }
+
+      if (start !== current.periodStart) {
+        const idempotencyKey = withPeriodStart(payment.idempotencyKey, start);
         const clash = await this.prisma.payment.findUnique({
           where: { idempotencyKey },
           select: { id: true },
@@ -622,6 +640,11 @@ export class PaymentsService {
           );
         }
         data.idempotencyKey = idempotencyKey;
+      }
+      if (end !== current.periodLastDay || start !== current.periodStart) {
+        // grava o fim sempre que o período muda, pra ele não "pular" junto
+        // com o ciclo da matrícula quando só o início é ajustado
+        data.periodEnd = new Date(`${end}T00:00:00.000Z`);
       }
     }
 

@@ -25,6 +25,18 @@ describe('paymentPeriod', () => {
     ).toEqual({ periodStart: '2027-01-31', periodLastDay: '2027-02-27' });
   });
 
+  it('fim ajustado pelo admin vale no lugar do ciclo da matrícula', () => {
+    expect(
+      paymentPeriod(
+        {
+          idempotencyKey: key('2026-10-12'),
+          periodEnd: new Date('2026-11-11T00:00:00Z'),
+        },
+        enrollment('2026-08-05'),
+      ),
+    ).toEqual({ periodStart: '2026-10-12', periodLastDay: '2026-11-11' });
+  });
+
   it('fatura avulsa (chave fora do padrão) ou sem matrícula não tem período', () => {
     const none = { periodStart: null, periodLastDay: null };
     expect(

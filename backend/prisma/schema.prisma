@@ -320,6 +320,10 @@ model Payment {
 
   // fatura anulada pelo admin (status CANCELLED). A linha continua no banco: mantém o
   // histórico e a idempotencyKey, então o período não é cobrado de novo por engano.
+  // período de aulas ajustado à mão pelo admin: último dia (inclusive). null = o fim
+  // é calculado pelo ciclo da matrícula; o início vem da idempotencyKey.
+  periodEnd DateTime? @db.Date
+
   cancelledAt  DateTime?
   cancelReason String?
 
