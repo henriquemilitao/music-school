@@ -61,6 +61,9 @@ describe('Rotas HTTP usadas pelo app (admin)', () => {
     findAdminDetail: jest.fn(),
     unconfirm: jest.fn(),
     confirmManually: jest.fn(),
+    updatePayment: jest.fn(),
+    cancel: jest.fn(),
+    reactivate: jest.fn(),
   };
 
   const asAdmin = {
@@ -442,6 +445,74 @@ describe('Rotas HTTP usadas pelo app (admin)', () => {
     it('PATCH /payments/:id/confirm continua confirmando', async () => {
       const res = await call('PATCH', `/payments/${PAYMENT}/confirm`, {});
       expect(res.statusCode).toBe(200);
+    });
+
+    it('PATCH /payments/:id/confirm aceita o dia do pagamento', async () => {
+      const res = await call('PATCH', `/payments/${PAYMENT}/confirm`, {
+        paidAt: '2026-10-28',
+      });
+      expect(res.statusCode).toBe(200);
+      expect(paymentsService.confirmManually).toHaveBeenCalledWith(
+        PAYMENT,
+        expect.objectContaining({ paidAt: '2026-10-28' }),
+        'admin-1',
+        'school-1',
+      );
+    });
+
+    it('PATCH /payments/:id/confirm recusa data fora do formato', async () => {
+      const res = await call('PATCH', `/payments/${PAYMENT}/confirm`, {
+        paidAt: '28/10/2026',
+      });
+      expect(res.statusCode).toBe(400);
+    });
+
+    it('PATCH /payments/:id edita valor, vencimento e período', async () => {
+      const res = await call('PATCH', `/payments/${PAYMENT}`, {
+        amount: 99.9,
+        dueDate: '2026-11-10',
+        periodStart: '2026-11-05',
+      });
+      expect(res.statusCode).toBe(200);
+      expect(paymentsService.updatePayment).toHaveBeenCalledWith(
+        PAYMENT,
+        { amount: 99.9, dueDate: '2026-11-10', periodStart: '2026-11-05' },
+        'school-1',
+        'admin-1',
+      );
+    });
+
+    it('PATCH /payments/:id recusa valor zero e campos desconhecidos', async () => {
+      expect(
+        (await call('PATCH', `/payments/${PAYMENT}`, { amount: 0 })).statusCode,
+      ).toBe(400);
+      expect(
+        (await call('PATCH', `/payments/${PAYMENT}`, { status: 'PAID' }))
+          .statusCode,
+      ).toBe(400);
+    });
+
+    it('PATCH /payments/:id/cancel cancela com motivo opcional', async () => {
+      const res = await call('PATCH', `/payments/${PAYMENT}/cancel`, {
+        reason: 'Fez 1 aula',
+      });
+      expect(res.statusCode).toBe(200);
+      expect(paymentsService.cancel).toHaveBeenCalledWith(
+        PAYMENT,
+        'Fez 1 aula',
+        'school-1',
+        'admin-1',
+      );
+    });
+
+    it('PATCH /payments/:id/reactivate desfaz o cancelamento', async () => {
+      const res = await call('PATCH', `/payments/${PAYMENT}/reactivate`);
+      expect(res.statusCode).toBe(200);
+      expect(paymentsService.reactivate).toHaveBeenCalledWith(
+        PAYMENT,
+        'school-1',
+        'admin-1',
+      );
     });
   });
 

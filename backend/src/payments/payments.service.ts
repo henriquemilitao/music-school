@@ -7,6 +7,15 @@ import {
 } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
 import { ConfirmPaymentDto } from './dto/confirm-payment.dto';
+import { UpdatePaymentDto } from './dto/update-payment.dto';
+import { getSchoolTimezoneOffset } from '../common/utils/school-timezone.util';
+import { periodStartFromKey } from '../enrollments/enrollment-schedule.util';
+import {
+  civilDateToNoonUtc,
+  openStatusForDueDate,
+  resolvePaidAt,
+  withPeriodStart,
+} from './payment-edit.util';
 import { PAYMENT_PROVIDER } from './payments.constants';
 import type { PaymentProvider } from './providers/payment-provider.interface';
 import { paymentPeriod } from './payment-period.util';
@@ -39,7 +48,8 @@ export class PaymentsService {
     const studentIds = students.map((s) => s.id);
 
     const payments = await this.prisma.payment.findMany({
-      where: { studentId: { in: studentIds } },
+      // fatura anulada pelo admin não aparece pro aluno
+      where: { studentId: { in: studentIds }, status: { not: 'CANCELLED' } },
       orderBy: { referenceMonth: 'desc' },
       select: {
         id: true,
@@ -110,7 +120,11 @@ export class PaymentsService {
   // cobrança.
   async findMyPaymentById(paymentId: string, userId: string) {
     const existing = await this.prisma.payment.findFirst({
-      where: { id: paymentId, student: { userId } },
+      where: {
+        id: paymentId,
+        student: { userId },
+        status: { not: 'CANCELLED' },
+      },
       select: { id: true, studentId: true, status: true },
     });
     if (!existing) throw new NotFoundException('Pagamento não encontrado');
@@ -154,7 +168,11 @@ export class PaymentsService {
   // cobrança no gateway.
   async getOrCreateMyPaymentCharge(paymentId: string, userId: string) {
     const existing = await this.prisma.payment.findFirst({
-      where: { id: paymentId, student: { userId } },
+      where: {
+        id: paymentId,
+        student: { userId },
+        status: { not: 'CANCELLED' },
+      },
       select: { id: true, studentId: true, status: true },
     });
     if (!existing) throw new NotFoundException('Pagamento não encontrado');
@@ -335,6 +353,9 @@ export class PaymentsService {
     if (payment.status === 'PAID') {
       throw new BadRequestException('Esse pagamento já foi confirmado');
     }
+    if (payment.status === 'CANCELLED') {
+      throw new BadRequestException('Esta fatura foi cancelada');
+    }
 
     const charge = await this.provider.createCharge({
       amount: Number(payment.amount),
@@ -376,12 +397,21 @@ export class PaymentsService {
     if (payment.status === 'PAID') {
       throw new BadRequestException('Esse pagamento já está confirmado');
     }
+    if (payment.status === 'CANCELLED') {
+      throw new BadRequestException(
+        'Esta fatura está cancelada. Reative-a antes de confirmar o pagamento',
+      );
+    }
+
+    const paidAt = dto.paidAt
+      ? await this.parsePaidAt(dto.paidAt, schoolId)
+      : new Date();
 
     return this.prisma.payment.update({
       where: { id: payment.id },
       data: {
         status: 'PAID',
-        paidAt: new Date(),
+        paidAt,
         paymentMethod: 'MANUAL_PIX',
         proofUrl: dto.proofUrl,
         confirmedBy: adminUserId,
@@ -462,6 +492,240 @@ export class PaymentsService {
     });
   }
 
+  // ─── Admin: editar, anular e reativar uma fatura ──────────────────────
+
+  // Dia de pagamento informado pelo admin → instante a gravar (ver
+  // resolvePaidAt). Datas inválidas ou futuras viram erro 400.
+  private async parsePaidAt(dateKey: string, schoolId: string): Promise<Date> {
+    const offset = await getSchoolTimezoneOffset(this.prisma, schoolId);
+    const result = resolvePaidAt(dateKey, new Date(), offset);
+    if (!result.ok) {
+      throw new BadRequestException(
+        result.reason === 'future'
+          ? 'A data do pagamento não pode ser no futuro'
+          : 'Data do pagamento inválida',
+      );
+    }
+    return result.paidAt;
+  }
+
+  // Se a fatura faz parte de um pagamento agregado ainda aberto (PIX único
+  // pra várias faturas), mexer no valor/vencimento ou anulá-la deixaria esse
+  // PIX cobrando a conta errada: cancela o agregado e solta as faturas, que
+  // voltam a poder ser pagas (sozinhas ou num agregado novo).
+  private releaseOpenBundle(payment: {
+    paymentBundleId: string | null;
+    paymentBundle: { status: string } | null;
+  }) {
+    if (
+      !payment.paymentBundleId ||
+      payment.paymentBundle?.status !== 'PENDING'
+    ) {
+      return [];
+    }
+    return [
+      this.prisma.paymentBundle.update({
+        where: { id: payment.paymentBundleId },
+        data: { status: 'CANCELLED' },
+      }),
+      this.prisma.payment.updateMany({
+        where: { paymentBundleId: payment.paymentBundleId },
+        data: { paymentBundleId: null },
+      }),
+    ];
+  }
+
+  // Dados do PIX/checkout já gerado: zerar faz o próximo "Gerar PIX" criar
+  // uma cobrança nova com o valor e o desconto de pontualidade certos.
+  private readonly CLEARED_CHARGE = {
+    paidAmount: null,
+    checkoutUrl: null,
+    externalId: null,
+    pixCopyPaste: null,
+    pixQrCode: null,
+    pixExpiresAt: null,
+  } as const;
+
+  // PATCH /payments/:id — ajusta valor, vencimento, início do período e (em
+  // fatura paga) o dia do pagamento. Só o que vier no body muda.
+  async updatePayment(
+    paymentId: string,
+    dto: UpdatePaymentDto,
+    schoolId: string,
+    adminUserId: string,
+  ) {
+    const payment = await this.prisma.payment.findFirst({
+      where: { id: paymentId, schoolId },
+      include: { paymentBundle: { select: { status: true } } },
+    });
+    if (!payment) throw new NotFoundException('Pagamento não encontrado');
+
+    if (payment.status === 'CANCELLED') {
+      throw new BadRequestException(
+        'Esta fatura está cancelada. Reative-a para poder editar',
+      );
+    }
+    const isPaid = payment.status === 'PAID';
+
+    const data: Record<string, unknown> = {};
+    let releaseBundle = false;
+
+    if (dto.amount !== undefined && dto.amount !== Number(payment.amount)) {
+      if (payment.paymentBundle?.status === 'PAID') {
+        throw new BadRequestException(
+          'Esta fatura foi paga junto com outras (pagamento agregado) e o valor não pode ser alterado sozinho',
+        );
+      }
+      data.amount = dto.amount;
+      Object.assign(data, this.CLEARED_CHARGE);
+      releaseBundle = true;
+    }
+
+    if (dto.dueDate !== undefined) {
+      const dueDate = civilDateToNoonUtc(dto.dueDate);
+      if (!dueDate) throw new BadRequestException('Vencimento inválido');
+      if (dueDate.getTime() !== payment.dueDate.getTime()) {
+        data.dueDate = dueDate;
+        if (!isPaid) {
+          data.status = openStatusForDueDate(dueDate, new Date());
+          // o desconto de pontualidade depende do vencimento
+          Object.assign(data, this.CLEARED_CHARGE);
+          releaseBundle = true;
+        }
+      }
+    }
+
+    if (dto.periodStart !== undefined) {
+      if (
+        !periodStartFromKey(payment.idempotencyKey) ||
+        !payment.enrollmentId
+      ) {
+        throw new BadRequestException(
+          'Esta fatura não tem período de aulas para ajustar',
+        );
+      }
+      if (!civilDateToNoonUtc(dto.periodStart)) {
+        throw new BadRequestException('Início do período inválido');
+      }
+      const idempotencyKey = withPeriodStart(
+        payment.idempotencyKey,
+        dto.periodStart,
+      );
+      if (idempotencyKey !== payment.idempotencyKey) {
+        const clash = await this.prisma.payment.findUnique({
+          where: { idempotencyKey },
+          select: { id: true },
+        });
+        if (clash) {
+          throw new BadRequestException(
+            'Já existe outra fatura deste aluno com esse início de período',
+          );
+        }
+        data.idempotencyKey = idempotencyKey;
+      }
+    }
+
+    if (dto.paidAt !== undefined) {
+      if (!isPaid) {
+        throw new BadRequestException(
+          'A data do pagamento só pode ser alterada em fatura paga',
+        );
+      }
+      data.paidAt = await this.parsePaidAt(dto.paidAt, schoolId);
+    }
+
+    if (Object.keys(data).length === 0) {
+      return this.findAdminDetail(paymentId, schoolId);
+    }
+
+    this.logger.log(
+      `Fatura ${paymentId} editada por ${adminUserId}: ${Object.keys(data).join(', ')}`,
+    );
+
+    await this.prisma.$transaction([
+      ...(releaseBundle ? this.releaseOpenBundle(payment) : []),
+      this.prisma.payment.update({ where: { id: paymentId }, data }),
+    ]);
+    return this.findAdminDetail(paymentId, schoolId);
+  }
+
+  // PATCH /payments/:id/cancel — anula a fatura: some da cobrança (não atrasa,
+  // não entra em lembretes nem na lista do aluno) mas fica no histórico do
+  // admin. Fatura paga também pode (o app pede confirmação reforçada), só
+  // não quando foi paga dentro de um pagamento agregado.
+  async cancel(
+    paymentId: string,
+    reason: string | undefined,
+    schoolId: string,
+    adminUserId: string,
+  ) {
+    const payment = await this.prisma.payment.findFirst({
+      where: { id: paymentId, schoolId },
+      include: { paymentBundle: { select: { status: true } } },
+    });
+    if (!payment) throw new NotFoundException('Pagamento não encontrado');
+
+    if (payment.status === 'CANCELLED') {
+      throw new BadRequestException('Esta fatura já está cancelada');
+    }
+    if (payment.paymentBundle?.status === 'PAID') {
+      throw new BadRequestException(
+        'Esta fatura foi paga junto com outras (pagamento agregado) e não pode ser cancelada sozinha',
+      );
+    }
+
+    this.logger.warn(
+      `Fatura ${paymentId} cancelada por ${adminUserId} ` +
+        `(estava: ${payment.status}, valor: ${payment.amount})`,
+    );
+
+    await this.prisma.$transaction([
+      ...this.releaseOpenBundle(payment),
+      this.prisma.payment.update({
+        where: { id: paymentId },
+        data: {
+          status: 'CANCELLED',
+          cancelledAt: new Date(),
+          cancelReason: reason || null,
+          ...this.CLEARED_CHARGE,
+        },
+      }),
+    ]);
+    return this.findAdminDetail(paymentId, schoolId);
+  }
+
+  // PATCH /payments/:id/reactivate — desfaz o cancelamento. A fatura volta em
+  // aberto (atrasada se o vencimento já passou, senão pendente), sem dados de
+  // pagamento: se ela estava paga, é só confirmar de novo.
+  async reactivate(paymentId: string, schoolId: string, adminUserId: string) {
+    const payment = await this.prisma.payment.findFirst({
+      where: { id: paymentId, schoolId },
+      select: { id: true, status: true, dueDate: true },
+    });
+    if (!payment) throw new NotFoundException('Pagamento não encontrado');
+
+    if (payment.status !== 'CANCELLED') {
+      throw new BadRequestException('Esta fatura não está cancelada');
+    }
+
+    this.logger.warn(`Fatura ${paymentId} reativada por ${adminUserId}`);
+
+    await this.prisma.payment.update({
+      where: { id: paymentId },
+      data: {
+        status: openStatusForDueDate(payment.dueDate, new Date()),
+        cancelledAt: null,
+        cancelReason: null,
+        paidAt: null,
+        paymentMethod: 'GATEWAY',
+        proofUrl: null,
+        confirmedBy: null,
+        webhookReceivedAt: null,
+      },
+    });
+    return this.findAdminDetail(paymentId, schoolId);
+  }
+
   // ─── Webhook (fluxo principal — chamado pelo gateway) ─────────
   // Idempotente: se o gateway reenviar o mesmo evento (retry), não
   // processa de novo nem quebra.
@@ -506,6 +770,24 @@ export class PaymentsService {
 
     if (payment.status === 'PAID') {
       return { status: 'already_processed' };
+    }
+
+    // O admin anulou esta fatura, mas um PIX gerado antes ainda estava
+    // válido e alguém pagou. NUNCA silenciar: o dinheiro entrou e precisa de
+    // reconciliação manual (devolver, ou reativar a fatura e confirmar).
+    // Não mexemos no status — foi o admin quem decidiu anulá-la.
+    if (payment.status === 'CANCELLED') {
+      this.logger.error(
+        `[ALERTA CRÍTICO] Fatura ${payment.id} estava CANCELLED mas recebeu ` +
+          `pagamento via webhook. Valor: R$ ${payment.paidAmount ?? payment.amount}. ` +
+          `externalId no gateway: ${payment.externalId}. ` +
+          `Precisa de reconciliação manual.`,
+      );
+      return {
+        status: 'processed_with_warning',
+        reason: 'paid_after_cancellation_needs_manual_reconciliation',
+        paymentId: payment.id,
+      };
     }
 
     await this.prisma.payment.update({
@@ -746,8 +1028,10 @@ export class PaymentsService {
     const fullAmount = Number(payment.amount);
     const isStillOnTime =
       payment.dueDate.getTime() >= this.todayStartUTC().getTime();
-    return isStillOnTime
-      ? Math.max(fullAmount - this.PUNCTUALITY_DISCOUNT, 0)
+    // Fatura com valor ajustado pelo admin pode ser menor que o desconto:
+    // nesse caso não aplica o desconto (não existe PIX de R$ 0).
+    return isStillOnTime && fullAmount > this.PUNCTUALITY_DISCOUNT
+      ? fullAmount - this.PUNCTUALITY_DISCOUNT
       : fullAmount;
   }
 

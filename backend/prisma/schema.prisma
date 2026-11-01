@@ -37,6 +37,7 @@ enum PaymentStatus {
   PENDING // aguardando pagamento
   PAID // pago
   OVERDUE // vencido
+  CANCELLED // anulada pelo admin (não cobra, não atrasa, some pro aluno)
 }
 
 enum PaymentMethod {
@@ -316,6 +317,11 @@ model Payment {
   pixExpiresAt  DateTime? // NOVO — quando o PIX atual expira
 
   webhookReceivedAt DateTime? // auditoria: quando a confirmação automática chegou
+
+  // fatura anulada pelo admin (status CANCELLED). A linha continua no banco: mantém o
+  // histórico e a idempotencyKey, então o período não é cobrado de novo por engano.
+  cancelledAt  DateTime?
+  cancelReason String?
 
   // fluxo manual/fallback
   proofUrl    String? // comprovante anexado pelo admin

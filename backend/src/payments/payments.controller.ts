@@ -17,6 +17,8 @@ import {
 import { Role } from '@prisma/client';
 import { PaymentsService } from './payments.service';
 import { ConfirmPaymentDto } from './dto/confirm-payment.dto';
+import { UpdatePaymentDto } from './dto/update-payment.dto';
+import { CancelPaymentDto } from './dto/cancel-payment.dto';
 import { FindPaymentsQueryDto } from './dto/find-payments-query.dto';
 import { JwtAuthGuard } from '../auth/jwt-auth.guard';
 import { RolesGuard } from '../auth/roles.guard';
@@ -190,6 +192,43 @@ export class PaymentsController {
   })
   unconfirm(@Param('id') id: string, @CurrentUser() user: AuthUser) {
     return this.paymentsService.unconfirm(id, user.schoolId, user.id);
+  }
+
+  // PATCH /payments/:id — ajusta valor, vencimento, período e dia do pagamento
+  @Patch(':id')
+  @Roles(Role.ADMIN)
+  @ApiOperation({
+    summary:
+      'Editar fatura: valor, vencimento, início do período e (se paga) dia do pagamento',
+  })
+  update(
+    @Param('id') id: string,
+    @Body() dto: UpdatePaymentDto,
+    @CurrentUser() user: AuthUser,
+  ) {
+    return this.paymentsService.updatePayment(id, dto, user.schoolId, user.id);
+  }
+
+  // PATCH /payments/:id/cancel — anula a fatura (fica no histórico do admin)
+  @Patch(':id/cancel')
+  @Roles(Role.ADMIN)
+  @ApiOperation({
+    summary: 'Cancelar (anular) uma fatura: ela deixa de ser cobrada',
+  })
+  cancel(
+    @Param('id') id: string,
+    @Body() dto: CancelPaymentDto,
+    @CurrentUser() user: AuthUser,
+  ) {
+    return this.paymentsService.cancel(id, dto.reason, user.schoolId, user.id);
+  }
+
+  // PATCH /payments/:id/reactivate — desfaz o cancelamento
+  @Patch(':id/reactivate')
+  @Roles(Role.ADMIN)
+  @ApiOperation({ summary: 'Reativar uma fatura cancelada' })
+  reactivate(@Param('id') id: string, @CurrentUser() user: AuthUser) {
+    return this.paymentsService.reactivate(id, user.schoolId, user.id);
   }
 
   private currentMonthKey(): string {

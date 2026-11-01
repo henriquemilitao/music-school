@@ -259,7 +259,8 @@ export class EnrollmentManagementService {
   async listEndOptions(enrollmentId: string, schoolId: string) {
     const enrollment = await this.findActive(enrollmentId, schoolId);
     const payments = await this.prisma.payment.findMany({
-      where: { enrollmentId },
+      // fatura cancelada não entra na escolha (não cobra nada)
+      where: { enrollmentId, status: { not: 'CANCELLED' } },
       orderBy: { dueDate: 'desc' },
       select: PAYMENT_SELECT,
     });
@@ -675,7 +676,7 @@ export class EnrollmentManagementService {
       : null;
 
     const payments = await client.payment.findMany({
-      where: { enrollmentId: enrollment.id },
+      where: { enrollmentId: enrollment.id, status: { not: 'CANCELLED' } },
       select: PAYMENT_SELECT,
       orderBy: { dueDate: 'desc' },
     });
